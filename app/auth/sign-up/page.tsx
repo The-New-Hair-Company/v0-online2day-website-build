@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { createHubSpotContactFromSignUp } from '@/app/actions/hubspot'
 
 export default function Page() {
   const [email, setEmail] = useState('')
@@ -46,6 +47,12 @@ export default function Page() {
         },
       })
       if (error) throw error
+
+      // Create HubSpot contact in background — don't block redirect on failure
+      createHubSpotContactFromSignUp({ email }).catch(() => {
+        // Silently ignore HubSpot errors so sign-up flow is never broken
+      })
+
       router.push('/auth/sign-up-success')
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')

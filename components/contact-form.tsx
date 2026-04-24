@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
+import { submitContactForm } from '@/app/actions/hubspot'
 
 export function ContactForm() {
   const [loading, setLoading] = useState(false)
@@ -17,21 +18,20 @@ export function ContactForm() {
 
     const formData = new FormData(e.currentTarget)
     const data = {
-      name: formData.get('name'),
-      email: formData.get('email'),
-      company: formData.get('company'),
-      message: formData.get('message'),
+      name: String(formData.get('name') || ''),
+      email: String(formData.get('email') || ''),
+      company: String(formData.get('company') || ''),
+      message: String(formData.get('message') || ''),
     }
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-      
+      await submitContactForm(data)
+
       toast({
         title: 'Message sent!',
         description: "We'll get back to you within 24 hours.",
       })
-      
+
       e.currentTarget.reset()
     } catch (error) {
       toast({
