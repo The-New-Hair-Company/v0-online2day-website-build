@@ -30,10 +30,10 @@ export default function ContactPage() {
                   Drop us a line anytime
                 </p>
                 <a
-                  href="mailto:hello@online2day.com"
+                  href="mailto:info@online2day.com"
                   className="text-sm text-primary hover:underline"
                 >
-                  hello@online2day.com
+                  info@online2day.com
                 </a>
               </Card>
 
@@ -46,10 +46,10 @@ export default function ContactPage() {
                   Mon-Fri 9am-6pm GMT
                 </p>
                 <a
-                  href="tel:+441234567890"
+                  href="tel:+443330506098"
                   className="text-sm text-primary hover:underline"
                 >
-                  +44 1234 567 890
+                  +44 333 050 6098
                 </a>
               </Card>
 

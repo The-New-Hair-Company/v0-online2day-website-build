@@ -154,4 +154,4 @@ Proprietary - All rights reserved by online2day
 
 ## Support
 
-For questions or support, contact hello@online2day.com
+For questions or support, contact info@online2day.com
