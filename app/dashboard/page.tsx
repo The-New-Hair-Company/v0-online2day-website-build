@@ -1,40 +1,76 @@
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { Users, Video, MousePointerClick, Calendar } from 'lucide-react'
 import { DashboardHeader } from '@/components/dashboard/dashboard-header'
-import { ProjectsList } from '@/components/dashboard/projects-list'
-import { DashboardStats } from '@/components/dashboard/dashboard-stats'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
-  
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
 
-  if (!user) {
-    redirect('/auth/login')
-  }
+  // Get total leads
+  const { count: totalLeads } = await supabase
+    .from('leads')
+    .select('*', { count: 'exact', head: true })
 
-  const { data: projects } = await supabase
-    .from('projects')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('updated_at', { ascending: false })
+  // Get new leads
+  const { count: newLeads } = await supabase
+    .from('leads')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'New')
+
+  const { data: { user } } = await supabase.auth.getUser()
 
   return (
-    <div className="min-h-screen bg-background">
-      <DashboardHeader user={user} />
-      <main className="container mx-auto px-4 py-8 max-w-7xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Manage your projects and track progress
-          </p>
+    <div className="p-8">
+      <h1 className="text-3xl font-bold text-foreground mb-8">Overview</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="bg-card rounded-xl shadow-sm border border-border p-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-primary/10 text-primary rounded-lg flex items-center justify-center">
+              <Users size={24} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Total CRM Leads</p>
+              <h3 className="text-2xl font-bold text-card-foreground">{totalLeads || 0}</h3>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-card rounded-xl shadow-sm border border-border p-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-primary/10 text-primary rounded-lg flex items-center justify-center">
+              <Calendar size={24} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">New CRM Leads</p>
+              <h3 className="text-2xl font-bold text-card-foreground">{newLeads || 0}</h3>
+            </div>
+          </div>
         </div>
 
-        <DashboardStats projects={projects || []} />
-        <ProjectsList projects={projects || []} />
-      </main>
+        <div className="bg-card rounded-xl shadow-sm border border-border p-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-chart-3/10 text-chart-3 rounded-lg flex items-center justify-center">
+              <Video size={24} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Videos Sent</p>
+              <h3 className="text-2xl font-bold text-card-foreground">-</h3>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-card rounded-xl shadow-sm border border-border p-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-chart-5/10 text-chart-5 rounded-lg flex items-center justify-center">
+              <MousePointerClick size={24} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Video Views</p>
+              <h3 className="text-2xl font-bold text-card-foreground">-</h3>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

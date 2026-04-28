@@ -1,5 +1,7 @@
 'use server'
 
+import { createClient } from '@/lib/supabase/server'
+
 /// <reference types="node" />
 
 const HUBSPOT_API_BASE = 'https://api.hubapi.com'
@@ -171,6 +173,34 @@ export async function submitContactForm(data: {
 
     // 2. Add a note with their message
     await createHubSpotNote(data.email, `Contact Form Message:\n\n${data.message}`)
+
+    // 3. Save to Supabase Leads Table for the Dashboard
+    const supabase = await createClient()
+    
+    // Check if lead already exists in Supabase to avoid duplicates
+    const { data: existingLead } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('email', data.email)
+        .single()
+        
+    if (!existingLead) {
+        await supabase.from('leads').insert({
+            name: data.name,
+            email: data.email,
+            company: data.company || '',
+            notes: data.message,
+            source: 'Website Contact Form',
+            status: 'New',
+        })
+    } else {
+        // Optionally log an event that they submitted the form again
+        await supabase.from('lead_events').insert({
+            lead_id: existingLead.id,
+            type: 'Form Submission',
+            note: `Submitted contact form again:\n\n${data.message}`
+        })
+    }
 
     return { success: true, contactId: contact.vid }
 }
