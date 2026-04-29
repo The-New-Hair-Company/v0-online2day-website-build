@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { LogOut, LayoutDashboard, Users, MessageSquare, Video, Mail, Blocks } from 'lucide-react'
+import { LogOut, LayoutDashboard, Users, MessageSquare, Video, Mail, Blocks, Paintbrush } from 'lucide-react'
 import { useInactivityLogout } from '@/hooks/use-inactivity-logout'
 import { useUnreadCount } from '@/hooks/use-unread-count'
 
@@ -12,6 +12,7 @@ const navItems = [
   { href: '/dashboard/videos', label: 'Videos', icon: Video, exact: false },
   { href: '/dashboard/emails', label: 'Emails', icon: Mail, exact: false },
   { href: '/dashboard/messages', label: 'Messages', icon: MessageSquare, exact: false },
+  { href: '/dashboard/requests', label: 'Site Requests', icon: Paintbrush, exact: false },
   { href: '/dashboard/integrations', label: 'Integrations', icon: Blocks, exact: false },
 ]
 
