@@ -48,6 +48,14 @@ export function ChatWindow({
       if (!error && data && isMounted) {
         setMessages(data)
         scrollToBottom()
+        
+        // Mark messages as read
+        await supabase
+          .from('messages')
+          .update({ is_read: true })
+          .eq('conversation_user_id', conversationUserId)
+          .neq('sender_id', currentUserId)
+          .eq('is_read', false)
       }
       if (isMounted) setIsLoading(false)
     }

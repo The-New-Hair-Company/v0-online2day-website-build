@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { MessageSquare, LogOut } from 'lucide-react'
+import { MessageSquare, LogOut, Blocks } from 'lucide-react'
 
 export default async function UserDashboardLayout({
   children,
@@ -27,10 +27,17 @@ export default async function UserDashboardLayout({
         <nav className="flex-1 px-4 space-y-2">
           <Link
             href="/user-dashboard"
-            className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors bg-primary/10 text-primary`}
+            className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground`}
           >
             <MessageSquare size={20} />
             <span>Support Chat</span>
+          </Link>
+          <Link
+            href="/user-dashboard/site-builder"
+            className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground`}
+          >
+            <Blocks size={20} />
+            <span>Site Builder</span>
           </Link>
         </nav>
         <div className="p-4 border-t border-border">

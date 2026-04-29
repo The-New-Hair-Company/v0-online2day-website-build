@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import { updateLead } from '@/lib/actions/lead-actions'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
+
+const RichEditor = dynamic(() => import('@/components/ui/rich-editor'), { ssr: false })
 
 const STATUSES = ['New', 'Contacted', 'Video Sent', 'Follow-up Due', 'Proposal Sent', 'Won', 'Lost']
 const SOURCES = ['Website', 'Cold Outreach', 'Referral', 'HubSpot', 'LinkedIn', 'Phone', 'Event', 'Other']
@@ -27,11 +30,14 @@ export default function EditLeadForm({ lead }: { lead: Lead }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [notesHtml, setNotesHtml] = useState(lead.notes || '')
 
   async function handleSubmit(formData: FormData) {
     setLoading(true)
     setError('')
     setSuccess(false)
+    // Inject rich editor HTML into form data
+    formData.set('notes', notesHtml)
 
     const result = await updateLead(lead.id, formData)
 
@@ -145,16 +151,14 @@ export default function EditLeadForm({ lead }: { lead: Lead }) {
             </div>
           </div>
 
-          {/* Section: Notes */}
+          {/* Section: Notes — Rich Editor */}
           <div className="pt-6 border-t border-border">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">Notes</h2>
-            <textarea
-              id="notes"
-              name="notes"
-              rows={5}
-              defaultValue={lead.notes || ''}
-              placeholder="Add any notes about this contact…"
-              className={inputClass}
+            <RichEditor
+              value={notesHtml}
+              onChange={setNotesHtml}
+              placeholder="Add notes, call summaries, next steps… Supports formatting."
+              minHeight="160px"
             />
           </div>
 

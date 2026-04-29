@@ -2,8 +2,9 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { LogOut, LayoutDashboard, Users, MessageSquare, Video, Mail } from 'lucide-react'
+import { LogOut, LayoutDashboard, Users, MessageSquare, Video, Mail, Blocks } from 'lucide-react'
 import { useInactivityLogout } from '@/hooks/use-inactivity-logout'
+import { useUnreadCount } from '@/hooks/use-unread-count'
 
 const navItems = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
@@ -11,11 +12,13 @@ const navItems = [
   { href: '/dashboard/videos', label: 'Videos', icon: Video, exact: false },
   { href: '/dashboard/emails', label: 'Emails', icon: Mail, exact: false },
   { href: '/dashboard/messages', label: 'Messages', icon: MessageSquare, exact: false },
+  { href: '/dashboard/integrations', label: 'Integrations', icon: Blocks, exact: false },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
   useInactivityLogout(5) // 5 minutes
+  const unreadCount = useUnreadCount()
 
   const isActive = (href: string, exact: boolean) => {
     if (exact) return pathname === href
@@ -36,6 +39,7 @@ export function Sidebar() {
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navItems.map(({ href, label, icon: Icon, exact }) => {
           const active = isActive(href, exact)
+          const isMessages = label === 'Messages'
           return (
             <Link
               key={href}
@@ -48,7 +52,12 @@ export function Sidebar() {
             >
               <Icon size={18} className={active ? 'text-primary' : ''} />
               {label}
-              {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
+              {isMessages && unreadCount > 0 && (
+                <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                  {unreadCount}
+                </span>
+              )}
+              {active && !isMessages && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
             </Link>
           )
         })}

@@ -6,10 +6,19 @@ import { revalidatePath } from 'next/cache'
 // Import templates when we create them
 // import VideoFollowUpEmail from '@/emails/VideoFollowUpEmail'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+const getResend = () => {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) return null
+  return new Resend(apiKey)
+}
 
 export async function sendVideoFollowUpEmail(leadId: string, email: string, name: string, videoSlug: string) {
   try {
+    const resend = getResend()
+    if (!resend) {
+      console.warn('RESEND_API_KEY is missing. Email not sent.')
+      return { error: 'Email service not configured' }
+    }
     const { data, error } = await resend.emails.send({
       from: 'Online2Day <hello@online2day.com>',
       to: [email],

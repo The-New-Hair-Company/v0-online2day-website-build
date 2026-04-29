@@ -229,7 +229,12 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                       </span>
                     </div>
                     {event.note && (
-                      <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{event.note}</p>
+                      <div
+                        className="text-sm text-muted-foreground mt-1 leading-relaxed prose prose-sm max-w-none prose-invert"
+                        dangerouslySetInnerHTML={{
+                          __html: event.note.startsWith('<') ? event.note : `<p>${event.note}</p>`
+                        }}
+                      />
                     )}
                     {(event as any).creator?.email && (
                       <p className="text-xs text-muted-foreground/60 mt-2">
