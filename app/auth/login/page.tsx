@@ -29,17 +29,18 @@ export default function Page() {
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
       if (error) throw error
       
       // Smart Routing: Check if user is admin
+      const userId = signInData?.user?.id
       const { data: roleData } = await supabase
         .from('user_profiles')
         .select('role')
-        .eq('user_id', data.user.id)
+        .eq('user_id', userId)
         .single()
 
       if (roleData?.role === 'admin') {
