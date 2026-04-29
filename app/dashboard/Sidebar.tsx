@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { LogOut, LayoutDashboard, Users } from 'lucide-react'
+import { LogOut, LayoutDashboard, Users, MessageSquare } from 'lucide-react'
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -42,6 +42,17 @@ export function Sidebar() {
         >
           <Users size={20} />
           <span>Leads</span>
+        </Link>
+        <Link
+          href="/dashboard/messages"
+          className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
+            isActive('/dashboard/messages')
+              ? 'bg-primary/10 text-primary'
+              : 'hover:bg-accent hover:text-accent-foreground'
+          }`}
+        >
+          <MessageSquare size={20} />
+          <span>Messages</span>
         </Link>
       </nav>
       <div className="p-4 border-t border-border">

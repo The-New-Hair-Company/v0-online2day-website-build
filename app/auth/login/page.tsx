@@ -34,7 +34,19 @@ export default function Page() {
         password,
       })
       if (error) throw error
-      router.push('/dashboard')
+      
+      // Smart Routing: Check if user is admin
+      const { data: roleData } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('user_id', data.user.id)
+        .single()
+
+      if (roleData?.role === 'admin') {
+        router.push('/dashboard')
+      } else {
+        router.push('/user-dashboard')
+      }
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {
