@@ -8,18 +8,18 @@ import { createClient } from '@/lib/supabase/client'
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState<any | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const supabase = createClient()
-    
+
     // Get initial session
     const getSession = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       setUser(session?.user ?? null)
-      
+
       if (session?.user) {
         // Check if admin
         const { data: roleData } = await supabase
@@ -27,13 +27,13 @@ export function Header() {
           .select('role')
           .eq('user_id', session.user.id)
           .single()
-        
+
         setIsAdmin(roleData?.role === 'admin')
       }
-      
+
       setLoading(false)
     }
-    
+
     getSession()
 
     // Listen for auth changes
