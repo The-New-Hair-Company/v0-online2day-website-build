@@ -32,11 +32,6 @@ export default function Page() {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
-        options: {
-          emailRedirectTo:
-            process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ||
-            `${window.location.origin}/protected`,
-        },
       })
       if (error) throw error
       router.push('/protected')
@@ -73,7 +68,15 @@ export default function Page() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="password">Password</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="password">Password</Label>
+                      <Link
+                        href="/auth/forgot-password"
+                        className="text-sm font-medium text-primary hover:underline"
+                      >
+                        Forgot your password?
+                      </Link>
+                    </div>
                     <Input
                       id="password"
                       type="password"
@@ -82,7 +85,7 @@ export default function Page() {
                       onChange={(e) => setPassword(e.target.value)}
                     />
                   </div>
-                  {error && <p className="text-sm text-red-500">{error}</p>}
+                  {error && <p className="text-sm text-destructive">{error}</p>}
                   <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading ? 'Logging in...' : 'Login'}
                   </Button>
