@@ -15,16 +15,21 @@ export default async function DashboardLayout({
     redirect('/auth/login')
   }
 
-  // 2. Check if user has an 'admin' role
-  const { data: roleData } = await supabase
-    .from('user_profiles')
-    .select('role')
-    .eq('user_id', data.user.id)
-    .single()
+  // 2. Check if user has an 'admin' role (optional - if table doesn't exist, allow access)
+  try {
+    const { data: roleData } = await supabase
+      .from('user_profiles')
+      .select('role')
+      .eq('user_id', data.user.id)
+      .single()
 
-  if (roleData?.role !== 'admin') {
-    // If not an admin, redirect them to the landing page
-    redirect('/')
+    // Only redirect if we successfully queried and user is NOT admin
+    if (roleData && roleData.role !== 'admin') {
+      redirect('/')
+    }
+  } catch {
+    // If user_profiles table doesn't exist or query fails, allow access
+    // This prevents redirect loops for admin users who don't have a profile entry yet
   }
 
   return (

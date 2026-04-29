@@ -12,6 +12,18 @@ export default async function ProtectedPage() {
     redirect('/auth/login')
   }
 
-  // Redirect authenticated users to dashboard
-  redirect('/dashboard')
+  // Check if user has admin role
+  const { data: roleData } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('user_id', user.id)
+    .single()
+
+  // Redirect based on role
+  if (roleData?.role === 'admin') {
+    redirect('/dashboard')
+  } else {
+    // Regular users stay on landing page
+    redirect('/')
+  }
 }
