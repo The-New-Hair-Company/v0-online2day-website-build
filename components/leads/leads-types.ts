@@ -41,9 +41,7 @@ export type IconName =
 
 export type LeadStage = 'New' | 'Contacted' | 'Qualified' | 'Proposal Sent' | 'Negotiation' | 'Won'
 export type LeadSource = 'Website' | 'Referral' | 'Cold outreach' | 'Ads' | 'Organic'
-
-// OwnerName is now a flexible string to support real database users
-export type OwnerName = string
+export type OwnerName = 'Sarah M.' | 'James T.' | 'Emily R.' | 'Daniel K.' | 'Michael B.'
 
 export type Lead = {
   id: string

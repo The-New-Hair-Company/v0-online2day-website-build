@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import styles from './LeadsDashboard.module.css'
@@ -14,7 +15,7 @@ import {
   sourcePerformance,
   tasks,
 } from './leads-data'
-import type { IconName, Lead, LeadStage, Metric, PipelineStage, TaskItem, ActivityItem } from './leads-types'
+import type { IconName, Lead, LeadStage } from './leads-types'
 
 const stageOptions: LeadStage[] = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won']
 const tabs = [
@@ -27,32 +28,35 @@ const tabs = [
 
 const cx = (...classes: Array<string | false | undefined>) => classes.filter(Boolean).join(' ')
 
-export default function LeadsDashboard({ 
-  initialLeads = leads, 
-  initialMetrics = metrics,
-  initialPipelineStages = pipelineStages,
-  initialTasks = tasks,
-  initialActivity = recentActivity,
-  totalLeadCount,
-}: { 
-  initialLeads?: Lead[]
-  initialMetrics?: Metric[]
-  initialPipelineStages?: PipelineStage[]
-  initialTasks?: TaskItem[]
-  initialActivity?: ActivityItem[]
-  totalLeadCount?: number
-}) {
-  const total = totalLeadCount ?? initialLeads.length
+type DashboardSection = 'overview' | 'leads'
+
+const pageMeta: Record<DashboardSection, { title: string; description: string; processTitle: string; nextAction: string }> = {
+  overview: {
+    title: 'Overview',
+    description: 'Your sales command centre',
+    processTitle: 'Guide to Sale: Your sales process',
+    nextAction: 'Follow up with 5 high-intent leads',
+  },
+  leads: {
+    title: 'Leads',
+    description: 'Manage, prioritise and convert your outreach pipeline.',
+    processTitle: 'Guide to Sale: Your lead conversion process',
+    nextAction: 'Follow up with 5 high-intent leads',
+  },
+}
+
+export default function LeadsDashboard({ section = 'leads' }: { section?: DashboardSection }) {
+  const meta = pageMeta[section]
   const [query, setQuery] = useState('')
   const [activeTab, setActiveTab] = useState('All leads')
-  const [selectedId, setSelectedId] = useState(initialLeads[0]?.id || '')
+  const [selectedId, setSelectedId] = useState('lead-acme')
   const [selectedStage, setSelectedStage] = useState<'All stages' | LeadStage>('All stages')
   const [isStageOpen, setIsStageOpen] = useState(false)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   const filteredLeads = useMemo(() => {
     const normalised = query.trim().toLowerCase()
-    return initialLeads.filter((lead) => {
+    return leads.filter((lead) => {
       const matchesQuery = normalised
         ? `${lead.contactName} ${lead.role} ${lead.company} ${lead.stage} ${lead.owner}`.toLowerCase().includes(normalised)
         : true
@@ -65,20 +69,21 @@ export default function LeadsDashboard({
         (activeTab === 'Won' && lead.stage === 'Won')
       return matchesQuery && matchesStage && matchesTab
     })
-  }, [query, selectedStage, activeTab, initialLeads])
+  }, [query, selectedStage, activeTab])
 
-  const selectedLead = initialLeads.find((lead) => lead.id === selectedId) ?? initialLeads[0]
+  const selectedLead = leads.find((lead) => lead.id === selectedId) ?? leads[0]
 
   return (
-    <div className={styles.container}>
+    <div className={styles.shell}>
+      <Sidebar section={section} />
       <main className={styles.main}>
         <header className={styles.header}>
           <div>
             <div className={styles.titleRow}>
-              <h1>Leads</h1>
+              <h1>{meta.title}</h1>
               <Icon name="star" className={styles.titleStar} />
             </div>
-            <p>Manage, prioritise and convert your outreach pipeline.</p>
+            <p>{meta.description}</p>
           </div>
           <div className={styles.topControls}>
             <label className={styles.globalSearch}>
@@ -105,16 +110,16 @@ export default function LeadsDashboard({
         </header>
 
         <section className={styles.metricsGrid} aria-label="Lead performance metrics">
-          {initialMetrics.map((metric) => (
+          {metrics.map((metric) => (
             <MetricCard key={metric.label} metric={metric} />
           ))}
         </section>
 
-        <ProcessGuide />
-        
+        <ProcessGuide title={meta.processTitle} nextAction={meta.nextAction} />
+
         <section className={styles.dashboardGrid}>
           <div className={styles.primaryColumn}>
-            <AnalyticsStrip stages={initialPipelineStages} total={total} />
+            <AnalyticsStrip />
             <section className={styles.tableCard}>
               <div className={styles.tabs}>
                 {tabs.map((tab) => (
@@ -157,11 +162,50 @@ export default function LeadsDashboard({
             </section>
           </div>
 
-          <RightRail tasks={initialTasks} activity={initialActivity} />
+          <RightRail />
         </section>
       </main>
       <LeadCommandBar lead={selectedLead} />
     </div>
+  )
+}
+
+function Sidebar({ section }: { section: DashboardSection }) {
+  const navItems: Array<{ label: string; icon: IconName; href: string; section?: DashboardSection; badge?: string }> = [
+    { label: 'Overview', icon: 'grid', href: '/dashboard/overview', section: 'overview' },
+    { label: 'Leads', icon: 'users', href: '/dashboard/leads', section: 'leads' },
+    { label: 'Videos', icon: 'video', href: '/dashboard/videos' },
+    { label: 'Emails', icon: 'mail', href: '/dashboard/emails' },
+    { label: 'Messages', icon: 'message', href: '/dashboard/messages', badge: '4' },
+    { label: 'Site Requests', icon: 'request', href: '/dashboard/site-requests' },
+    { label: 'Integrations', icon: 'integrations', href: '/dashboard/integrations' },
+  ]
+
+  return (
+    <aside className={styles.sidebar}>
+      <div className={styles.brand}>
+        <span>Online2Day</span>
+        <p>CRM Dashboard</p>
+      </div>
+      <nav className={styles.nav} aria-label="CRM navigation">
+        <p className={styles.navSection}>MAIN</p>
+        {navItems.map((item) => (
+          <Link key={item.label} className={cx(styles.navItem, item.section === section && styles.navItemActive)} href={item.href}>
+            <Icon name={item.icon} />
+            <span>{item.label}</span>
+            {item.badge ? <strong>{item.badge}</strong> : null}
+            {item.section === section ? <em /> : null}
+          </Link>
+        ))}
+      </nav>
+      <div className={styles.proCard}>
+        <div className={styles.proIcon}><Icon name="crown" /></div>
+        <h3>Pro Plan</h3>
+        <p>You have unlimited videos and advanced analytics.</p>
+        <button>View Plan</button>
+      </div>
+      <a className={styles.signOut} href="#"><Icon name="logout" /> Sign Out</a>
+    </aside>
   )
 }
 
@@ -227,11 +271,11 @@ function Sparkline({ values }: { values: number[] }) {
   )
 }
 
-function ProcessGuide() {
+function ProcessGuide({ title, nextAction }: { title: string; nextAction: string }) {
   return (
     <section className={styles.processCard}>
       <div className={styles.processLeft}>
-        <h2>Guide to Sale: Your lead conversion process</h2>
+        <h2>{title}</h2>
         <div className={styles.steps}>
           {processSteps.map((step, index) => {
             const isActive = index === 2
@@ -246,22 +290,22 @@ function ProcessGuide() {
       </div>
       <button className={styles.nextActionCard}>
         <span><Icon name="star" /> Next best action</span>
-        <strong>Follow up with 5 high-intent leads</strong>
+        <strong>{nextAction}</strong>
         <Icon name="chevron" />
       </button>
     </section>
   )
 }
 
-function AnalyticsStrip({ stages, total }: { stages: PipelineStage[]; total: number }) {
+function AnalyticsStrip() {
   return (
     <section className={styles.analyticsGrid}>
       <article className={styles.analyticsCard}>
         <h3>Pipeline by stage</h3>
         <div className={styles.funnelRow}>
-          <Funnel stages={stages} />
+          <Funnel />
           <div className={styles.stageLegend}>
-            {stages.map((stage) => (
+            {pipelineStages.map((stage) => (
               <div key={stage.label}>
                 <i style={{ backgroundColor: stage.color }} />
                 <span>{stage.label}</span>
@@ -270,7 +314,7 @@ function AnalyticsStrip({ stages, total }: { stages: PipelineStage[]; total: num
             ))}
           </div>
         </div>
-        <div className={styles.analyticsFooter}>Total <strong>{total}</strong></div>
+        <div className={styles.analyticsFooter}>Total <strong>248</strong></div>
       </article>
 
       <article className={styles.analyticsCard}>
@@ -310,10 +354,10 @@ function AnalyticsStrip({ stages, total }: { stages: PipelineStage[]; total: num
   )
 }
 
-function Funnel({ stages }: { stages: PipelineStage[] }) {
+function Funnel() {
   return (
     <svg className={styles.funnel} viewBox="0 0 130 110" aria-hidden="true">
-      {stages.map((stage, index) => {
+      {pipelineStages.map((stage, index) => {
         const y = index * 15
         const inset = index * 9
         return (
@@ -379,9 +423,7 @@ function LeadTable({ leads, selectedId, onSelect }: { leads: Lead[]; selectedId:
                 <div><strong>{lead.contactName}</strong><span>{lead.role}</span></div>
               </td>
               <td className={styles.companyCell}>
-                <div className={cx(styles.companyLogo, lead.logoClass ? styles[lead.logoClass] : styles.logoDefault)}>
-                  {lead.companyMark || lead.company.charAt(0).toUpperCase()}
-                </div>
+                <div className={cx(styles.companyLogo, styles[lead.logoClass])}>{lead.companyMark}</div>
                 <span>{lead.company}</span>
               </td>
               <td><Score value={lead.score} /></td>
@@ -398,7 +440,7 @@ function LeadTable({ leads, selectedId, onSelect }: { leads: Lead[]; selectedId:
         </tbody>
       </table>
       <div className={styles.tableFooter}>
-        <span>Showing {leads.length} leads</span>
+        <span>Showing 1 to {Math.max(leads.length, 1)} of 248 leads</span>
         <div className={styles.pagination}>
           <button>‹</button><button className={styles.pageActive}>1</button><button>2</button><button>3</button><button>4</button><button>5</button><span>…</span><button>25</button><button>›</button>
         </div>
@@ -408,14 +450,12 @@ function LeadTable({ leads, selectedId, onSelect }: { leads: Lead[]; selectedId:
   )
 }
 
-function RightRail({ tasks: taskList, activity }: { tasks: TaskItem[]; activity: ActivityItem[] }) {
-  const displayTasks = taskList.length > 0 ? taskList : tasks
-  const displayActivity = activity.length > 0 ? activity : recentActivity
+function RightRail() {
   return (
     <aside className={styles.rightRail}>
-      <Panel title="Today's priorities" badge={displayTasks.length.toString()}>
+      <Panel title="Today’s priorities" badge="5">
         <div className={styles.taskList}>
-          {displayTasks.map((task) => (
+          {tasks.map((task) => (
             <label key={task.label}>
               <input type="checkbox" checked={Boolean(task.checked)} readOnly />
               <span>{task.label}</span>
@@ -441,18 +481,18 @@ function RightRail({ tasks: taskList, activity }: { tasks: TaskItem[]; activity:
 
       <Panel title="Recent activity" action="All">
         <div className={styles.activityList}>
-          {displayActivity.map((a) => (
-            <div key={a.title}>
+          {recentActivity.map((activity) => (
+            <div key={activity.title}>
               <span />
-              <p>{a.title}</p>
-              <time>{a.time}</time>
+              <p>{activity.title}</p>
+              <time>{activity.time}</time>
             </div>
           ))}
         </div>
         <a className={styles.panelLink} href="#">View all activity →</a>
       </Panel>
 
-      <Panel title="Goal progress" action="This month">
+      <Panel title="Goal progress" action="May 2025">
         <Goal label="Meetings booked" value="32 / 50" progress={64} />
         <Goal label="Revenue target" value="$128K / $200K" progress={64} />
         <a className={styles.panelLink} href="#">View goals →</a>
@@ -477,7 +517,7 @@ function Panel({ title, badge, action, children }: { title: string; badge?: stri
 function LeadCommandBar({ lead }: { lead: Lead }) {
   return (
     <section className={styles.commandBar}>
-      <div className={cx(styles.commandLogo, lead.logoClass ? styles[lead.logoClass] : styles.logoDefault)}>{lead.companyMark}</div>
+      <div className={cx(styles.commandLogo, styles[lead.logoClass])}>{lead.companyMark}</div>
       <div className={styles.commandTitle}>
         <div><h2>{lead.company}</h2><StageBadge stage={lead.stage} /></div>
         <p>{lead.contactName} • {lead.role}</p>
@@ -498,12 +538,7 @@ function LeadCommandBar({ lead }: { lead: Lead }) {
         <p>Follow up via email with case study video to move to proposal stage.</p>
       </div>
       <div className={styles.commandActions}>
-        <button 
-          className={styles.primaryAction} 
-          onClick={() => window.location.href = `/dashboard/leads/${lead.id}`}
-        >
-          <Icon name="external" />Open lead
-        </button>
+        <button className={styles.primaryAction}><Icon name="external" />Open lead</button>
         <button><Icon name="mail" />Send email</button>
         <button><Icon name="video" />Create video</button>
         <button><Icon name="calendar" />Book call</button>
@@ -546,7 +581,7 @@ function Icon({ name, className }: { name: IconName; className?: string }) {
   const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, className }
   const paths: Record<IconName, ReactNode> = {
     grid: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
-    users: <><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" /><circle cx="9.5" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 1-4-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
+    users: <><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" /><circle cx="9.5" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
     video: <><path d="M15 10l4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14" /><rect x="3" y="6" width="12" height="12" rx="2" /></>,
     mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></>,
     message: <><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></>,
@@ -561,12 +596,12 @@ function Icon({ name, className }: { name: IconName; className?: string }) {
     dollar: <><path d="M12 2v20" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" /></>,
     trend: <><path d="M3 17l6-6 4 4 8-8" /><path d="M15 7h6v6" /></>,
     diamond: <><path d="M12 2l8 8-8 12L4 10z" /></>,
-    star: <><path d="M12 2l2.8 6 6.5.8-4.8 4.5 1.2 6.4L12 16.5l-6.3 3.7 1.2-6.4-4.8-4.5 6.5-.8z" /></>,
+    star: <><path d="M12 2l2.8 6 6.5.8-4.8 4.5 1.2 6.4L12 16.5 6.3 19.7l1.2-6.4-4.8-4.5 6.5-.8z" /></>,
     task: <><path d="M9 11l2 2 4-4" /><rect x="4" y="3" width="16" height="18" rx="2" /></>,
     upload: <><path d="M12 15V3" /><path d="M7 8l5-5 5 5" /><path d="M5 21h14" /></>,
     owner: <><circle cx="12" cy="7" r="4" /><path d="M5.5 21a6.5 6.5 0 0 1 13 0" /></>,
     globe: <><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20" /><path d="M12 2a15 15 0 0 0 0 20" /></>,
-    phone: <><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07A19.5 19.5 0 0 1 5.15 12 19.8 19.8 0 0 1 2.08 3.37 2 2 0 0 1-.45 2.11L8 8.85a16 16 0 0 0 7.15 7.15l1.19-1.19a2 2 0 0 1 2.11-.45c.85.26 1.73.46 2.63.58A2 2 0 0 1 22 16.92z" /></>,
+    phone: <><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07A19.5 19.5 0 0 1 5.15 12 19.8 19.8 0 0 1 2.08 3.37 2 2 0 0 1 4.06 1.2h3a2 2 0 0 1 2 1.72c.12.9.32 1.78.58 2.63a2 2 0 0 1-.45 2.11L8 8.85a16 16 0 0 0 7.15 7.15l1.19-1.19a2 2 0 0 1 2.11-.45c.85.26 1.73.46 2.63.58A2 2 0 0 1 22 16.92z" /></>,
     linkedin: <><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z" /><rect x="2" y="9" width="4" height="12" /><circle cx="4" cy="4" r="2" /></>,
     ellipsis: <><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /></>,
     chevron: <><path d="M9 18l6-6-6-6" /></>,
