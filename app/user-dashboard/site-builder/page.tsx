@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import SiteBuilderClient from './SiteBuilderClient'
+import SiteBuilderClient from './builder-client'
 import { redirect } from 'next/navigation'
 
 export default async function SiteBuilderPage() {

@@ -7,13 +7,50 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
+      analytics_snapshots: {
+        Row: {
+          created_at: string
+          id: string
+          lost_leads: number
+          meetings_booked: number
+          new_leads: number
+          pipeline_value: number
+          qualified_leads: number
+          snapshotted_at: string
+          total_leads: number
+          won_leads: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lost_leads?: number
+          meetings_booked?: number
+          new_leads?: number
+          pipeline_value?: number
+          qualified_leads?: number
+          snapshotted_at?: string
+          total_leads?: number
+          won_leads?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lost_leads?: number
+          meetings_booked?: number
+          new_leads?: number
+          pipeline_value?: number
+          qualified_leads?: number
+          snapshotted_at?: string
+          total_leads?: number
+          won_leads?: number
+        }
+        Relationships: []
+      }
       lead_agreements: {
         Row: {
           created_at: string
@@ -64,6 +101,7 @@ export type Database = {
           storage_path: string
           type: string
           url: string
+          view_count: number
         }
         Insert: {
           created_at?: string
@@ -76,6 +114,7 @@ export type Database = {
           storage_path: string
           type: string
           url?: string
+          view_count?: number
         }
         Update: {
           created_at?: string
@@ -88,6 +127,7 @@ export type Database = {
           storage_path?: string
           type?: string
           url?: string
+          view_count?: number
         }
         Relationships: [
           {
@@ -107,6 +147,7 @@ export type Database = {
           lead_id: string | null
           metadata: Json | null
           note: string | null
+          title: string | null
           type: string
         }
         Insert: {
@@ -116,6 +157,7 @@ export type Database = {
           lead_id?: string | null
           metadata?: Json | null
           note?: string | null
+          title?: string | null
           type: string
         }
         Update: {
@@ -125,6 +167,7 @@ export type Database = {
           lead_id?: string | null
           metadata?: Json | null
           note?: string | null
+          title?: string | null
           type?: string
         }
         Relationships: [
@@ -137,50 +180,118 @@ export type Database = {
           },
         ]
       }
+      lead_tasks: {
+        Row: {
+          assigned_to: string | null
+          created_at: string
+          due_at: string | null
+          id: string
+          is_done: boolean
+          lead_id: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          created_at?: string
+          due_at?: string | null
+          id?: string
+          is_done?: boolean
+          lead_id?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          created_at?: string
+          due_at?: string | null
+          id?: string
+          is_done?: boolean
+          lead_id?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_tasks_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           assigned_to: string | null
+          closed_at: string | null
           company: string | null
           created_at: string
           email: string | null
+          engagement: number | null
           follow_up_date: string | null
           id: string
+          last_contacted_at: string | null
+          linkedin_url: string | null
+          lost_reason: string | null
           name: string
+          next_action: string | null
           notes: string | null
           phone: string | null
+          role: string | null
+          score: number | null
           source: string | null
           status: string | null
           updated_at: string
+          value: number | null
           website: string | null
         }
         Insert: {
           assigned_to?: string | null
+          closed_at?: string | null
           company?: string | null
           created_at?: string
           email?: string | null
+          engagement?: number | null
           follow_up_date?: string | null
           id?: string
+          last_contacted_at?: string | null
+          linkedin_url?: string | null
+          lost_reason?: string | null
           name: string
+          next_action?: string | null
           notes?: string | null
           phone?: string | null
+          role?: string | null
+          score?: number | null
           source?: string | null
           status?: string | null
           updated_at?: string
+          value?: number | null
           website?: string | null
         }
         Update: {
           assigned_to?: string | null
+          closed_at?: string | null
           company?: string | null
           created_at?: string
           email?: string | null
+          engagement?: number | null
           follow_up_date?: string | null
           id?: string
+          last_contacted_at?: string | null
+          linkedin_url?: string | null
+          lost_reason?: string | null
           name?: string
+          next_action?: string | null
           notes?: string | null
           phone?: string | null
+          role?: string | null
+          score?: number | null
           source?: string | null
           status?: string | null
           updated_at?: string
+          value?: number | null
           website?: string | null
         }
         Relationships: []
@@ -214,9 +325,11 @@ export type Database = {
       }
       site_build_requests: {
         Row: {
+          admin_notes: string | null
           business_name: string
           created_at: string
           id: string
+          live_url: string | null
           staging_url: string | null
           status: string
           style_description: string | null
@@ -224,9 +337,11 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          admin_notes?: string | null
           business_name: string
           created_at?: string
           id?: string
+          live_url?: string | null
           staging_url?: string | null
           status?: string
           style_description?: string | null
@@ -234,9 +349,11 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          admin_notes?: string | null
           business_name?: string
           created_at?: string
           id?: string
+          live_url?: string | null
           staging_url?: string | null
           status?: string
           style_description?: string | null
@@ -247,22 +364,28 @@ export type Database = {
       }
       user_profiles: {
         Row: {
+          avatar_url: string | null
           created_at: string
           email: string
+          full_name: string | null
           id: string
           role: string
           user_id: string
         }
         Insert: {
+          avatar_url?: string | null
           created_at?: string
           email: string
+          full_name?: string | null
           id?: string
           role?: string
           user_id: string
         }
         Update: {
+          avatar_url?: string | null
           created_at?: string
           email?: string
+          full_name?: string | null
           id?: string
           role?: string
           user_id?: string
@@ -407,4 +530,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

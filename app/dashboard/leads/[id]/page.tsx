@@ -2,9 +2,9 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { ArrowLeft, Mail, Phone, Globe, Calendar, Pencil, ExternalLink } from 'lucide-react'
 import { notFound } from 'next/navigation'
-import LeadActionsPanel from './LeadActionsPanel'
-import DeleteLeadButton from './DeleteLeadButton'
-import AddNoteForm from './AddNoteForm'
+import LeadActionsPanel from './lead-actions-panel'
+import DeleteLeadButton from './delete-button'
+import AddNoteForm from './add-note-form'
 
 const statusColors: Record<string, string> = {
   'New': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
