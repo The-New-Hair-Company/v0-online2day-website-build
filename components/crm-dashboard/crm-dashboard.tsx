@@ -5,7 +5,9 @@ import { useMemo, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
 import {
+  Activity,
   ArrowRight,
+  BarChart3,
   Bot,
   CalendarDays,
   Check,
@@ -14,6 +16,7 @@ import {
   CircleDot,
   Columns3,
   Crown,
+  DollarSign,
   Download,
   ExternalLink,
   Filter,
@@ -23,6 +26,7 @@ import {
   LogOut,
   Mail,
   MessageSquare,
+  MonitorPlay,
   MoreHorizontal,
   PenSquare,
   Phone,
@@ -32,8 +36,10 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Target,
   Upload,
   UserPlus,
+  UserRoundCheck,
   Users,
   Video,
   WandSparkles,
@@ -42,17 +48,58 @@ import styles from './dashboard.module.css'
 import * as mock from './mock-data'
 import type {
   ConversationRecord,
+  CrmDashboardProps,
   DashboardSection,
   EmailRecord,
+  IntegrationStatus,
   LeadRecord,
   LeadStage,
   MetricItem,
   ProcessStep,
+  RawMetric,
   SiteRequestRecord,
   TableTab,
   VideoRecord,
-  CrmDashboardProps,
 } from './types'
+
+function enrichMetrics(raw: RawMetric[], section: 'leads' | 'video' | 'email' | 'siteRequest'): MetricItem[] {
+  const iconMaps: Record<string, Record<string, MetricItem['icon']>> = {
+    leads: {
+      'Total leads': Users,
+      'New this week': CalendarDays,
+      'Qualified leads': UserRoundCheck,
+      'High-intent leads': Users,
+      'Meetings booked': CalendarDays,
+      'Pipeline value': DollarSign,
+    },
+    video: {
+      'Total videos': Video,
+      'Sent this week': MonitorPlay,
+      'Avg watch rate': Activity,
+      'Meetings booked': CalendarDays,
+    },
+    email: {
+      'Emails sent': Mail,
+      'Open rate': Target,
+      'Click rate': BarChart3,
+      'Reply rate': MessageSquare,
+    },
+    siteRequest: {
+      'Open requests': Users,
+      'New this week': CalendarDays,
+      'Qualified': UserRoundCheck,
+      'Pipeline value': DollarSign,
+    },
+  }
+  const iconMap = iconMaps[section] || {}
+  return raw.map(m => ({
+    label: m.label,
+    value: m.value,
+    delta: m.delta,
+    icon: iconMap[m.label] || Users,
+    sparkline: [],
+  }))
+}
 
 type MenuItem = {
   label: string
@@ -168,16 +215,28 @@ const PAGE_META: Record<DashboardSection, { title: string; description: string; 
   },
 }
 
-export function CrmDashboard({ 
+export function CrmDashboard({
   section,
   initialLeads = [],
   initialVideos = [],
   initialEmails = [],
   initialConversations = [],
   initialSiteRequests = [],
+  leadMetrics: rawLeadMetrics,
+  videoMetrics: rawVideoMetrics,
+  emailMetrics: rawEmailMetrics,
+  siteRequestMetrics: rawSiteRequestMetrics,
+  messageStats,
+  integrationStatus,
 }: CrmDashboardProps) {
   const meta = PAGE_META[section]
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+
+  const resolvedLeadMetrics = rawLeadMetrics ? enrichMetrics(rawLeadMetrics, 'leads') : mock.leadMetrics
+  const resolvedVideoMetrics = rawVideoMetrics ? enrichMetrics(rawVideoMetrics, 'video') : mock.videoMetrics
+  const resolvedEmailMetrics = rawEmailMetrics ? enrichMetrics(rawEmailMetrics, 'email') : mock.emailMetrics
+  const resolvedSiteRequestMetrics = rawSiteRequestMetrics ? enrichMetrics(rawSiteRequestMetrics, 'siteRequest') : mock.siteRequestMetrics
+  const resolvedIntegrationStatus: IntegrationStatus = integrationStatus ?? mock.integrationStatusSummary
 
   return (
     <div className={styles.shell}>
@@ -237,6 +296,12 @@ export function CrmDashboard({
           initialEmails,
           initialConversations,
           initialSiteRequests,
+          resolvedLeadMetrics,
+          resolvedVideoMetrics,
+          resolvedEmailMetrics,
+          resolvedSiteRequestMetrics,
+          messageStats,
+          resolvedIntegrationStatus,
         })}
       </main>
     </div>
@@ -291,28 +356,36 @@ function Sidebar({ currentSection }: { currentSection: DashboardSection }) {
   )
 }
 
-function renderSection(section: DashboardSection, props: Omit<CrmDashboardProps, 'section'>) {
+type ResolvedSectionProps = Omit<CrmDashboardProps, 'section' | 'leadMetrics' | 'videoMetrics' | 'emailMetrics' | 'siteRequestMetrics' | 'integrationStatus'> & {
+  resolvedLeadMetrics: MetricItem[]
+  resolvedVideoMetrics: MetricItem[]
+  resolvedEmailMetrics: MetricItem[]
+  resolvedSiteRequestMetrics: MetricItem[]
+  resolvedIntegrationStatus: IntegrationStatus
+}
+
+function renderSection(section: DashboardSection, props: ResolvedSectionProps) {
   switch (section) {
     case 'overview':
-      return <OverviewSection initialLeads={props.initialLeads} />
+      return <OverviewSection initialLeads={props.initialLeads} metrics={props.resolvedLeadMetrics} />
     case 'leads':
-      return <LeadsSection initialLeads={props.initialLeads} />
+      return <LeadsSection initialLeads={props.initialLeads} metrics={props.resolvedLeadMetrics} />
     case 'videos':
-      return <VideosSection initialVideos={props.initialVideos} />
+      return <VideosSection initialVideos={props.initialVideos} metrics={props.resolvedVideoMetrics} />
     case 'emails':
-      return <EmailsSection initialEmails={props.initialEmails} />
+      return <EmailsSection initialEmails={props.initialEmails} metrics={props.resolvedEmailMetrics} />
     case 'messages':
-      return <MessagesSection initialConversations={props.initialConversations} />
+      return <MessagesSection initialConversations={props.initialConversations} messageStats={props.messageStats} />
     case 'site-requests':
-      return <SiteRequestsSection initialSiteRequests={props.initialSiteRequests} />
+      return <SiteRequestsSection initialSiteRequests={props.initialSiteRequests} metrics={props.resolvedSiteRequestMetrics} />
     case 'integrations':
-      return <IntegrationsSection />
+      return <IntegrationsSection integrationStatus={props.resolvedIntegrationStatus} />
     default:
       return null
   }
 }
 
-function OverviewSection({ initialLeads = [] }: { initialLeads?: LeadRecord[] }) {
+function OverviewSection({ initialLeads = [], metrics = mock.leadMetrics }: { initialLeads?: LeadRecord[]; metrics?: MetricItem[] }) {
   const [selectedId, setSelectedId] = useState(initialLeads[0]?.id || '')
   const [query, setQuery] = useState('')
   const [activeTab, setActiveTab] = useState('All leads')
@@ -324,7 +397,7 @@ function OverviewSection({ initialLeads = [] }: { initialLeads?: LeadRecord[] })
 
   return (
     <>
-      <MetricGrid items={mock.leadMetrics} />
+      <MetricGrid items={metrics} />
       <ProcessRow
         title="Guide to Sale: Your sales process"
         steps={mock.leadProcess}
@@ -377,7 +450,7 @@ function OverviewSection({ initialLeads = [] }: { initialLeads?: LeadRecord[] })
   )
 }
 
-function LeadsSection({ initialLeads = [] }: { initialLeads?: LeadRecord[] }) {
+function LeadsSection({ initialLeads = [], metrics = mock.leadMetrics }: { initialLeads?: LeadRecord[]; metrics?: MetricItem[] }) {
   const [selectedId, setSelectedId] = useState(initialLeads[0]?.id || '')
   const [query, setQuery] = useState('')
   const [activeTab, setActiveTab] = useState('All leads')
@@ -388,7 +461,7 @@ function LeadsSection({ initialLeads = [] }: { initialLeads?: LeadRecord[] }) {
 
   return (
     <>
-      <MetricGrid items={mock.leadMetrics} />
+      <MetricGrid items={metrics} />
       <ProcessRow
         title="Guide to Sale: Your lead conversion process"
         steps={mock.leadProcess}
@@ -440,7 +513,7 @@ function LeadsSection({ initialLeads = [] }: { initialLeads?: LeadRecord[] }) {
   )
 }
 
-function VideosSection({ initialVideos = [] }: { initialVideos?: VideoRecord[] }) {
+function VideosSection({ initialVideos = [], metrics = mock.videoMetrics }: { initialVideos?: VideoRecord[]; metrics?: MetricItem[] }) {
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(initialVideos[0]?.id || '')
   const [showStageMenu, setShowStageMenu] = useState(true)
@@ -462,7 +535,7 @@ function VideosSection({ initialVideos = [] }: { initialVideos?: VideoRecord[] }
   if (!selectedVideo) {
     return (
       <>
-        <MetricGrid items={mock.videoMetrics} />
+        <MetricGrid items={metrics} />
 
         <div className={styles.panelGrid}>
           <div className={cx(styles.panel, styles.tablePanel)}>
@@ -598,7 +671,7 @@ function VideosSection({ initialVideos = [] }: { initialVideos?: VideoRecord[] }
   )
 }
 
-function EmailsSection({ initialEmails = [] }: { initialEmails?: EmailRecord[] }) {
+function EmailsSection({ initialEmails = [], metrics = mock.emailMetrics }: { initialEmails?: EmailRecord[]; metrics?: MetricItem[] }) {
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(initialEmails[1]?.id || initialEmails[0]?.id || '')
   const [stage, setStage] = useState('All stages')
@@ -618,7 +691,7 @@ function EmailsSection({ initialEmails = [] }: { initialEmails?: EmailRecord[] }
 
   return (
     <>
-      <MetricGrid items={mock.emailMetrics} />
+      <MetricGrid items={metrics} />
 
       <div className={styles.emailTop}>
         <div className={styles.twoUp}>
@@ -716,19 +789,20 @@ function EmailsSection({ initialEmails = [] }: { initialEmails?: EmailRecord[] }
   )
 }
 
-function MessagesHeader() {
+function MessagesHeader({ stats }: { stats?: { unread: number; waiting: number; open: number; resolved: number } }) {
+  const s = stats ?? { unread: 12, waiting: 8, open: 48, resolved: 21 }
   return (
     <div className={styles.statusBar}>
       <strong style={{ fontSize: 16 }}>Conversations</strong>
-      <span className={cx(styles.pill, styles.pillRed)}>12 unread</span>
-      <span className={cx(styles.pill, styles.pillYellow)}>8 waiting</span>
-      <span className={cx(styles.pill, styles.pillBlue)}>48 open</span>
-      <span className={cx(styles.pill, styles.pillGreen)}>21 resolved today</span>
+      <span className={cx(styles.pill, styles.pillRed)}>{s.unread} unread</span>
+      <span className={cx(styles.pill, styles.pillYellow)}>{s.waiting} waiting</span>
+      <span className={cx(styles.pill, styles.pillBlue)}>{s.open} open</span>
+      <span className={cx(styles.pill, styles.pillGreen)}>{s.resolved} resolved today</span>
     </div>
   )
 }
 
-function MessagesSection({ initialConversations = [] }: { initialConversations?: ConversationRecord[] }) {
+function MessagesSection({ initialConversations = [], messageStats }: { initialConversations?: ConversationRecord[]; messageStats?: { unread: number; waiting: number; open: number; resolved: number } }) {
   const [selectedId, setSelectedId] = useState(initialConversations[0]?.id || '')
   const [query, setQuery] = useState('')
   const selectedConversation = initialConversations.find((item) => item.id === selectedId) ?? initialConversations[0]
@@ -743,7 +817,7 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
 
   return (
     <>
-      <MessagesHeader />
+      <MessagesHeader stats={messageStats} />
 
       <div className={styles.chatLayout}>
         <div className={cx(styles.panel, styles.tablePanel)}>
@@ -904,7 +978,7 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
   )
 }
 
-function SiteRequestsSection({ initialSiteRequests = [] }: { initialSiteRequests?: SiteRequestRecord[] }) {
+function SiteRequestsSection({ initialSiteRequests = [], metrics = mock.siteRequestMetrics }: { initialSiteRequests?: SiteRequestRecord[]; metrics?: MetricItem[] }) {
   const [selectedId, setSelectedId] = useState(initialSiteRequests[0]?.id || '')
   const [query, setQuery] = useState('')
   const [showStageMenu, setShowStageMenu] = useState(false)
@@ -921,7 +995,7 @@ function SiteRequestsSection({ initialSiteRequests = [] }: { initialSiteRequests
 
   return (
     <>
-      <MetricGrid items={mock.siteRequestMetrics} />
+      <MetricGrid items={metrics} />
 
       <div className={styles.requestColumns}>
         <div className={cx(styles.panel, styles.tablePanel)}>
@@ -1094,23 +1168,23 @@ function SiteRequestsSection({ initialSiteRequests = [] }: { initialSiteRequests
   )
 }
 
-function IntegrationStatusBar() {
+function IntegrationStatusBar({ status }: { status: IntegrationStatus }) {
   return (
     <div className={styles.statusBar}>
       <div className={styles.statusStat}>
         <span className={cx(styles.pill, styles.pillGreen)}>●</span>
         <span>Connected</span>
-        <strong>{mock.integrationStatusSummary.connected}</strong>
+        <strong>{status.connected}</strong>
       </div>
       <div className={styles.statusStat}>
         <span className={cx(styles.pill, styles.pillBlue)}>●</span>
         <span>Suggested</span>
-        <strong>{mock.integrationStatusSummary.suggested}</strong>
+        <strong>{status.suggested}</strong>
       </div>
       <div className={styles.statusStat}>
         <span className={cx(styles.pill, styles.pillYellow)}>●</span>
         <span>Pending</span>
-        <strong>{mock.integrationStatusSummary.pending}</strong>
+        <strong>{status.pending}</strong>
       </div>
       <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 14 }}>
         Last synced: 2 minutes ago
@@ -1119,10 +1193,10 @@ function IntegrationStatusBar() {
   )
 }
 
-function IntegrationsSection() {
+function IntegrationsSection({ integrationStatus = mock.integrationStatusSummary }: { integrationStatus?: IntegrationStatus }) {
   return (
     <>
-      <IntegrationStatusBar />
+      <IntegrationStatusBar status={integrationStatus} />
       <div className={styles.integrationsGrid}>
         <IntegrationCard
           icon={<DatabaseIcon size={18} />}

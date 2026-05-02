@@ -174,28 +174,29 @@
 
 .main {
   min-width: 0;
-  padding: 28px 28px 132px;
+  padding: 40px 48px 160px;
   max-width: 1720px;
 }
 
 .pageHeader {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 24px;
+  gap: 32px;
   align-items: start;
   margin-bottom: 26px;
 }
 
 .pageTitle {
   margin: 0;
-  font-size: 32px;
+  font-size: 38px;
   letter-spacing: -0.04em;
+  font-weight: 700;
 }
 
 .pageDescription {
-  margin: 10px 0 0;
+  margin: 14px 0 0;
   color: var(--muted);
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .headerTools {
@@ -330,8 +331,8 @@
 .metricsGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 18px;
+  gap: 20px;
+  margin-bottom: 32px;
 }
 
 .metricCard,
@@ -347,39 +348,43 @@
 }
 
 .metricCard {
-  padding: 18px 18px 16px;
+  padding: 24px 22px 20px;
+  min-height: 140px;
 }
 
 .metricHeader {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 17px;
 }
 
 .metricIcon {
-  width: 38px;
-  height: 38px;
-  border-radius: 8px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #60a5fa;
   background: rgba(37, 99, 235, 0.14);
+  flex-shrink: 0;
 }
 
 .metricValue {
   display: block;
-  margin-top: 12px;
-  font-size: 24px;
+  margin-top: 14px;
+  font-size: 40px;
   font-weight: 700;
+  line-height: 1;
 }
 
 .metricDelta {
-  margin-top: 8px;
+  margin-top: 12px;
   color: var(--green);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.4;
 }
 
 .sparkline {
@@ -401,7 +406,7 @@
 
 .processTitle {
   margin: 0 0 14px;
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .processSteps {
@@ -495,25 +500,26 @@
 }
 
 .panel {
-  padding: 20px;
+  padding: 28px;
 }
 
 .panelHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
 .panelTitle {
   margin: 0;
-  font-size: 16px;
+  font-size: 19px;
+  font-weight: 600;
 }
 
 .panelLink {
   color: #3b82f6;
-  font-size: 14px;
+  font-size: 15px;
   text-decoration: none;
 }
 
@@ -825,14 +831,14 @@
 }
 
 .rightPanel {
-  padding: 20px;
+  padding: 28px;
 }
 
 .taskList,
 .goalList,
 .timelineList {
   display: grid;
-  gap: 12px;
+  gap: 16px;
 }
 
 .taskRow {
