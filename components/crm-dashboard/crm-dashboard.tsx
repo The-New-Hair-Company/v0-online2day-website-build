@@ -46,11 +46,14 @@ import {
 } from 'lucide-react'
 import styles from './dashboard.module.css'
 import * as mock from './mock-data'
+import { sendEnterpriseEmail } from '@/lib/actions/email-actions'
 import type {
   ConversationRecord,
   CrmDashboardProps,
   DashboardSection,
   EmailRecord,
+  EmailComposerLead,
+  EmailComposerVideo,
   IntegrationStatus,
   LeadRecord,
   LeadStage,
@@ -83,6 +86,10 @@ function enrichMetrics(raw: RawMetric[], section: 'leads' | 'video' | 'email' | 
       'Open rate': Target,
       'Click rate': BarChart3,
       'Reply rate': MessageSquare,
+      'Meetings booked': CalendarDays,
+      'Sequences active': Link2,
+      'Deliverability': ShieldCheck,
+      'Revenue influenced': DollarSign,
     },
     siteRequest: {
       'Open requests': Users,
@@ -228,6 +235,7 @@ export function CrmDashboard({
   siteRequestMetrics: rawSiteRequestMetrics,
   messageStats,
   integrationStatus,
+  emailComposerData,
 }: CrmDashboardProps) {
   const meta = PAGE_META[section]
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -302,6 +310,7 @@ export function CrmDashboard({
           resolvedSiteRequestMetrics,
           messageStats,
           resolvedIntegrationStatus,
+          emailComposerData,
         })}
       </main>
     </div>
@@ -373,7 +382,7 @@ function renderSection(section: DashboardSection, props: ResolvedSectionProps) {
     case 'videos':
       return <VideosSection initialVideos={props.initialVideos} metrics={props.resolvedVideoMetrics} />
     case 'emails':
-      return <EmailsSection initialEmails={props.initialEmails} metrics={props.resolvedEmailMetrics} />
+      return <EmailsSection initialEmails={props.initialEmails} metrics={props.resolvedEmailMetrics} composerData={props.emailComposerData} />
     case 'messages':
       return <MessagesSection initialConversations={props.initialConversations} messageStats={props.messageStats} />
     case 'site-requests':
@@ -671,11 +680,20 @@ function VideosSection({ initialVideos = [], metrics = mock.videoMetrics }: { in
   )
 }
 
-function EmailsSection({ initialEmails = [], metrics = mock.emailMetrics }: { initialEmails?: EmailRecord[]; metrics?: MetricItem[] }) {
+function EmailsSection({
+  initialEmails = [],
+  metrics = mock.emailMetrics,
+  composerData = { leads: [], videos: [] },
+}: {
+  initialEmails?: EmailRecord[]
+  metrics?: MetricItem[]
+  composerData?: { leads: EmailComposerLead[]; videos: EmailComposerVideo[] }
+}) {
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(initialEmails[1]?.id || initialEmails[0]?.id || '')
   const [stage, setStage] = useState('All stages')
   const [showStageMenu, setShowStageMenu] = useState(true)
+  const [isComposerOpen, setIsComposerOpen] = useState(false)
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
@@ -777,15 +795,143 @@ function EmailsSection({ initialEmails = [], metrics = mock.emailMetrics }: { in
             <div className={styles.subtle}>Pair this email with a personalised video to lift reply rate and move leads to meeting booked.</div>
           </div>
           <div className={styles.actionGroup}>
-            <button className={styles.button}>Preview email</button>
-            <button className={styles.button}>Send test</button>
-            <button className={styles.buttonPrimary}>Launch campaign</button>
+            <button className={styles.button} onClick={() => setIsComposerOpen(true)}>Preview email</button>
+            <button className={styles.button} onClick={() => setIsComposerOpen(true)}>Send test</button>
+            <button className={styles.buttonPrimary} onClick={() => setIsComposerOpen(true)}>Launch campaign</button>
             <button className={styles.button}>Create sequence</button>
             <button className={styles.button}><MoreHorizontal size={16} /></button>
           </div>
         </div>
       )}
+      {isComposerOpen ? (
+        <EnterpriseEmailComposer
+          selectedTemplate={selectedEmail}
+          leads={composerData.leads}
+          videos={composerData.videos}
+          onClose={() => setIsComposerOpen(false)}
+        />
+      ) : null}
     </>
+  )
+}
+
+function EnterpriseEmailComposer({
+  selectedTemplate,
+  leads,
+  videos,
+  onClose,
+}: {
+  selectedTemplate?: EmailRecord
+  leads: EmailComposerLead[]
+  videos: EmailComposerVideo[]
+  onClose: () => void
+}) {
+  const firstLead = leads.find((lead) => lead.email) || leads[0]
+  const [leadId, setLeadId] = useState(firstLead?.id || '')
+  const selectedLead = leads.find((lead) => lead.id === leadId)
+  const leadVideos = videos.filter((video) => !leadId || video.leadId === leadId)
+  const [videoAssetId, setVideoAssetId] = useState(leadVideos[0]?.id || '')
+  const [to, setTo] = useState(firstLead?.email || '')
+  const [subject, setSubject] = useState(selectedTemplate?.subject || 'A quick personalised video from Online2Day')
+  const [body, setBody] = useState(`I wanted to send over a focused follow-up for ${firstLead?.company || 'your team'}.\n\nThe video below walks through the most relevant next step and gives you a simple way to book a call if it is useful.`)
+  const [sending, setSending] = useState(false)
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  function handleLeadChange(nextLeadId: string) {
+    const nextLead = leads.find((lead) => lead.id === nextLeadId)
+    const nextVideos = videos.filter((video) => video.leadId === nextLeadId)
+    setLeadId(nextLeadId)
+    setTo(nextLead?.email || '')
+    setVideoAssetId(nextVideos[0]?.id || '')
+  }
+
+  async function handleSend() {
+    setSending(true)
+    setStatus(null)
+    const result = await sendEnterpriseEmail({
+      leadId,
+      to,
+      recipientName: selectedLead?.name,
+      subject,
+      body,
+      templateName: selectedTemplate?.template,
+      videoAssetId: videoAssetId || undefined,
+      ctaLabel: selectedTemplate?.cta || 'Watch video',
+    })
+    setSending(false)
+    if ('error' in result && result.error) {
+      setStatus({ type: 'error', message: String(result.error) })
+      return
+    }
+    setStatus({ type: 'success', message: 'Email sent and logged against the lead timeline.' })
+  }
+
+  return (
+    <div className={styles.modalOverlay} onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <section className={styles.emailComposerModal} aria-label="Enterprise email composer">
+        <header className={styles.emailComposerHeader}>
+          <div>
+            <h2>Enterprise email send</h2>
+            <p>Send via Resend, stream attached videos from Supabase, and log the activity for audit.</p>
+          </div>
+          <button type="button" onClick={onClose}>x</button>
+        </header>
+        <div className={styles.emailComposerGrid}>
+          <div className={styles.emailComposerForm}>
+            <label>
+              <span>Lead</span>
+              <select value={leadId} onChange={(event) => handleLeadChange(event.target.value)}>
+                <option value="">Manual recipient</option>
+                {leads.map((lead) => (
+                  <option key={lead.id} value={lead.id}>{lead.name} - {lead.company} {lead.email ? `(${lead.email})` : ''}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Recipient email</span>
+              <input value={to} onChange={(event) => setTo(event.target.value)} placeholder="client@example.com" type="email" />
+            </label>
+            <label>
+              <span>Subject</span>
+              <input value={subject} onChange={(event) => setSubject(event.target.value)} />
+            </label>
+            <label>
+              <span>Database video attachment</span>
+              <select value={videoAssetId} onChange={(event) => setVideoAssetId(event.target.value)}>
+                <option value="">No video attached</option>
+                {(leadVideos.length > 0 ? leadVideos : videos).map((video) => (
+                  <option key={video.id} value={video.id}>{video.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Message</span>
+              <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={10} />
+            </label>
+            {status ? <div className={status.type === 'success' ? styles.sendSuccess : styles.sendError}>{status.message}</div> : null}
+            <div className={styles.emailComposerActions}>
+              <button className={styles.button} onClick={onClose}>Cancel</button>
+              <button className={styles.buttonPrimary} onClick={handleSend} disabled={sending}>{sending ? 'Sending...' : 'Send email'}</button>
+            </div>
+          </div>
+          <aside className={styles.emailPreview}>
+            <div className={styles.previewBrand}>Online2Day</div>
+            <strong>{subject || 'Subject line'}</strong>
+            <p>{selectedLead ? `Hi ${selectedLead.name},` : 'Hi there,'}</p>
+            {body.split(/\n{2,}/).map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+            {videoAssetId ? (
+              <div className={styles.videoAttachPreview}>
+                <Video size={22} />
+                <div>
+                  <strong>{videos.find((video) => video.id === videoAssetId)?.name || 'Attached video'}</strong>
+                  <span>Streams from the secure video page when opened.</span>
+                </div>
+              </div>
+            ) : null}
+          </aside>
+        </div>
+      </section>
+    </div>
   )
 }
 

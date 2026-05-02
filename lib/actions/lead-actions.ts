@@ -131,7 +131,7 @@ export async function updateLeadStatus(leadId: string, status: string) {
   return { success: true }
 }
 
-export async function logLeadEvent(leadId: string, type: string, note?: string) {
+export async function logLeadEvent(leadId: string, type: string, note?: string, metadata?: Record<string, unknown>) {
   const supabase = await createClient()
   const { data: user } = await supabase.auth.getUser()
 
@@ -139,6 +139,7 @@ export async function logLeadEvent(leadId: string, type: string, note?: string) 
     lead_id: leadId,
     type,
     note: note || '',
+    metadata: metadata || null,
     created_by: user.user?.id || null,
   })
 

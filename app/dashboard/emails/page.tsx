@@ -1,11 +1,12 @@
 import { CrmDashboard } from '@/components/crm-dashboard/crm-dashboard'
-import { getEmails, getEmailMetrics } from '@/app/actions/dashboard'
+import { getEmails, getEmailMetrics, getEmailComposerData } from '@/app/actions/dashboard'
 
 export default async function EmailsPage() {
-  const [initialEmails, emailMetrics] = await Promise.all([
+  const [initialEmails, emailMetrics, emailComposerData] = await Promise.all([
     getEmails(),
     getEmailMetrics(),
+    getEmailComposerData(),
   ])
 
-  return <CrmDashboard section="emails" initialEmails={initialEmails} emailMetrics={emailMetrics} />
+  return <CrmDashboard section="emails" initialEmails={initialEmails} emailMetrics={emailMetrics} emailComposerData={emailComposerData} />
 }

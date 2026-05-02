@@ -7,7 +7,25 @@ import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import styles from '@/components/leads/LeadsDashboard.module.css'
 
 type ThemeChoice = 'dark' | 'light'
-type TextSize = 'sm' | 'md' | 'lg'
+type TextSize = 'sm' | 'md' | 'lg' | 'xl'
+type AccessibilitySettings = {
+  theme: ThemeChoice
+  textSize: TextSize
+  contrast: 'standard' | 'high'
+  motion: 'standard' | 'reduced'
+  font: 'standard' | 'readable'
+  lineHeight: 'standard' | 'relaxed'
+}
+
+const ACCESSIBILITY_KEY = 'o2d_accessibility_settings'
+const defaultAccessibility: AccessibilitySettings = {
+  theme: 'dark',
+  textSize: 'md',
+  contrast: 'standard',
+  motion: 'standard',
+  font: 'standard',
+  lineHeight: 'standard',
+}
 
 function logGdpr(action: string, resource: string, id: string, changes?: string) {
   const entry = { ts: new Date().toISOString(), action, resource, id, changes }
@@ -19,26 +37,46 @@ export function SettingsClient() {
   const [activeTab, setActiveTab] = useState<'appearance' | 'license'>('appearance')
   const [theme, setTheme] = useState<ThemeChoice>('dark')
   const [textSize, setTextSize] = useState<TextSize>('md')
+  const [contrast, setContrast] = useState<AccessibilitySettings['contrast']>('standard')
+  const [motion, setMotion] = useState<AccessibilitySettings['motion']>('standard')
+  const [font, setFont] = useState<AccessibilitySettings['font']>('standard')
+  const [lineHeight, setLineHeight] = useState<AccessibilitySettings['lineHeight']>('standard')
   const [licenseKey, setLicenseKey] = useState('')
   const [licenseStatus, setLicenseStatus] = useState<'active' | 'trial' | 'none'>('trial')
 
   useEffect(() => {
-    setTheme((localStorage.getItem('crm_theme') as ThemeChoice) || 'dark')
-    setTextSize((localStorage.getItem('crm_textsize') as TextSize) || 'md')
+    const stored = JSON.parse(localStorage.getItem(ACCESSIBILITY_KEY) || '{}') as Partial<AccessibilitySettings>
+    const next = { ...defaultAccessibility, ...stored }
+    setTheme(next.theme)
+    setTextSize(next.textSize)
+    setContrast(next.contrast)
+    setMotion(next.motion)
+    setFont(next.font)
+    setLineHeight(next.lineHeight)
     setLicenseKey(localStorage.getItem('crm_license_key') || '')
     setLicenseStatus((localStorage.getItem('crm_license_status') as typeof licenseStatus) || 'trial')
   }, [])
 
-  function saveTheme(nextTheme: ThemeChoice) {
-    setTheme(nextTheme)
-    localStorage.setItem('crm_theme', nextTheme)
-    logGdpr('update', 'dashboard_setting', 'theme', nextTheme)
-  }
+  function saveAccessibility(patch: Partial<AccessibilitySettings>) {
+    const next = { theme, textSize, contrast, motion, font, lineHeight, ...patch }
+    setTheme(next.theme)
+    setTextSize(next.textSize)
+    setContrast(next.contrast)
+    setMotion(next.motion)
+    setFont(next.font)
+    setLineHeight(next.lineHeight)
 
-  function saveTextSize(nextSize: TextSize) {
-    setTextSize(nextSize)
-    localStorage.setItem('crm_textsize', nextSize)
-    logGdpr('update', 'dashboard_setting', 'text_size', nextSize)
+    document.documentElement.dataset.theme = next.theme
+    document.documentElement.dataset.textSize = next.textSize
+    document.documentElement.dataset.contrast = next.contrast
+    document.documentElement.dataset.motion = next.motion
+    document.documentElement.dataset.font = next.font
+    document.documentElement.dataset.lineHeight = next.lineHeight
+    document.documentElement.classList.toggle('dark', next.theme === 'dark')
+    localStorage.setItem(ACCESSIBILITY_KEY, JSON.stringify(next))
+    localStorage.setItem('crm_theme', next.theme)
+    localStorage.setItem('crm_textsize', next.textSize === 'xl' ? 'lg' : next.textSize)
+    logGdpr('update', 'site_accessibility_setting', 'global', JSON.stringify(patch))
   }
 
   function activateLicense() {
@@ -58,7 +96,7 @@ export function SettingsClient() {
   }
 
   return (
-    <div className={styles.settingsShell} data-theme={theme} data-size={textSize === 'md' ? undefined : textSize}>
+    <div className={styles.settingsShell} data-theme={theme} data-size={textSize === 'md' ? undefined : textSize === 'xl' ? 'lg' : textSize}>
       <DashboardSidebar active="settings" />
       <main className={styles.settingsMain}>
         <div className={styles.titleRow}>
@@ -82,7 +120,7 @@ export function SettingsClient() {
                 <div className={styles.settingRowInfo}><strong>Theme</strong><span>Choose a dark or light workspace.</span></div>
                 <div className={styles.themeOptions}>
                   {(['dark', 'light'] as ThemeChoice[]).map((choice) => (
-                    <button key={choice} className={`${styles.themeOption} ${theme === choice ? styles.themeOptionActive : ''}`} onClick={() => saveTheme(choice)}>
+                    <button key={choice} className={`${styles.themeOption} ${theme === choice ? styles.themeOptionActive : ''}`} onClick={() => saveAccessibility({ theme: choice })}>
                       <div className={styles.themePreview} style={{ background: choice === 'dark' ? 'linear-gradient(135deg, #05070b, #1b2a48)' : 'linear-gradient(135deg, #f7f9ff, #dce8ff)' }} />
                       <span>{choice === 'dark' ? 'Dark' : 'Light'}</span>
                     </button>
@@ -92,11 +130,20 @@ export function SettingsClient() {
               <div className={styles.settingRow}>
                 <div className={styles.settingRowInfo}><strong>Text size</strong><span>Scale interface copy for comfort.</span></div>
                 <div className={styles.textSizeOptions}>
-                  {(['sm', 'md', 'lg'] as TextSize[]).map((size) => (
-                    <button key={size} className={`${styles.textSizeOption} ${textSize === size ? styles.textSizeOptionActive : ''}`} onClick={() => saveTextSize(size)}>
-                      <Type size={size === 'sm' ? 14 : size === 'md' ? 18 : 22} />
+                  {(['sm', 'md', 'lg', 'xl'] as TextSize[]).map((size) => (
+                    <button key={size} className={`${styles.textSizeOption} ${textSize === size ? styles.textSizeOptionActive : ''}`} onClick={() => saveAccessibility({ textSize: size })}>
+                      <Type size={size === 'sm' ? 14 : size === 'md' ? 18 : size === 'lg' ? 22 : 26} />
                     </button>
                   ))}
+                </div>
+              </div>
+              <div className={styles.settingRow}>
+                <div className={styles.settingRowInfo}><strong>Accessibility support</strong><span>Apply stronger contrast, reduced motion and easier reading across the whole site.</span></div>
+                <div className={styles.licenseActions}>
+                  <button className={`${styles.btnSecondary} ${contrast === 'high' ? styles.filterActive : ''}`} onClick={() => saveAccessibility({ contrast: contrast === 'high' ? 'standard' : 'high' })}>High contrast</button>
+                  <button className={`${styles.btnSecondary} ${motion === 'reduced' ? styles.filterActive : ''}`} onClick={() => saveAccessibility({ motion: motion === 'reduced' ? 'standard' : 'reduced' })}>Reduce motion</button>
+                  <button className={`${styles.btnSecondary} ${font === 'readable' ? styles.filterActive : ''}`} onClick={() => saveAccessibility({ font: font === 'readable' ? 'standard' : 'readable' })}>Readable font</button>
+                  <button className={`${styles.btnSecondary} ${lineHeight === 'relaxed' ? styles.filterActive : ''}`} onClick={() => saveAccessibility({ lineHeight: lineHeight === 'relaxed' ? 'standard' : 'relaxed' })}>Relax spacing</button>
                 </div>
               </div>
             </div>

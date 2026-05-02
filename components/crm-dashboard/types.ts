@@ -77,6 +77,22 @@ export type EmailRecord = {
   nextAction: string
 }
 
+export type EmailComposerLead = {
+  id: string
+  name: string
+  company: string
+  email: string
+  status: string
+}
+
+export type EmailComposerVideo = {
+  id: string
+  leadId: string
+  name: string
+  slug: string
+  createdAt: string
+}
+
 export type ConversationRecord = {
   id: string
   name: string
@@ -134,6 +150,10 @@ export interface CrmDashboardProps {
   initialLeads?: LeadRecord[]
   initialVideos?: VideoRecord[]
   initialEmails?: EmailRecord[]
+  emailComposerData?: {
+    leads: EmailComposerLead[]
+    videos: EmailComposerVideo[]
+  }
   initialConversations?: ConversationRecord[]
   initialSiteRequests?: SiteRequestRecord[]
   leadMetrics?: RawMetric[]

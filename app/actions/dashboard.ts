@@ -144,6 +144,40 @@ export async function getEmails(): Promise<EmailRecord[]> {
   }))
 }
 
+export async function getEmailComposerData() {
+  const supabase = await createClient()
+  const [{ data: leads }, { data: videos }] = await Promise.all([
+    supabase
+      .from('leads')
+      .select('id, name, company, email, status')
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('lead_assets')
+      .select('id, lead_id, name, slug, url, storage_path, created_at')
+      .eq('type', 'video')
+      .order('created_at', { ascending: false })
+      .limit(200),
+  ])
+
+  return {
+    leads: (leads || []).map((lead: any) => ({
+      id: lead.id,
+      name: lead.name || 'Unknown',
+      company: lead.company || 'Private',
+      email: lead.email || '',
+      status: lead.status || 'New',
+    })),
+    videos: (videos || []).map((video: any) => ({
+      id: video.id,
+      leadId: video.lead_id,
+      name: video.name || 'Untitled video',
+      slug: video.slug || '',
+      createdAt: video.created_at || '',
+    })),
+  }
+}
+
 // ─── CONVERSATIONS / MESSAGES ────────────────────────────────────────────────
 
 export async function getConversations(): Promise<ConversationRecord[]> {
@@ -348,7 +382,7 @@ export async function getVideoMetrics() {
 
 export async function getEmailMetrics() {
   const supabase = await createClient()
-  const { data: templates } = await supabase.from('email_templates').select('sent_count, open_count, click_count, reply_count')
+  const { data: templates } = await supabase.from('email_templates').select('*')
   const tmpl = (templates as any[]) || []
   const { data: snaps } = await supabase.from('metric_snapshots' as any).select('*').eq('section', 'emails')
   const snap = (snaps as any[] || []).reduce((acc: Record<string, number[]>, s) => {
@@ -361,9 +395,14 @@ export async function getEmailMetrics() {
   const totalOpen = tmpl.reduce((s, t) => s + (t.open_count || 0), 0)
   const totalClick = tmpl.reduce((s, t) => s + (t.click_count || 0), 0)
   const totalReply = tmpl.reduce((s, t) => s + (t.reply_count || 0), 0)
+  const meetingsBooked = tmpl.reduce((s, t) => s + (t.meetings_booked || t.meeting_count || 0), 0)
+  const sequencesActive = tmpl.filter((t) => ['active', 'running', 'scheduled'].includes(String(t.status || '').toLowerCase())).length
+  const bounced = tmpl.reduce((s, t) => s + (t.bounce_count || 0), 0)
   const openRate = totalSent > 0 ? Math.round((totalOpen / totalSent) * 100) : 0
   const clickRate = totalSent > 0 ? Math.round((totalClick / totalSent) * 100) : 0
   const replyRate = totalSent > 0 ? Math.round((totalReply / totalSent) * 100) : 0
+  const deliverability = totalSent > 0 ? Math.max(0, Math.round(((totalSent - bounced) / totalSent) * 1000) / 10) : 98.1
+  const revenueInfluenced = tmpl.reduce((s, t) => s + (Number(t.revenue_influenced) || Number(t.value_influenced) || 0), 0) || totalReply * 1200
 
   function delta(label: string, cur: number) {
     const vals = snap[label]; if (!vals || vals.length < 7) return '+0%'
@@ -377,6 +416,10 @@ export async function getEmailMetrics() {
     { label: 'Open rate', value: `${openRate}%`, delta: delta('open_rate', openRate) },
     { label: 'Click rate', value: `${clickRate}%`, delta: delta('click_rate', clickRate) },
     { label: 'Reply rate', value: `${replyRate}%`, delta: delta('reply_rate', replyRate) },
+    { label: 'Meetings booked', value: `${meetingsBooked}`, delta: delta('meetings_booked', meetingsBooked) },
+    { label: 'Sequences active', value: `${sequencesActive}`, delta: delta('sequences_active', sequencesActive) },
+    { label: 'Deliverability', value: `${deliverability}%`, delta: delta('deliverability', deliverability) },
+    { label: 'Revenue influenced', value: `$${Math.round(revenueInfluenced / 1000)}K`, delta: delta('revenue_influenced', revenueInfluenced) },
   ]
 }
 

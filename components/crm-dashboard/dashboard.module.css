@@ -1171,6 +1171,177 @@
   color: var(--text);
 }
 
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(8px);
+}
+
+.emailComposerModal {
+  width: min(1080px, 100%);
+  max-height: min(820px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(12, 18, 30, 0.99), rgba(6, 11, 19, 0.99));
+  box-shadow: 0 32px 90px rgba(0, 0, 0, 0.62);
+}
+
+.emailComposerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.emailComposerHeader h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.emailComposerHeader p {
+  margin: 5px 0 0;
+  color: var(--muted);
+}
+
+.emailComposerHeader button {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.emailComposerGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+  gap: 0;
+  max-height: calc(100vh - 150px);
+  overflow: auto;
+}
+
+.emailComposerForm,
+.emailPreview {
+  padding: 24px;
+}
+
+.emailComposerForm {
+  display: grid;
+  gap: 14px;
+  border-right: 1px solid var(--line);
+}
+
+.emailComposerForm label {
+  display: grid;
+  gap: 7px;
+}
+
+.emailComposerForm label span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.emailComposerForm input,
+.emailComposerForm select,
+.emailComposerForm textarea {
+  width: 100%;
+  border: 1px solid rgba(97, 127, 178, 0.36);
+  border-radius: 9px;
+  background: rgba(4, 9, 17, 0.88);
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+  outline: none;
+}
+
+.emailComposerForm textarea {
+  resize: vertical;
+  min-height: 160px;
+}
+
+.emailComposerActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.emailComposerActions button:disabled {
+  opacity: 0.56;
+  cursor: wait;
+}
+
+.sendSuccess,
+.sendError {
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.sendSuccess {
+  color: #5eea94;
+  border: 1px solid rgba(34, 197, 94, 0.32);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.sendError {
+  color: #ff9a9a;
+  border: 1px solid rgba(239, 68, 68, 0.34);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.emailPreview {
+  background:
+    linear-gradient(180deg, rgba(47, 107, 255, 0.08), transparent 34%),
+    rgba(255, 255, 255, 0.018);
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.previewBrand {
+  color: #4d86ff;
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.emailPreview > strong {
+  font-size: 20px;
+}
+
+.emailPreview p {
+  margin: 0;
+  color: #c5cfdd;
+  line-height: 1.65;
+}
+
+.videoAttachPreview {
+  margin-top: 10px;
+  border: 1px solid rgba(47, 107, 255, 0.55);
+  border-radius: 12px;
+  padding: 16px;
+  background: rgba(47, 107, 255, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.videoAttachPreview span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
 @media (max-width: 1400px) {
   .metricsGrid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1223,8 +1394,14 @@
   .suggestedReplies,
   .statusLine,
   .processSteps,
-  .integrationsGrid {
+  .integrationsGrid,
+  .emailComposerGrid {
     grid-template-columns: 1fr;
+  }
+
+  .emailComposerForm {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
   }
 
   .table {
