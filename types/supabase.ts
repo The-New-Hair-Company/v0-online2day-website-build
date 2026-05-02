@@ -201,5 +201,5 @@ export type Database = {
 type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
 type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
-export type Tables<T extends keyof DefaultSchema["Tables"]] = DefaultSchema["Tables"][T]["Row"]
-export type Views<T extends keyof DefaultSchema["Views"]] = DefaultSchema["Views"][T]["Row"]
+export type Tables<T extends keyof DefaultSchema["Tables"]> = DefaultSchema["Tables"][T]["Row"]
+export type Views<T extends keyof DefaultSchema["Views"]> = DefaultSchema["Views"][T]["Row"]

@@ -427,7 +427,7 @@ function OverviewSection({ initialLeads = [], metrics = mock.leadMetrics }: { in
 
       <div className={styles.panelGrid}>
         <div className={cx(styles.panel, styles.tablePanel)}>
-          <Tabs tabs={leadTabs} activeTab={activeTab} onChange={setActiveTab} />
+          <Tabs tabs={mock.leadTabs} activeTab={activeTab} onChange={setActiveTab} />
           <LeadToolbar
             query={query}
             onQueryChange={setQuery}
@@ -490,7 +490,7 @@ function LeadsSection({ initialLeads = [], metrics = mock.leadMetrics }: { initi
 
       <div className={styles.panelGrid}>
         <div className={cx(styles.panel, styles.tablePanel)}>
-          <Tabs tabs={leadTabs} activeTab={activeTab} onChange={setActiveTab} />
+          <Tabs tabs={mock.leadTabs} activeTab={activeTab} onChange={setActiveTab} />
           <LeadToolbar
             query={query}
             onQueryChange={setQuery}
@@ -1366,7 +1366,7 @@ function LeadToolbar({
         </button>
         {showStageMenu ? (
           <div className={styles.dropdown}>
-            {leadStages.map((item) => (
+            {mock.leadStages.map((item) => (
               <button key={item} className={cx(stage === item && styles.dropdownActive)} onClick={() => onStageChange(item)}>
                 {item}
               </button>

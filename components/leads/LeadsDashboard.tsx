@@ -110,6 +110,7 @@ export default function LeadsDashboard({
 
   // UI state
   const [isStageOpen, setIsStageOpen] = useState(false)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [activeModal, setActiveModal] = useState<ActiveModal>(null)
   const [showTimerWidget, setShowTimerWidget] = useState(false)
   const [contactInputType, setContactInputType] = useState<'email' | 'phone' | 'linkedin'>('email')
@@ -276,16 +277,18 @@ export default function LeadsDashboard({
               <Icon name="export" /> Export
             </button>
             <div className={styles.createWrap}>
-              <button className={styles.primaryButton} onClick={() => setActiveModal(activeModal === null ? 'addLead' : null)}>
+              <button className={styles.primaryButton} onClick={() => setIsCreateOpen((open) => !open)}>
                 <Icon name="plus" /> Create / Add <Icon name="chevron" />
               </button>
-              <CreateMenu
-                onAddLead={() => setActiveModal('addLead')}
-                onCreateTask={() => setActiveModal('createTask')}
-                onUploadContacts={() => setActiveModal('uploadContacts')}
-                onLogActivity={() => setActiveModal('logActivity')}
-                onShowTimer={() => { setShowTimerWidget(true); setActiveModal(null) }}
-              />
+              {isCreateOpen ? (
+                <CreateMenu
+                  onAddLead={() => { setActiveModal('addLead'); setIsCreateOpen(false) }}
+                  onCreateTask={() => { setActiveModal('createTask'); setIsCreateOpen(false) }}
+                  onUploadContacts={() => { setActiveModal('uploadContacts'); setIsCreateOpen(false) }}
+                  onLogActivity={() => { setActiveModal('logActivity'); setIsCreateOpen(false) }}
+                  onShowTimer={() => { setShowTimerWidget(true); setActiveModal(null); setIsCreateOpen(false) }}
+                />
+              ) : null}
             </div>
           </div>
         </header>
@@ -532,7 +535,16 @@ function CreateMenu({ onAddLead, onCreateTask, onUploadContacts, onLogActivity, 
     { label: 'Create video', icon: 'video' as IconName, action: () => {} },
   ]
 
-  return null // Menu shown via primaryButton click — modals are opened directly
+  return (
+    <div className={styles.createMenu} role="menu">
+      {items.map((item) => (
+        <button key={item.label} role="menuitem" onClick={item.action}>
+          <Icon name={item.icon} />
+          {item.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 // ─── FILTER DROPDOWN (inline) ────────────────────────────────────────────────

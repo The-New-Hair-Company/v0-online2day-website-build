@@ -38,6 +38,12 @@ export type IconName =
   | 'clock'
   | 'columns'
   | 'crown'
+  | 'settings'
+  | 'play'
+  | 'pause'
+  | 'timer'
+  | 'warning'
+  | 'info'
 
 export type LeadStage = 'New' | 'Contacted' | 'Qualified' | 'Proposal Sent' | 'Negotiation' | 'Won'
 export type LeadSource = 'Website' | 'Referral' | 'Cold outreach' | 'Ads' | 'Organic'
