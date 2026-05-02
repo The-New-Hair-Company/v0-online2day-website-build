@@ -61,13 +61,13 @@ export default function ContactPage() {
                 <p className="text-sm text-muted-foreground mb-3">
                   Available during business hours
                 </p>
-                <button className="text-sm text-primary hover:underline">
+                <a href="#message" className="text-sm text-primary hover:underline">
                   Start Chat
-                </button>
+                </a>
               </Card>
             </div>
 
-            <Card className="p-8 md:p-12 bg-card border-border">
+            <Card id="message" className="p-8 md:p-12 bg-card border-border scroll-mt-24">
               <h2 className="text-2xl font-bold mb-6">Send us a message</h2>
               <ContactForm />
             </Card>

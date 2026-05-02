@@ -23,6 +23,42 @@
     var(--bg);
 }
 
+:global(html[data-theme='light']) .shell {
+  --bg: #f4f7fb;
+  --panel: rgba(255, 255, 255, 0.96);
+  --panel-soft: rgba(245, 248, 253, 0.94);
+  --line: rgba(126, 145, 178, 0.30);
+  --line-strong: rgba(37, 99, 235, 0.46);
+  --text: #111827;
+  --muted: #526070;
+  --muted-soft: #6b7788;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 20% -4%, rgba(37, 99, 235, 0.09), transparent 24%),
+    radial-gradient(circle at 82% 4%, rgba(6, 182, 212, 0.06), transparent 18%),
+    var(--bg);
+}
+
+:global(html[data-contrast='high']) .shell {
+  --bg: #000;
+  --panel: #070707;
+  --panel-soft: #111;
+  --line: rgba(255, 255, 255, 0.48);
+  --line-strong: #fff;
+  --text: #fff;
+  --muted: #f1f5f9;
+  --muted-soft: #dbeafe;
+  --blue: #7dd3fc;
+  background: #000;
+}
+
+:global(html[data-text-size='lg']) .shell { font-size: 18px; }
+:global(html[data-text-size='xl']) .shell { font-size: 20px; }
+:global(html[data-font='readable']) .shell {
+  font-family: Arial, Verdana, Tahoma, sans-serif;
+  letter-spacing: 0;
+}
+
 .shell * {
   box-sizing: border-box;
 }
@@ -326,6 +362,36 @@
 .menu button:hover,
 .menu a:hover {
   background: rgba(255, 255, 255, 0.05);
+}
+
+.actionToast {
+  position: fixed;
+  right: 24px;
+  bottom: 86px;
+  z-index: 90;
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(16, 24, 40, 0.98), rgba(7, 12, 20, 0.98));
+  color: var(--text);
+  box-shadow: 0 20px 52px rgba(0, 0, 0, 0.35);
+  display: grid;
+  gap: 4px;
+}
+
+:global(html[data-theme='light']) .actionToast {
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.actionToast strong {
+  font-size: 14px;
+}
+
+.actionToast span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .metricsGrid {

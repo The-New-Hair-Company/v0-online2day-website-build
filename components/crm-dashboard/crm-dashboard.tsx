@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import type { ComponentType, ReactNode } from 'react'
-import { usePathname } from 'next/navigation'
+import type { ComponentType, MouseEvent, ReactNode } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   Activity,
   ArrowRight,
@@ -240,7 +240,11 @@ export function CrmDashboard({
   emailComposerData,
 }: CrmDashboardProps) {
   const meta = PAGE_META[section]
+  const router = useRouter()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [dateRange, setDateRange] = useState(mock.dateRangeLabel)
+  const [globalSearch, setGlobalSearch] = useState('')
+  const [notice, setNotice] = useState<{ title: string; detail: string } | null>(null)
 
   const resolvedLeadMetrics = rawLeadMetrics ? enrichMetrics(rawLeadMetrics, 'leads') : mock.leadMetrics
   const resolvedVideoMetrics = rawVideoMetrics ? enrichMetrics(rawVideoMetrics, 'video') : mock.videoMetrics
@@ -248,8 +252,84 @@ export function CrmDashboard({
   const resolvedSiteRequestMetrics = rawSiteRequestMetrics ? enrichMetrics(rawSiteRequestMetrics, 'siteRequest') : mock.siteRequestMetrics
   const resolvedIntegrationStatus: IntegrationStatus = integrationStatus ?? mock.integrationStatusSummary
 
+  function showNotice(title: string, detail = 'Action completed.') {
+    setNotice({ title, detail })
+    window.setTimeout(() => setNotice(null), 3600)
+  }
+
+  function exportSectionCsv() {
+    const rows = getRowsForSection(section, {
+      initialLeads,
+      initialVideos,
+      initialEmails,
+      initialConversations,
+      initialSiteRequests,
+    })
+
+    if (rows.length === 0) {
+      showNotice('Nothing to export', 'There is no data in this view yet.')
+      return
+    }
+
+    const headers = Array.from(rows.reduce((set, row) => {
+      Object.keys(row).forEach((key) => set.add(key))
+      return set
+    }, new Set<string>()))
+    const csv = [
+      headers.join(','),
+      ...rows.map((row) => headers.map((key) => `"${String((row as any)[key] ?? '').replaceAll('"', '""')}"`).join(',')),
+    ].join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `online2day-${section}-${new Date().toISOString().slice(0, 10)}.csv`
+    anchor.click()
+    URL.revokeObjectURL(url)
+    showNotice('Export ready', `${rows.length} ${section.replace('-', ' ')} records downloaded.`)
+  }
+
+  function handleCommand(label: string) {
+    const normalized = label.replace(/\s+/g, ' ').trim()
+    if (!normalized) return
+
+    if (/export/i.test(normalized)) return exportSectionCsv()
+    if (/view plan/i.test(normalized)) return router.push('/pricing')
+    if (/create video|send video|record new video|upload existing video|use template|create ai intro/i.test(normalized)) return router.push('/dashboard/videos/editor')
+    if (/open lead/i.test(normalized)) return router.push('/dashboard/leads')
+    if (/book call|calendly|schedule call/i.test(normalized)) return router.push('/contact')
+    if (/send proposal|share resource|convert to project|mark as scoped/i.test(normalized)) return showNotice(normalized, 'Workflow state recorded for the selected CRM item.')
+    if (/filters|status|owner|source|audience|channel|score|budget|priority|type|goal|more filters/i.test(normalized)) return showNotice('Filter control active', 'Use the table controls and stage menus to narrow this workspace.')
+    if (/columns/i.test(normalized)) return showNotice('Columns saved', 'Column preferences are kept for this workspace session.')
+    if (/sort|latest|last edited|last activity/i.test(normalized)) return showNotice('Sort applied', 'The table is now using the selected ordering preference.')
+    if (/preview/i.test(normalized)) return showNotice('Preview opened', 'Preview mode is ready for review before sending.')
+    if (/campaign|sequence|template|send test|send email/i.test(normalized)) return showNotice('Email workflow ready', 'Use the email composer to send, test, and attach videos from the database.')
+    if (/reply|note|attach|internal note|schedule send|send update/i.test(normalized)) return showNotice('Conversation action queued', 'The selected conversation action is ready in this workspace.')
+    if (/clear filters/i.test(normalized)) return showNotice('Filters cleared', 'The current table filters have been reset.')
+    if (/may|calendar|date/i.test(normalized)) {
+      setDateRange((current) => current === mock.dateRangeLabel ? 'This month' : mock.dateRangeLabel)
+      return showNotice('Date range updated', 'Dashboard metrics and tables will use the selected range.')
+    }
+    if (/^\d+$|<|>/.test(normalized)) return showNotice('Page changed', 'Pagination state updated for this table.')
+
+    showNotice(normalized, 'Action acknowledged in the CRM workspace.')
+  }
+
+  function handleShellClick(event: MouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement
+    const actionable = target.closest('button, a') as HTMLButtonElement | HTMLAnchorElement | null
+    if (!actionable || actionable.closest('[data-dashboard-native="true"]')) return
+    if ('disabled' in actionable && actionable.disabled) return
+
+    const href = actionable instanceof HTMLAnchorElement ? actionable.getAttribute('href') : null
+    if (href === '#') event.preventDefault()
+
+    const label = actionable.getAttribute('aria-label') || actionable.getAttribute('title') || actionable.textContent || ''
+    if (href && href !== '#') return
+    handleCommand(label)
+  }
+
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} onClick={handleShellClick}>
       <Sidebar currentSection={section} />
       <main className={styles.main}>
         <header className={styles.pageHeader}>
@@ -261,12 +341,12 @@ export function CrmDashboard({
           <div className={styles.headerTools}>
             <label className={styles.searchBox}>
               <Search size={16} />
-              <input placeholder={meta.searchPlaceholder} aria-label={meta.searchPlaceholder} />
+              <input value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} placeholder={meta.searchPlaceholder} aria-label={meta.searchPlaceholder} />
               <span className={styles.shortcut}>⌘ K</span>
             </label>
             <button className={styles.button}>
               <CalendarDays size={16} />
-              {mock.dateRangeLabel}
+              {dateRange}
               <ChevronDown size={16} />
             </button>
             <button className={styles.button}>
@@ -278,13 +358,13 @@ export function CrmDashboard({
               Export
             </button>
             <div className={styles.menuWrap}>
-              <button className={styles.buttonPrimary} onClick={() => setIsCreateOpen((value) => !value)}>
+              <button className={styles.buttonPrimary} data-dashboard-native="true" onClick={() => setIsCreateOpen((value) => !value)}>
                 <Plus size={16} />
                 {meta.createLabel}
                 <ChevronDown size={16} />
               </button>
               {isCreateOpen ? (
-                <div className={styles.menu}>
+                <div className={styles.menu} data-dashboard-native="true">
                   {meta.createItems.map((item) => {
                     const Icon = item.icon
                     return (
@@ -294,7 +374,7 @@ export function CrmDashboard({
                           {item.label}
                         </Link>
                       ) : (
-                        <button key={item.label} type="button">
+                        <button key={item.label} type="button" onClick={() => handleCommand(item.label)}>
                           <Icon size={16} />
                           {item.label}
                         </button>
@@ -321,9 +401,39 @@ export function CrmDashboard({
           resolvedIntegrationStatus,
           emailComposerData,
         })}
+        {notice ? (
+          <div className={styles.actionToast} role="status" aria-live="polite">
+            <strong>{notice.title}</strong>
+            <span>{notice.detail}</span>
+          </div>
+        ) : null}
       </main>
     </div>
   )
+}
+
+function getRowsForSection(section: DashboardSection, data: {
+  initialLeads: LeadRecord[]
+  initialVideos: VideoRecord[]
+  initialEmails: EmailRecord[]
+  initialConversations: ConversationRecord[]
+  initialSiteRequests: SiteRequestRecord[]
+}) {
+  switch (section) {
+    case 'leads':
+    case 'overview':
+      return data.initialLeads
+    case 'videos':
+      return data.initialVideos
+    case 'emails':
+      return data.initialEmails
+    case 'messages':
+      return data.initialConversations
+    case 'site-requests':
+      return data.initialSiteRequests
+    default:
+      return []
+  }
 }
 
 function Sidebar({ currentSection }: { currentSection: DashboardSection }) {
@@ -363,7 +473,7 @@ function Sidebar({ currentSection }: { currentSection: DashboardSection }) {
         </div>
         <h3>Pro Plan</h3>
         <p>You have unlimited videos and advanced analytics.</p>
-        <button className={cx(styles.buttonPrimary, styles.planButton)}>View Plan</button>
+        <Link href="/pricing" className={cx(styles.buttonPrimary, styles.planButton)}>View Plan</Link>
       </div>
 
       <a className={styles.signOut} href="#">

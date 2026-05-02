@@ -26,8 +26,26 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body className="font-sans antialiased">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                var settings = JSON.parse(localStorage.getItem('o2d_accessibility_settings') || '{}');
+                var root = document.documentElement;
+                var theme = settings.theme || localStorage.getItem('crm_theme') || 'dark';
+                root.dataset.theme = theme;
+                root.dataset.textSize = settings.textSize || localStorage.getItem('crm_textsize') || 'md';
+                root.dataset.contrast = settings.contrast || 'standard';
+                root.dataset.motion = settings.motion || 'standard';
+                root.dataset.font = settings.font || 'standard';
+                root.dataset.lineHeight = settings.lineHeight || 'standard';
+                root.classList.toggle('dark', theme === 'dark');
+              } catch (error) {}
+            `,
+          }}
+        />
         <AuthRecoveryHandler />
         {children}
         <AccessibilitySettingsButton />

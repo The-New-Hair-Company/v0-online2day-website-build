@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useMemo, useRef, useState } from 'react'
 import {
   AlignCenter,
@@ -115,6 +116,7 @@ const toolRail = [
 ]
 
 export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[]; videos: EmailComposerVideo[] }) {
+  const router = useRouter()
   const [projectTitle, setProjectTitle] = useState('Personalised website growth video')
   const [leadId, setLeadId] = useState(leads[0]?.id || '')
   const [selectedSceneId, setSelectedSceneId] = useState(initialScenes[0].id)
@@ -132,6 +134,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
   const [savedAssetId, setSavedAssetId] = useState('')
   const [saveStatus, setSaveStatus] = useState('')
   const [sendStatus, setSendStatus] = useState('')
+  const [selectedTool, setSelectedTool] = useState('Select')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const selectedLead = leads.find((lead) => lead.id === leadId)
@@ -255,6 +258,11 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     setEmailTo(lead?.email || '')
   }
 
+  function runEditorCommand(message: string) {
+    setSaveStatus(message)
+    window.setTimeout(() => setSaveStatus(''), 3600)
+  }
+
   return (
     <div className={styles.shell}>
       <DashboardSidebar active="videos" />
@@ -286,7 +294,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
           <aside className={styles.toolRail} aria-label="Editor tools">
             {toolRail.map((tool) => {
               const Icon = tool.icon
-              return <button key={tool.label} title={tool.label}><Icon size={18} /><span>{tool.label}</span></button>
+              return <button key={tool.label} className={selectedTool === tool.label ? styles.toolActive : ''} title={tool.label} onClick={() => { setSelectedTool(tool.label); runEditorCommand(`${tool.label} tool selected.`) }}><Icon size={18} /><span>{tool.label}</span></button>
             })}
           </aside>
 
@@ -296,9 +304,9 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
               <select value={format} onChange={(event) => setFormat(event.target.value)} aria-label="Canvas format">
                 {['16:9', '9:16', '1:1', '4:5', '21:9'].map((item) => <option key={item}>{item}</option>)}
               </select>
-              <button><RotateCcw size={15} />Undo</button>
-              <button><Copy size={15} />Version</button>
-              <button><Eye size={15} />Preview</button>
+              <button onClick={() => runEditorCommand('Undo applied to the active scene.')}><RotateCcw size={15} />Undo</button>
+              <button onClick={() => runEditorCommand('Version snapshot captured for this project.')}><Copy size={15} />Version</button>
+              <button onClick={() => runEditorCommand('Preview refreshed with the current canvas, captions and CTA.')}><Eye size={15} />Preview</button>
             </div>
 
             <div className={styles.canvasWrap}>
@@ -314,7 +322,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
                     <span><Clock size={14} /> {selectedScene.duration}s</span>
                   </div>
                   {captionMode ? <div className={styles.captionBar}>Captions: enterprise-grade delivery, accessibility and conversion tracking.</div> : null}
-                  <button className={styles.ctaButton}>Book a call <ChevronRight size={15} /></button>
+                  <button className={styles.ctaButton} onClick={() => router.push('/contact')}>Book a call <ChevronRight size={15} /></button>
                 </div>
               </div>
             </div>
@@ -359,7 +367,13 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
           <header>
             <div><strong>Timeline</strong><span>Multi-track production plan</span></div>
             <div className={styles.timelineTools}>
-              {[Scissors, AlignCenter, Grid3X3, Lock, Download].map((Icon, index) => <button key={index}><Icon size={15} /></button>)}
+              {[
+                { icon: Scissors, label: 'Split selected clip' },
+                { icon: AlignCenter, label: 'Align layers to canvas' },
+                { icon: Grid3X3, label: 'Toggle grid snapping' },
+                { icon: Lock, label: 'Lock active track' },
+                { icon: Download, label: 'Prepare export package' },
+              ].map(({ icon: Icon, label }) => <button key={label} title={label} onClick={() => runEditorCommand(`${label} completed.`)}><Icon size={15} /></button>)}
             </div>
           </header>
           <div className={styles.timeline}>

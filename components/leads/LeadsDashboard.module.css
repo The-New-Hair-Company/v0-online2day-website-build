@@ -25,6 +25,59 @@
   letter-spacing: -0.01em;
 }
 
+:global(html[data-theme='light']) .shell,
+:global(html[data-theme='light']) .detailShell,
+:global(html[data-theme='light']) .settingsShell,
+:global(html[data-theme='light']) .pricingShell {
+  --bg: #f4f7fb;
+  --panel: rgba(255, 255, 255, 0.96);
+  --panel-2: rgba(244, 248, 255, 0.92);
+  --line: rgba(126, 145, 178, 0.30);
+  --line-strong: rgba(37, 99, 235, 0.50);
+  --text: #111827;
+  --muted: #526070;
+  --muted-2: #6b7788;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 24% -8%, rgba(47, 107, 255, 0.08), transparent 28%),
+    radial-gradient(circle at 80% 10%, rgba(23, 215, 193, 0.04), transparent 24%),
+    var(--bg);
+}
+
+:global(html[data-contrast='high']) .shell,
+:global(html[data-contrast='high']) .detailShell,
+:global(html[data-contrast='high']) .settingsShell,
+:global(html[data-contrast='high']) .pricingShell {
+  --bg: #000;
+  --panel: #070707;
+  --panel-2: #111;
+  --line: rgba(255, 255, 255, 0.48);
+  --line-strong: #fff;
+  --text: #fff;
+  --muted: #f1f5f9;
+  --muted-2: #dbeafe;
+  background: #000;
+  color: #fff;
+}
+
+:global(html[data-text-size='lg']) .shell,
+:global(html[data-text-size='lg']) .detailShell,
+:global(html[data-text-size='lg']) .settingsShell,
+:global(html[data-text-size='lg']) .pricingShell { font-size: 18px; }
+
+:global(html[data-text-size='xl']) .shell,
+:global(html[data-text-size='xl']) .detailShell,
+:global(html[data-text-size='xl']) .settingsShell,
+:global(html[data-text-size='xl']) .pricingShell { font-size: 20px; }
+
+:global(html[data-font='readable']) .shell,
+:global(html[data-font='readable']) .detailShell,
+:global(html[data-font='readable']) .settingsShell,
+:global(html[data-font='readable']) .pricingShell {
+  font-family: Arial, Verdana, Tahoma, sans-serif;
+  letter-spacing: 0;
+}
+
 .shell button,
 .shell input,
 .shell a {
@@ -2926,4 +2979,30 @@
   flex-direction: column-reverse;
   align-items: flex-end;
   gap: 12px;
+}
+
+.actionToast {
+  position: fixed;
+  right: 24px;
+  bottom: 86px;
+  z-index: 90;
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(16, 24, 40, 0.98), rgba(7, 12, 20, 0.98));
+  color: var(--text);
+  box-shadow: 0 20px 52px rgba(0, 0, 0, 0.35);
+  display: grid;
+  gap: 4px;
+}
+
+.actionToast strong {
+  font-size: 14px;
+}
+
+.actionToast span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }

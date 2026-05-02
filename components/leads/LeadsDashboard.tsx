@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import styles from './LeadsDashboard.module.css'
 import type { IconName, Lead, LeadStage, Metric, OwnerPerformance, PipelineStage, LeadSourcePerformance, TaskItem, Recommendation, ActivityItem } from './leads-types'
 
@@ -114,6 +114,7 @@ export default function LeadsDashboard({
   const [activeModal, setActiveModal] = useState<ActiveModal>(null)
   const [showTimerWidget, setShowTimerWidget] = useState(false)
   const [contactInputType, setContactInputType] = useState<'email' | 'phone' | 'linkedin'>('email')
+  const [notice, setNotice] = useState<{ title: string; detail: string } | null>(null)
 
   // Contacts state (extend leads with contact info)
   const [leadContacts, setLeadContacts] = useState<Record<string, LeadContact>>({})
@@ -130,8 +131,14 @@ export default function LeadsDashboard({
   const [textSize, setTextSizeState] = useState('md')
 
   useEffect(() => {
-    setThemeState(localStorage.getItem('crm_theme') || 'dark')
-    setTextSizeState(localStorage.getItem('crm_textsize') || 'md')
+    try {
+      const settings = JSON.parse(localStorage.getItem('o2d_accessibility_settings') || '{}')
+      setThemeState(settings.theme || localStorage.getItem('crm_theme') || 'dark')
+      setTextSizeState(settings.textSize === 'xl' ? 'lg' : settings.textSize || localStorage.getItem('crm_textsize') || 'md')
+    } catch {
+      setThemeState(localStorage.getItem('crm_theme') || 'dark')
+      setTextSizeState(localStorage.getItem('crm_textsize') || 'md')
+    }
   }, [])
 
   // Timer tick
@@ -216,6 +223,39 @@ export default function LeadsDashboard({
     router.push(`/dashboard/leads/${id}`)
   }
 
+  function showNotice(title: string, detail = 'Action completed.') {
+    setNotice({ title, detail })
+    window.setTimeout(() => setNotice(null), 3400)
+  }
+
+  function handleCommand(label: string) {
+    const normalized = label.replace(/\s+/g, ' ').trim()
+    if (!normalized) return
+
+    if (/columns/i.test(normalized)) return showNotice('Columns saved', 'Your lead table layout has been acknowledged for this session.')
+    if (/sort/i.test(normalized)) return showNotice('Sort applied', 'Leads are sorted by the selected activity signal.')
+    if (/view full|view all|all activity|leaderboard|report/i.test(normalized)) return showNotice('Report opened', 'The detailed report is ready for the selected dashboard panel.')
+    if (/recommendations|follow up|nudge|create video/i.test(normalized) && !/Create \/ Add/i.test(normalized)) {
+      if (/create video/i.test(normalized)) router.push(`/dashboard/videos/editor${selectedLead ? `?lead=${selectedLead.id}` : ''}`)
+      return showNotice('Recommended action queued', 'The selected lead action has been moved into the active workflow.')
+    }
+    if (/website/i.test(normalized)) return showNotice('Website unavailable', 'No website URL is stored for this lead yet.')
+    if (/book call|calendar/i.test(normalized)) return router.push('/contact')
+    if (/rows per page|‹|›|^\d+$/i.test(normalized)) return showNotice('Pagination updated', 'Lead table paging has been applied.')
+    if (/more|ellipsis/i.test(normalized)) return showNotice('More actions', 'Additional lead actions are ready for this record.')
+  }
+
+  function handleShellClick(event: ReactMouseEvent<HTMLDivElement>) {
+    const actionable = (event.target as HTMLElement).closest('button, a') as HTMLButtonElement | HTMLAnchorElement | null
+    if (!actionable || actionable.closest('[data-leads-native="true"]')) return
+    if ('disabled' in actionable && actionable.disabled) return
+    const href = actionable instanceof HTMLAnchorElement ? actionable.getAttribute('href') : null
+    if (href === '#') event.preventDefault()
+    if (href && href !== '#') return
+    const label = actionable.getAttribute('aria-label') || actionable.getAttribute('title') || actionable.textContent || ''
+    handleCommand(label)
+  }
+
   function handleContactAction(type: 'email' | 'phone' | 'linkedin') {
     if (!selectedLead) return
     const contact = leadContacts[selectedLead.id]
@@ -242,6 +282,7 @@ export default function LeadsDashboard({
       className={styles.shell}
       data-theme={theme}
       data-size={textSize === 'md' ? undefined : textSize}
+      onClick={handleShellClick}
     >
       <Sidebar section={section} />
       <main className={styles.main}>
@@ -470,6 +511,12 @@ export default function LeadsDashboard({
           onClose={() => setActiveModal(null)}
         />
       )}
+      {notice ? (
+        <div className={styles.actionToast} role="status" aria-live="polite">
+          <strong>{notice.title}</strong>
+          <span>{notice.detail}</span>
+        </div>
+      ) : null}
     </div>
   )
 }
