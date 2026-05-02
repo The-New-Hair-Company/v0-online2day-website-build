@@ -42,11 +42,7 @@ export const leadMetrics: MetricItem[] = [
   { label: 'Total leads', value: '1,248', delta: '+15.8% vs May 4 – May 11', icon: Users, sparkline: [24, 28, 26, 31, 29, 34, 32, 33, 36, 35, 39, 37] },
   { label: 'New this week', value: '156', delta: '+22.4% vs May 4 – May 11', icon: CalendarDays, sparkline: [10, 16, 20, 18, 15, 16, 17, 18, 19, 21, 23, 28] },
   { label: 'Qualified leads', value: '248', delta: '+18.3% vs May 4 – May 11', icon: UserRoundCheck, sparkline: [16, 19, 21, 20, 18, 17, 20, 22, 21, 23, 20, 26] },
-  { label: 'High-intent leads', value: '42', delta: '+31.5% vs May 4 – May 11', icon: Target, sparkline: [7, 8, 11, 10, 14, 13, 12, 16, 15, 17, 14, 19] },
-  { label: 'Meetings booked', value: '32', delta: '+33.3% vs May 4 – May 11', icon: CalendarDays, sparkline: [4, 7, 5, 8, 7, 9, 8, 11, 10, 13, 11, 14] },
-  { label: 'Avg response rate', value: '26%', delta: '+8.7% vs May 4 – May 11', icon: CircleGauge, sparkline: [19, 21, 20, 23, 22, 24, 23, 26, 25, 27, 26, 29] },
   { label: 'Pipeline value', value: '$1.82M', delta: '+15.7% vs May 4 – May 11', icon: DollarSign, sparkline: [36, 37, 38, 39, 38, 40, 42, 43, 44, 45, 47, 49] },
-  { label: 'Revenue influenced', value: '$128K', delta: '+31.6% vs May 4 – May 11', icon: Coins, sparkline: [11, 13, 12, 16, 15, 17, 14, 18, 17, 20, 19, 23] },
 ]
 
 export const leadProcess: ProcessStep[] = [
@@ -81,9 +77,7 @@ export const videoMetrics: MetricItem[] = [
   { label: 'Total videos', value: '238', delta: '+14.3% vs Apr 27 – May 4', icon: Video, sparkline: [12, 12, 13, 13, 12, 13, 14, 14, 15, 14, 14, 15] },
   { label: 'Sent this week', value: '56', delta: '+22.2% vs Apr 27 – May 4', icon: MonitorPlay, sparkline: [7, 7, 8, 7, 6, 7, 7, 6, 8, 8, 9, 8] },
   { label: 'Avg watch rate', value: '68%', delta: '+8.6% vs Apr 27 – May 4', icon: Activity, sparkline: [58, 60, 63, 61, 66, 69, 67, 70, 66, 71, 68, 68] },
-  { label: 'CTA clicks', value: '24', delta: '+33.3% vs Apr 27 – May 4', icon: Target, sparkline: [6, 5, 7, 7, 8, 7, 8, 7, 8, 6, 7, 8] },
   { label: 'Meetings booked', value: '12', delta: '+20.0% vs Apr 27 – May 4', icon: CalendarDays, sparkline: [3, 3, 2, 3, 4, 4, 3, 4, 5, 3, 4, 4] },
-  { label: 'Revenue influenced', value: '$128K', delta: '+31.4% vs Apr 27 – May 4', icon: DollarSign, sparkline: [22, 24, 23, 24, 25, 24, 23, 23, 25, 22, 24, 23] },
 ]
 
 export const videoProcess: ProcessStep[] = [
@@ -110,10 +104,6 @@ export const emailMetrics: MetricItem[] = [
   { label: 'Open rate', value: '46%', delta: '+6.2% vs May 4 – May 10', icon: Target, sparkline: [39, 43, 45, 45, 44, 44, 43, 42, 43, 43, 44, 46] },
   { label: 'Click rate', value: '18%', delta: '+4.1% vs May 4 – May 10', icon: BarChart3, sparkline: [12, 14, 15, 13, 12, 13, 14, 14, 13, 15, 16, 18] },
   { label: 'Reply rate', value: '11%', delta: '+3.7% vs May 4 – May 10', icon: MessageSquare, sparkline: [7, 8, 8, 9, 10, 9, 8, 8, 10, 9, 11, 11] },
-  { label: 'Meetings booked', value: '28', delta: '+27.3% vs May 4 – May 10', icon: CalendarDays, sparkline: [6, 7, 7, 8, 8, 7, 9, 9, 10, 11, 11, 12] },
-  { label: 'Sequences active', value: '12', delta: '+9.1% vs May 4 – May 10', icon: Activity, sparkline: [3, 4, 4, 5, 5, 4, 4, 5, 6, 5, 6, 6] },
-  { label: 'Deliverability', value: '98.1%', delta: '+2.4% vs May 4 – May 10', icon: UserRoundCheck, sparkline: [97, 97, 98, 98, 98, 98, 98, 97, 98, 98, 98, 98] },
-  { label: 'Revenue influenced', value: '$146K', delta: '+21.6% vs May 4 – May 10', icon: BadgeDollarSign, sparkline: [26, 27, 29, 30, 29, 31, 30, 31, 33, 35, 34, 36] },
 ]
 
 export const emailProcess: ProcessStep[] = [
@@ -211,11 +201,7 @@ export const siteRequestMetrics: MetricItem[] = [
   { label: 'Open requests', value: '36', delta: '+20% vs May 4 – May 10', icon: Users, sparkline: [12, 14, 13, 15, 14, 15, 16, 15, 17, 18, 18, 19] },
   { label: 'New this week', value: '12', delta: '+14% vs May 4 – May 10', icon: CalendarDays, sparkline: [2, 3, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5] },
   { label: 'Qualified projects', value: '18', delta: '+29% vs May 4 – May 10', icon: UserRoundCheck, sparkline: [5, 6, 6, 7, 8, 8, 7, 9, 10, 11, 12, 12] },
-  { label: 'Discovery booked', value: '9', delta: '+13% vs May 4 – May 10', icon: CalendarDays, sparkline: [2, 2, 3, 3, 4, 4, 3, 4, 4, 5, 5, 5] },
-  { label: 'Proposal sent', value: '7', delta: '+17% vs May 4 – May 10', icon: Mail, sparkline: [1, 2, 2, 2, 3, 3, 2, 4, 4, 4, 5, 5] },
-  { label: 'Avg turnaround', value: '2.4d', delta: '+8% vs May 4 – May 10', icon: Activity, sparkline: [4, 4, 3, 3, 3, 2, 3, 2, 2, 2, 2, 2] },
   { label: 'Pipeline value', value: '$214K', delta: '+18% vs May 4 – May 10', icon: DollarSign, sparkline: [24, 25, 26, 26, 28, 29, 31, 32, 34, 35, 36, 37] },
-  { label: 'Revenue influenced', value: '$96K', delta: '+21% vs May 4 – May 10', icon: Coins, sparkline: [18, 18, 20, 20, 21, 22, 23, 24, 24, 25, 26, 28] },
 ]
 
 export const siteRequestProcess: ProcessStep[] = [
@@ -237,3 +223,9 @@ export const siteRequests: SiteRequestRecord[] = [
   { id: 'req-6', request: 'Brochure Site', company: 'Nimbus Legal', type: 'Website', priority: 'Low', stage: 'Approval', owner: 'Sarah M.', lastActivity: '6h ago', value: '$12K', nextAction: 'Chase feedback' },
   { id: 'req-7', request: 'SEO Microsite', company: 'CloudPeak Inc.', type: 'Microsite', priority: 'Medium', stage: 'Launched', owner: 'James T.', lastActivity: '1d ago', value: '$6K', nextAction: 'Upsell support' },
 ]
+
+export const integrationStatusSummary = {
+  connected: 4,
+  suggested: 1,
+  pending: 1,
+}

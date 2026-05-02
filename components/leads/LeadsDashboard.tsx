@@ -137,63 +137,67 @@ export default function LeadsDashboard({
           ))}
         </section>
 
-        <ProcessGuide title={meta.processTitle} nextAction={meta.nextAction} steps={processSteps} />
-
         <section className={styles.dashboardGrid}>
           <div className={styles.primaryColumn}>
-            <AnalyticsStrip pipelineStages={pipelineStages} sourcePerformance={sourcePerformance} ownerPerformance={ownerPerformance} totalLeadsCount={initialLeads.length} />
-            <section className={styles.tableCard}>
-              <div className={styles.tabs}>
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.label}
-                    className={cx(styles.tab, activeTab === tab.label && styles.tabActive)}
-                    onClick={() => setActiveTab(tab.label)}
-                  >
-                    {tab.label}
-                    {tab.label !== 'All leads' ? <span>{tab.count}</span> : <strong>{tab.count}</strong>}
-                  </button>
-                ))}
-              </div>
+            {section === "overview" ? (
+              <>
+                <AnalyticsStrip pipelineStages={pipelineStages} sourcePerformance={sourcePerformance} ownerPerformance={ownerPerformance} totalLeadsCount={initialLeads.length} />
+                <TopLeadsPanel leads={initialLeads} />
+              </>
+            ) : (
+              <section className={styles.tableCard}>
+                <div className={styles.tabs}>
+                  {tabs.map((tab) => (
+                    <button
+                      key={tab.label}
+                      className={cx(styles.tab, activeTab === tab.label && styles.tabActive)}
+                      onClick={() => setActiveTab(tab.label)}
+                    >
+                      {tab.label}
+                      {tab.label !== 'All leads' ? <span>{tab.count}</span> : <strong>{tab.count}</strong>}
+                    </button>
+                  ))}
+                </div>
 
-              <div className={styles.tableToolbar}>
-                <label className={styles.leadSearch}>
-                  <Icon name="search" />
-                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search leads..." />
-                </label>
-                <FilterButton label="Status" />
-                <FilterButton label="Owner" />
-                <FilterButton label="Source" />
-                <div className={styles.dropdownWrap}>
-                  <button className={cx(styles.filterButton, isStageOpen && styles.filterActive)} onClick={() => setIsStageOpen((open) => !open)}>
-                    Stage <Icon name="chevron" />
-                  </button>
-                  {isStageOpen ? (
-                    <StageDropdown selectedStage={selectedStage} onSelect={setSelectedStage} />
-                  ) : null}
+                <div className={styles.tableToolbar}>
+                  <label className={styles.leadSearch}>
+                    <Icon name="search" />
+                    <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search leads..." />
+                  </label>
+                  <FilterButton label="Status" />
+                  <FilterButton label="Owner" />
+                  <FilterButton label="Source" />
+                  <div className={styles.dropdownWrap}>
+                    <button className={cx(styles.filterButton, isStageOpen && styles.filterActive)} onClick={() => setIsStageOpen((open) => !open)}>
+                      Stage <Icon name="chevron" />
+                    </button>
+                    {isStageOpen ? (
+                      <StageDropdown selectedStage={selectedStage} onSelect={setSelectedStage} />
+                    ) : null}
+                  </div>
+                  <FilterButton label="Score" />
+                  <FilterButton label="More filters" />
+                  <div className={styles.tableToolsRight}>
+                    <button className={styles.filterButton}><Icon name="columns" /> Columns</button>
+                    <button className={styles.filterButton}>Sort: Last activity <Icon name="chevron" /></button>
+                  </div>
                 </div>
-                <FilterButton label="Score" />
-                <FilterButton label="More filters" />
-                <div className={styles.tableToolsRight}>
-                  <button className={styles.filterButton}><Icon name="columns" /> Columns</button>
-                  <button className={styles.filterButton}>Sort: Last activity <Icon name="chevron" /></button>
-                </div>
-              </div>
 
-              {filteredLeads.length > 0 ? (
-                <LeadTable leads={filteredLeads} selectedId={selectedId} onSelect={setSelectedId} totalCount={initialLeads.length} />
-              ) : (
-                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
-                  No leads found. Try adjusting your search or filters.
-                </div>
-              )}
-            </section>
+                {filteredLeads.length > 0 ? (
+                  <LeadTable leads={filteredLeads} selectedId={selectedId} onSelect={setSelectedId} totalCount={initialLeads.length} />
+                ) : (
+                  <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
+                    No leads found. Try adjusting your search or filters.
+                  </div>
+                )}
+              </section>
+            )}
           </div>
 
-          <RightRail tasks={tasks} recommendations={recommendations} recentActivity={recentActivity} />
+          <RightRail tasks={tasks} recommendations={recommendations} recentActivity={recentActivity} section={section} pipelineStages={pipelineStages} />
         </section>
       </main>
-      {selectedLead && <LeadCommandBar lead={selectedLead} />}
+      {section === "leads" && selectedLead && <LeadCommandBar lead={selectedLead} />}
     </div>
   )
 }
@@ -478,10 +482,59 @@ function LeadTable({ leads, selectedId, onSelect, totalCount }: { leads: Lead[];
   )
 }
 
-function RightRail({ tasks, recommendations, recentActivity }: { tasks: TaskItem[]; recommendations: Recommendation[]; recentActivity: ActivityItem[] }) {
+function TopLeadsPanel({ leads }: { leads: Lead[] }) {
+  const topLeads = useMemo(() => {
+    return [...leads].sort((a, b) => b.score - a.score).slice(0, 5)
+  }, [leads])
+
+  return (
+    <section className={styles.tableCard}>
+      <div className={styles.panelHeader} style={{ padding: '16px 18px 0' }}>
+        <h3 className={styles.panelTitle}>Top leads needing attention</h3>
+        <a className={styles.panelLink} href="/dashboard/leads">View all leads →</a>
+      </div>
+      <div style={{ padding: '10px 18px 16px' }}>
+        {topLeads.map((lead, index) => (
+          <div key={lead.id} className={styles.listRow} style={{ padding: '12px 0', borderBottom: index < topLeads.length - 1 ? '1px solid rgba(116,147,196,0.08)' : 'none' }}>
+            <div className={styles.identity}>
+              <Avatar initials={lead.contactName.split(' ').map((n) => n[0]).join('')} size="sm" />
+              <div>
+                <strong>{lead.contactName}</strong>
+                <div className={styles.subtle}>{lead.company}</div>
+              </div>
+            </div>
+            <StageBadge stage={lead.stage} />
+            <Score value={lead.score} />
+            <span style={{ color: '#60a5fa', fontSize: 13 }}>{lead.nextAction}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function RightRail({ tasks, recommendations, recentActivity, section = "leads", pipelineStages = [] }: { tasks: TaskItem[]; recommendations: Recommendation[]; recentActivity: ActivityItem[]; section?: DashboardSection; pipelineStages?: PipelineStage[] }) {
   return (
     <aside className={styles.rightRail}>
-      <Panel title="Today’s priorities" badge={tasks.filter(t => !t.checked).length.toString()}>
+      {section === "leads" && pipelineStages.length > 0 && (
+        <article className={styles.analyticsCard}>
+          <h3>Pipeline by stage</h3>
+          <div className={styles.funnelRow}>
+            <Funnel pipelineStages={pipelineStages} />
+            <div className={styles.stageLegend}>
+              {pipelineStages.map((stage) => (
+                <div key={stage.label}>
+                  <i style={{ backgroundColor: stage.color }} />
+                  <span>{stage.label}</span>
+                  <strong>{stage.count} ({stage.percentage}%)</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        </article>
+      )}
+
+      <Panel title="Today's priorities" badge={tasks.filter(t => !t.checked).length.toString()}>
         <div className={styles.taskList}>
           {tasks.map((task) => (
             <label key={task.label}>
@@ -494,37 +547,35 @@ function RightRail({ tasks, recommendations, recentActivity }: { tasks: TaskItem
         <a className={styles.panelLink} href="#">View all tasks →</a>
       </Panel>
 
-      <Panel title="AI recommendations">
-        <div className={styles.recommendationList}>
-          {recommendations.map((item) => (
-            <div key={item.title} className={styles.recommendationItem}>
-              <span className={cx(styles.recIcon, styles[`tone${item.tone}`])}><Icon name={item.icon} /></span>
-              <div><strong>{item.title}</strong><p>{item.detail}</p></div>
-              <button>{item.action}</button>
-            </div>
-          ))}
-        </div>
-        <a className={styles.panelLink} href="#">View all recommendations →</a>
-      </Panel>
+      {section === 'leads' && (
+        <Panel title="AI recommendations">
+          <div className={styles.recommendationList}>
+            {recommendations.map((item) => (
+              <div key={item.title} className={styles.recommendationItem}>
+                <span className={cx(styles.recIcon, styles[`tone${item.tone}`])}><Icon name={item.icon} /></span>
+                <div><strong>{item.title}</strong><p>{item.detail}</p></div>
+                <button>{item.action}</button>
+              </div>
+            ))}
+          </div>
+          <a className={styles.panelLink} href="#">View all recommendations →</a>
+        </Panel>
+      )}
 
-      <Panel title="Recent activity" action="All">
-        <div className={styles.activityList}>
-          {recentActivity.map((activity) => (
-            <div key={activity.title}>
-              <span />
-              <p>{activity.title}</p>
-              <time>{activity.time}</time>
-            </div>
-          ))}
-        </div>
-        <a className={styles.panelLink} href="#">View all activity →</a>
-      </Panel>
-
-      <Panel title="Goal progress" action="May 2025">
-        <Goal label="Meetings booked" value="32 / 50" progress={64} />
-        <Goal label="Revenue target" value="$128K / $200K" progress={64} />
-        <a className={styles.panelLink} href="#">View goals →</a>
-      </Panel>
+      {section === "overview" && (
+        <Panel title="Recent activity" action="All">
+          <div className={styles.activityList}>
+            {recentActivity.map((activity) => (
+              <div key={activity.title}>
+                <span />
+                <p>{activity.title}</p>
+                <time>{activity.time}</time>
+              </div>
+            ))}
+          </div>
+          <a className={styles.panelLink} href="#">View all activity →</a>
+        </Panel>
+      )}
     </aside>
   )
 }

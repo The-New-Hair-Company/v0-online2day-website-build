@@ -445,6 +445,8 @@ function VideosSection({ initialVideos = [] }: { initialVideos?: VideoRecord[] }
   const [selectedId, setSelectedId] = useState(initialVideos[0]?.id || '')
   const [showStageMenu, setShowStageMenu] = useState(true)
   const [stage, setStage] = useState('All stages')
+  const [activeTab, setActiveTab] = useState('Library')
+  const videoTabs = [{ label: 'Library' }, { label: 'Personalised' }, { label: 'Templates' }, { label: 'Campaigns' }, { label: 'Analytics' }]
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     return initialVideos.filter((video) => {
@@ -461,25 +463,35 @@ function VideosSection({ initialVideos = [] }: { initialVideos?: VideoRecord[] }
     return (
       <>
         <MetricGrid items={mock.videoMetrics} />
-        <ProcessRow
-          title="Guide to Sale: Your video sales process"
-          steps={mock.videoProcess}
-          activeStep={3}
-          nextActionTitle="Next best action"
-          nextActionText="Add CTA to 3 high-intent videos"
-        />
 
         <div className={styles.panelGrid}>
           <div className={cx(styles.panel, styles.tablePanel)}>
             <Tabs tabs={videoTabs} activeTab={activeTab} onChange={setActiveTab} />
-            <VideoToolbar
-              query={query}
-              onQueryChange={setQuery}
-              stage={stage}
-              onStageChange={setStage}
-              showStageMenu={showStageMenu}
-              onToggleStageMenu={() => setShowStageMenu((value) => !value)}
-            />
+            <div className={styles.toolbar}>
+              <label className={styles.smallSearch}>
+                <Search size={14} />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search videos..." />
+              </label>
+              <div className={styles.dropdownWrap}>
+                <button className={styles.chipButton} onClick={() => setShowStageMenu((value) => !value)}>
+                  Funnel stage
+                  <ChevronDown size={14} />
+                </button>
+                {showStageMenu ? (
+                  <div className={styles.dropdown}>
+                    {['All stages', 'Prospecting', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won'].map((item) => (
+                      <button key={item} className={cx(stage === item && styles.dropdownActive)} onClick={() => setStage(item)}>
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <button className={styles.chipButton}>Status</button>
+              <button className={styles.chipButton}>Owner</button>
+              <button className={styles.chipButton}>Channel</button>
+              <button className={styles.buttonGhost}>Clear filters</button>
+            </div>
             <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
               No videos found. Upload or create videos to see them here.
             </div>
@@ -492,17 +504,10 @@ function VideosSection({ initialVideos = [] }: { initialVideos?: VideoRecord[] }
   return (
     <>
       <MetricGrid items={mock.videoMetrics} />
-      <ProcessRow
-        title="Guide to Sale: Your video sales process"
-        steps={mock.videoProcess}
-        activeStep={3}
-        nextActionTitle="Next best action"
-        nextActionText="Add CTA to 3 high-intent videos"
-      />
 
       <div className={styles.panelGrid}>
         <div className={cx(styles.panel, styles.tablePanel)}>
-          <Tabs tabs={[{ label: 'Library' }, { label: 'Personalised' }, { label: 'Templates' }, { label: 'Campaigns' }, { label: 'Analytics' }]} activeTab="Library" onChange={() => undefined} />
+          <Tabs tabs={videoTabs} activeTab={activeTab} onChange={setActiveTab} />
           <div className={styles.toolbar}>
             <label className={styles.smallSearch}>
               <Search size={14} />
@@ -555,16 +560,6 @@ function VideosSection({ initialVideos = [] }: { initialVideos?: VideoRecord[] }
               <RecommendationAction title="Create task" subtitle="Follow up within 24 hours" actionLabel="Create" />
             </div>
           </RightPanel>
-          <RightPanel title="Automation rules" actionLabel="View all">
-            <div className={styles.ruleRow}>
-              <div>
-                <strong>High watch rate trigger</strong>
-                <div className={styles.subtle}>Create task when watch rate {'>'} 70%</div>
-              </div>
-              <span className={cx(styles.pill, styles.pillBlue)}>On</span>
-            </div>
-          </RightPanel>
-          <ActivityPanel title="Recent activity" />
         </div>
       </div>
 
@@ -624,13 +619,6 @@ function EmailsSection({ initialEmails = [] }: { initialEmails?: EmailRecord[] }
   return (
     <>
       <MetricGrid items={mock.emailMetrics} />
-      <ProcessRow
-        title="Guide to Sale: Your email conversion process"
-        steps={mock.emailProcess}
-        activeStep={4}
-        nextActionTitle="Next best action"
-        nextActionText="Send a follow-up to 8 leads who opened but didn’t reply."
-      />
 
       <div className={styles.emailTop}>
         <div className={styles.twoUp}>
@@ -687,43 +675,56 @@ function EmailsSection({ initialEmails = [] }: { initialEmails?: EmailRecord[] }
 
         <div className={styles.rightRail}>
           <ActivityPanel title="Recent email activity" />
-          <GoalPanel meetings="28 / 50" revenue="$146K / $250K" />
         </div>
       </div>
 
-      <div className={styles.bottomBar}>
-        <div className={styles.identity}>
-          <div className={styles.logoMark}><Video size={14} /></div>
+      {selectedEmail && (
+        <div className={styles.bottomBar}>
+          <div className={styles.identity}>
+            <div className={styles.logoMark}><Video size={14} /></div>
+            <div>
+              <strong>{selectedEmail.template}</strong>
+              <div className={styles.subtle}>Used for warm prospects after first contact</div>
+            </div>
+          </div>
           <div>
-            <strong>{selectedEmail.template}</strong>
-            <div className={styles.subtle}>Used for warm prospects after first contact</div>
+            <div className={styles.subtle}>Owner</div>
+            <strong>{selectedEmail.owner}</strong>
+          </div>
+          <div>
+            <div className={styles.subtle}>Audience</div>
+            <strong>{selectedEmail.audience}</strong>
+          </div>
+          <div>
+            <div className={styles.subtle}>Last edited</div>
+            <strong>{selectedEmail.lastEdited}</strong>
+          </div>
+          <div className={styles.ctaCard}>
+            <strong>Recommended CTA</strong>
+            <div className={styles.subtle}>Pair this email with a personalised video to lift reply rate and move leads to meeting booked.</div>
+          </div>
+          <div className={styles.actionGroup}>
+            <button className={styles.button}>Preview email</button>
+            <button className={styles.button}>Send test</button>
+            <button className={styles.buttonPrimary}>Launch campaign</button>
+            <button className={styles.button}>Create sequence</button>
+            <button className={styles.button}><MoreHorizontal size={16} /></button>
           </div>
         </div>
-        <div>
-          <div className={styles.subtle}>Owner</div>
-          <strong>{selectedEmail.owner}</strong>
-        </div>
-        <div>
-          <div className={styles.subtle}>Audience</div>
-          <strong>{selectedEmail.audience}</strong>
-        </div>
-        <div>
-          <div className={styles.subtle}>Last edited</div>
-          <strong>{selectedEmail.lastEdited}</strong>
-        </div>
-        <div className={styles.ctaCard}>
-          <strong>Recommended CTA</strong>
-          <div className={styles.subtle}>Pair this email with a personalised video to lift reply rate and move leads to meeting booked.</div>
-        </div>
-        <div className={styles.actionGroup}>
-          <button className={styles.button}>Preview email</button>
-          <button className={styles.button}>Send test</button>
-          <button className={styles.buttonPrimary}>Launch campaign</button>
-          <button className={styles.button}>Create sequence</button>
-          <button className={styles.button}><MoreHorizontal size={16} /></button>
-        </div>
-      </div>
+      )}
     </>
+  )
+}
+
+function MessagesHeader() {
+  return (
+    <div className={styles.statusBar}>
+      <strong style={{ fontSize: 16 }}>Conversations</strong>
+      <span className={cx(styles.pill, styles.pillRed)}>12 unread</span>
+      <span className={cx(styles.pill, styles.pillYellow)}>8 waiting</span>
+      <span className={cx(styles.pill, styles.pillBlue)}>48 open</span>
+      <span className={cx(styles.pill, styles.pillGreen)}>21 resolved today</span>
+    </div>
   )
 }
 
@@ -742,14 +743,7 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
 
   return (
     <>
-      <MetricGrid items={mock.messageMetrics} />
-      <ProcessRow
-        title="Guide to Sale: Your chat conversion process"
-        steps={mock.messageProcess}
-        activeStep={2}
-        nextActionTitle="Next best action"
-        nextActionText="Reply to 3 high-intent conversations waiting over 10 minutes."
-      />
+      <MessagesHeader />
 
       <div className={styles.chatLayout}>
         <div className={cx(styles.panel, styles.tablePanel)}>
@@ -794,6 +788,8 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
         </div>
 
         <div className={styles.messageLayout}>
+          {selectedConversation ? (
+            <>
           <div className={styles.chatHeader}>
             <div className={styles.identity}>
               <div className={styles.avatar}>{initials(selectedConversation.name)}</div>
@@ -866,6 +862,12 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
               <button className={styles.buttonPrimary}>Send reply</button>
             </div>
           </div>
+            </>
+          ) : (
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
+              No conversation selected
+            </div>
+          )}
         </div>
 
         <div className={styles.rightRail}>
@@ -896,14 +898,6 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
               'Clicked CTA: Book a demo',
             ]} />
           </RightPanel>
-          <RightPanel title="AI recommendations">
-            <div className={styles.recommendationList}>
-              <RecommendationAction title="Send pricing summary" subtitle="Share a tailored pricing overview." actionLabel="Send" />
-              <RecommendationAction title="Share case study video" subtitle="Industry case study with similar results." actionLabel="Send" />
-              <RecommendationAction title="Book follow-up meeting" subtitle="Schedule a demo call this week." actionLabel="Book" />
-            </div>
-          </RightPanel>
-          <GoalPanel title="Goal progress" meetings="9 / 15" revenue="$84K / $100K" />
         </div>
       </div>
     </>
@@ -913,6 +907,8 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
 function SiteRequestsSection({ initialSiteRequests = [] }: { initialSiteRequests?: SiteRequestRecord[] }) {
   const [selectedId, setSelectedId] = useState(initialSiteRequests[0]?.id || '')
   const [query, setQuery] = useState('')
+  const [showStageMenu, setShowStageMenu] = useState(false)
+  const [stage, setStage] = useState('All stages')
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     return initialSiteRequests.filter((req) =>
@@ -926,13 +922,6 @@ function SiteRequestsSection({ initialSiteRequests = [] }: { initialSiteRequests
   return (
     <>
       <MetricGrid items={mock.siteRequestMetrics} />
-      <ProcessRow
-        title="Guide to Sale: Your project conversion process"
-        steps={mock.siteRequestProcess}
-        activeStep={1}
-        nextActionTitle="Next best action"
-        nextActionText="Qualify 3 new high-priority site requests."
-      />
 
       <div className={styles.requestColumns}>
         <div className={cx(styles.panel, styles.tablePanel)}>
@@ -966,6 +955,7 @@ function SiteRequestsSection({ initialSiteRequests = [] }: { initialSiteRequests
           <SiteRequestTable rows={filtered} selectedId={selectedId} onSelect={setSelectedId} />
         </div>
 
+        {selected && (
         <div className={styles.detailCard}>
           <div className={styles.panelHeader}>
             <div>
@@ -1070,6 +1060,7 @@ function SiteRequestsSection({ initialSiteRequests = [] }: { initialSiteRequests
             <button className={styles.button}><MoreHorizontal size={16} /></button>
           </div>
         </div>
+        )}
 
         <div className={styles.rightRail}>
           <RightPanel title="Request snapshot" actionLabel="View in CRM">
@@ -1090,15 +1081,6 @@ function SiteRequestsSection({ initialSiteRequests = [] }: { initialSiteRequests
               <div className={styles.listRow}><span>Timeline</span><strong>6 weeks</strong></div>
             </div>
           </RightPanel>
-          <RightPanel title="Journey / activity timeline" actionLabel="View full activity">
-            <ActivityList items={[
-              'Visited pricing page',
-              'Submitted site request form',
-              'Opened follow-up email',
-              'Booked discovery call',
-              'Watched 84% of video',
-            ]} />
-          </RightPanel>
           <RightPanel title="AI recommendations">
             <div className={styles.recommendationList}>
               <RecommendationAction title="Send scope summary" subtitle="Keep momentum with a concise proposal recap." actionLabel="Send" />
@@ -1106,17 +1088,41 @@ function SiteRequestsSection({ initialSiteRequests = [] }: { initialSiteRequests
               <RecommendationAction title="Share relevant case study" subtitle="Reinforce confidence with proof." actionLabel="Share" />
             </div>
           </RightPanel>
-          <GoalPanel title="Goal progress" meetings="18 / 25" revenue="$96K / $150K" />
         </div>
       </div>
     </>
   )
 }
 
+function IntegrationStatusBar() {
+  return (
+    <div className={styles.statusBar}>
+      <div className={styles.statusStat}>
+        <span className={cx(styles.pill, styles.pillGreen)}>●</span>
+        <span>Connected</span>
+        <strong>{mock.integrationStatusSummary.connected}</strong>
+      </div>
+      <div className={styles.statusStat}>
+        <span className={cx(styles.pill, styles.pillBlue)}>●</span>
+        <span>Suggested</span>
+        <strong>{mock.integrationStatusSummary.suggested}</strong>
+      </div>
+      <div className={styles.statusStat}>
+        <span className={cx(styles.pill, styles.pillYellow)}>●</span>
+        <span>Pending</span>
+        <strong>{mock.integrationStatusSummary.pending}</strong>
+      </div>
+      <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 14 }}>
+        Last synced: 2 minutes ago
+      </span>
+    </div>
+  )
+}
+
 function IntegrationsSection() {
   return (
     <>
-      <MetricGrid items={leadMetrics.slice(0, 4)} />
+      <IntegrationStatusBar />
       <div className={styles.integrationsGrid}>
         <IntegrationCard
           icon={<DatabaseIcon size={18} />}
@@ -1769,7 +1775,8 @@ function RightPanel({
   )
 }
 
-function LeadBottomBar({ lead }: { lead: LeadRecord }) {
+function LeadBottomBar({ lead }: { lead?: LeadRecord }) {
+  if (!lead) return null
   return (
     <div className={styles.bottomBar}>
       <div className={styles.identity}>

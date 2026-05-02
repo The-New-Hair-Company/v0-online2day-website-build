@@ -12,13 +12,12 @@ type EmailRow = Database['public']['Tables']['emails']['Row']
 type SiteRequestRow = Database['public']['Tables']['site_build_requests']['Row']
 type ProfileRow = Database['public']['Tables']['user_profiles']['Row']
 
-function mapLeadRowToLead(row: LeadRow): Lead {
-  const ownerName = (row as any).owner?.full_name || 'Unassigned'
-  // Format to "First L." format
-  const formattedOwner = ownerName.split(' ').map((part: string, index: number) => 
+function mapLeadRowToLead(row: LeadRow, profilesMap: Record<string, string> = {}): Lead {
+  const ownerName = (row.assigned_to && profilesMap[row.assigned_to]) || 'Unassigned'
+  const formattedOwner = ownerName.split(' ').map((part: string, index: number) =>
     index === 0 ? part : part.charAt(0) + '.'
   ).join(' ')
-  
+
   return {
     id: row.id,
     contactName: row.name || 'Unknown',
@@ -73,18 +72,18 @@ function mapRowToEmailRecord(row: any): EmailRecord {
   }
 }
 
-function mapRowToSiteRequestRecord(row: any): SiteRequestRecord {
+function mapRowToSiteRequestRecord(row: SiteRequestRow, profilesMap: Record<string, string> = {}): SiteRequestRecord {
   return {
     id: row.id,
-    request: row.project_name || 'New Site Build',
-    company: row.company_name || 'Prospect',
-    type: row.site_type || 'Website',
-    priority: (row.priority as 'High' | 'Medium' | 'Low') || 'Medium',
-    stage: row.status || 'New',
-    owner: row.user?.full_name || 'Unassigned',
+    request: row.business_name || 'New Site Build',
+    company: row.business_name || 'Prospect',
+    type: 'Website',
+    priority: 'Medium',
+    stage: row.status || 'Requirements Submitted',
+    owner: (row.user_id && profilesMap[row.user_id]) || 'Unassigned',
     lastActivity: row.created_at ? new Date(row.created_at).toLocaleDateString() : 'Just now',
     value: '$0',
-    nextAction: 'Qualify',
+    nextAction: row.status === 'Requirements Submitted' ? 'Review request' : 'Update status',
   }
 }
 
@@ -110,18 +109,25 @@ export async function getLeads() {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('leads')
-    .select(`
-      *,
-      owner:assigned_to(full_name)
-    `)
+    .select('*')
     .order('created_at', { ascending: false })
-  
+
   if (error) {
     console.error('Error fetching leads:', error)
     return []
   }
-  
-  return data.map(mapLeadRowToLead)
+
+  const assignedIds = [...new Set(data.map(l => l.assigned_to).filter(Boolean))] as string[]
+  const profilesMap: Record<string, string> = {}
+  if (assignedIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('user_id, full_name')
+      .in('user_id', assignedIds)
+    profiles?.forEach(p => { profilesMap[p.user_id] = p.full_name || 'Unassigned' })
+  }
+
+  return data.map(row => mapLeadRowToLead(row, profilesMap))
 }
 
 export async function getLeadRecords(): Promise<LeadRecord[]> {
@@ -141,11 +147,10 @@ export async function getLeadRecords(): Promise<LeadRecord[]> {
 
 export async function getConversations() {
   const supabase = await createClient()
-  
-  // Fetch unique conversations by user_id
+
   const { data, error } = await supabase
     .from('messages')
-    .select('*, sender:sender_id(email, full_name, avatar_url)')
+    .select('*')
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -153,7 +158,16 @@ export async function getConversations() {
     return []
   }
 
-  // Group by conversation_user_id to get conversations
+  const senderIds = [...new Set(data.map(m => m.sender_id).filter(Boolean))] as string[]
+  const profilesMap: Record<string, { full_name: string | null }> = {}
+  if (senderIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('user_id, full_name')
+      .in('user_id', senderIds)
+    profiles?.forEach(p => { profilesMap[p.user_id] = { full_name: p.full_name } })
+  }
+
   const conversationsMap = new Map()
   data.forEach((msg) => {
     if (!conversationsMap.has(msg.conversation_user_id)) {
@@ -168,11 +182,11 @@ export async function getConversations() {
 
   return Array.from(conversationsMap.values()).map(conv => ({
     id: conv.userId,
-    name: (conv.lastMessage as any).sender?.full_name || 'Unknown User',
-    company: 'Prospect', // Default
-    preview: (conv.lastMessage as any).content?.substring(0, 50) || '',
-    time: (conv.lastMessage as any).created_at ? new Date((conv.lastMessage as any).created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-    priority: 'Medium', // Default
+    name: profilesMap[conv.lastMessage.sender_id]?.full_name || 'Unknown User',
+    company: 'Prospect',
+    preview: conv.lastMessage.content?.substring(0, 50) || '',
+    time: conv.lastMessage.created_at ? new Date(conv.lastMessage.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+    priority: 'Medium',
     score: 0,
     channel: 'Direct',
     status: 'Open',
@@ -220,7 +234,7 @@ export async function getSiteRequests() {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('site_build_requests')
-    .select('*, user:user_id(email, full_name)')
+    .select('*')
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -228,7 +242,17 @@ export async function getSiteRequests() {
     return []
   }
 
-  return data.map(mapRowToSiteRequestRecord)
+  const userIds = [...new Set(data.map(r => r.user_id).filter(Boolean))] as string[]
+  const profilesMap: Record<string, string> = {}
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('user_id, full_name, email')
+      .in('user_id', userIds)
+    profiles?.forEach(p => { profilesMap[p.user_id] = p.full_name || p.email || 'Unassigned' })
+  }
+
+  return data.map(row => mapRowToSiteRequestRecord(row, profilesMap))
 }
 
 export async function getDashboardMetrics() {
