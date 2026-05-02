@@ -4,18 +4,20 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import styles from './LeadsDashboard.module.css'
-import {
-  leads,
-  metrics,
-  ownerPerformance,
-  pipelineStages,
-  processSteps,
-  recentActivity,
-  recommendations,
-  sourcePerformance,
-  tasks,
-} from './leads-data'
-import type { IconName, Lead, LeadStage } from './leads-types'
+import type { IconName, Lead, LeadStage, Metric, OwnerPerformance, PipelineStage, LeadSourcePerformance, TaskItem, Recommendation, ActivityItem } from './leads-types'
+
+interface LeadsDashboardProps {
+  section?: DashboardSection
+  initialLeads?: Lead[]
+  metrics?: Metric[]
+  ownerPerformance?: OwnerPerformance[]
+  pipelineStages?: PipelineStage[]
+  processSteps?: string[]
+  recentActivity?: ActivityItem[]
+  recommendations?: Recommendation[]
+  sourcePerformance?: LeadSourcePerformance[]
+  tasks?: TaskItem[]
+}
 
 const stageOptions: LeadStage[] = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won']
 const tabs = [
@@ -45,18 +47,38 @@ const pageMeta: Record<DashboardSection, { title: string; description: string; p
   },
 }
 
-export default function LeadsDashboard({ section = 'leads' }: { section?: DashboardSection }) {
+export default function LeadsDashboard({ 
+  section = 'leads',
+  initialLeads = [],
+  metrics = [],
+  ownerPerformance = [],
+  pipelineStages = [],
+  processSteps = [],
+  recentActivity = [],
+  recommendations = [],
+  sourcePerformance = [],
+  tasks = []
+}: LeadsDashboardProps) {
   const meta = pageMeta[section]
   const [query, setQuery] = useState('')
   const [activeTab, setActiveTab] = useState('All leads')
-  const [selectedId, setSelectedId] = useState('lead-acme')
+  const [selectedId, setSelectedId] = useState(initialLeads[0]?.id || '')
   const [selectedStage, setSelectedStage] = useState<'All stages' | LeadStage>('All stages')
   const [isStageOpen, setIsStageOpen] = useState(false)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
+  // Calculate tab counts dynamically
+  const tabs = useMemo(() => [
+    { label: 'All leads', count: initialLeads.length },
+    { label: 'High intent', count: initialLeads.filter(l => l.score >= 80).length },
+    { label: 'Follow-up due', count: initialLeads.filter(l => ['Send follow-up', 'Nudge reply', 'Book meeting'].includes(l.nextAction)).length },
+    { label: 'At risk', count: initialLeads.filter(l => l.engagement < 50).length },
+    { label: 'Won', count: initialLeads.filter(l => l.stage === 'Won').length },
+  ], [initialLeads])
+
   const filteredLeads = useMemo(() => {
     const normalised = query.trim().toLowerCase()
-    return leads.filter((lead) => {
+    return initialLeads.filter((lead) => {
       const matchesQuery = normalised
         ? `${lead.contactName} ${lead.role} ${lead.company} ${lead.stage} ${lead.owner}`.toLowerCase().includes(normalised)
         : true
@@ -71,7 +93,7 @@ export default function LeadsDashboard({ section = 'leads' }: { section?: Dashbo
     })
   }, [query, selectedStage, activeTab])
 
-  const selectedLead = leads.find((lead) => lead.id === selectedId) ?? leads[0]
+  const selectedLead = initialLeads.find((lead) => lead.id === selectedId) || initialLeads[0] || null
 
   return (
     <div className={styles.shell}>
@@ -115,11 +137,11 @@ export default function LeadsDashboard({ section = 'leads' }: { section?: Dashbo
           ))}
         </section>
 
-        <ProcessGuide title={meta.processTitle} nextAction={meta.nextAction} />
+        <ProcessGuide title={meta.processTitle} nextAction={meta.nextAction} steps={processSteps} />
 
         <section className={styles.dashboardGrid}>
           <div className={styles.primaryColumn}>
-            <AnalyticsStrip />
+            <AnalyticsStrip pipelineStages={pipelineStages} sourcePerformance={sourcePerformance} ownerPerformance={ownerPerformance} totalLeadsCount={initialLeads.length} />
             <section className={styles.tableCard}>
               <div className={styles.tabs}>
                 {tabs.map((tab) => (
@@ -158,14 +180,20 @@ export default function LeadsDashboard({ section = 'leads' }: { section?: Dashbo
                 </div>
               </div>
 
-              <LeadTable leads={filteredLeads} selectedId={selectedId} onSelect={setSelectedId} />
+              {filteredLeads.length > 0 ? (
+                <LeadTable leads={filteredLeads} selectedId={selectedId} onSelect={setSelectedId} totalCount={initialLeads.length} />
+              ) : (
+                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
+                  No leads found. Try adjusting your search or filters.
+                </div>
+              )}
             </section>
           </div>
 
-          <RightRail />
+          <RightRail tasks={tasks} recommendations={recommendations} recentActivity={recentActivity} />
         </section>
       </main>
-      <LeadCommandBar lead={selectedLead} />
+      {selectedLead && <LeadCommandBar lead={selectedLead} />}
     </div>
   )
 }
@@ -271,13 +299,13 @@ function Sparkline({ values }: { values: number[] }) {
   )
 }
 
-function ProcessGuide({ title, nextAction }: { title: string; nextAction: string }) {
+function ProcessGuide({ title, nextAction, steps }: { title: string; nextAction: string; steps: string[] }) {
   return (
     <section className={styles.processCard}>
       <div className={styles.processLeft}>
         <h2>{title}</h2>
         <div className={styles.steps}>
-          {processSteps.map((step, index) => {
+          {steps.map((step, index) => {
             const isActive = index === 2
             return (
               <div key={step} className={styles.stepItem}>
@@ -297,13 +325,13 @@ function ProcessGuide({ title, nextAction }: { title: string; nextAction: string
   )
 }
 
-function AnalyticsStrip() {
+function AnalyticsStrip({ pipelineStages, sourcePerformance, ownerPerformance, totalLeadsCount }: { pipelineStages: PipelineStage[]; sourcePerformance: LeadSourcePerformance[]; ownerPerformance: OwnerPerformance[]; totalLeadsCount: number }) {
   return (
     <section className={styles.analyticsGrid}>
       <article className={styles.analyticsCard}>
         <h3>Pipeline by stage</h3>
         <div className={styles.funnelRow}>
-          <Funnel />
+          <Funnel pipelineStages={pipelineStages} />
           <div className={styles.stageLegend}>
             {pipelineStages.map((stage) => (
               <div key={stage.label}>
@@ -314,7 +342,7 @@ function AnalyticsStrip() {
             ))}
           </div>
         </div>
-        <div className={styles.analyticsFooter}>Total <strong>248</strong></div>
+        <div className={styles.analyticsFooter}>Total <strong>{totalLeadsCount}</strong></div>
       </article>
 
       <article className={styles.analyticsCard}>
@@ -354,7 +382,7 @@ function AnalyticsStrip() {
   )
 }
 
-function Funnel() {
+function Funnel({ pipelineStages }: { pipelineStages: PipelineStage[] }) {
   return (
     <svg className={styles.funnel} viewBox="0 0 130 110" aria-hidden="true">
       {pipelineStages.map((stage, index) => {
@@ -394,7 +422,7 @@ function StageDropdown({ selectedStage, onSelect }: { selectedStage: 'All stages
   )
 }
 
-function LeadTable({ leads, selectedId, onSelect }: { leads: Lead[]; selectedId: string; onSelect: (id: string) => void }) {
+function LeadTable({ leads, selectedId, onSelect, totalCount }: { leads: Lead[]; selectedId: string; onSelect: (id: string) => void; totalCount: number }) {
   return (
     <div className={styles.tableWrap}>
       <table className={styles.leadsTable}>
@@ -440,7 +468,7 @@ function LeadTable({ leads, selectedId, onSelect }: { leads: Lead[]; selectedId:
         </tbody>
       </table>
       <div className={styles.tableFooter}>
-        <span>Showing 1 to {Math.max(leads.length, 1)} of 248 leads</span>
+        <span>Showing 1 to {Math.max(leads.length, 1)} of {totalCount} leads</span>
         <div className={styles.pagination}>
           <button>‹</button><button className={styles.pageActive}>1</button><button>2</button><button>3</button><button>4</button><button>5</button><span>…</span><button>25</button><button>›</button>
         </div>
@@ -450,10 +478,10 @@ function LeadTable({ leads, selectedId, onSelect }: { leads: Lead[]; selectedId:
   )
 }
 
-function RightRail() {
+function RightRail({ tasks, recommendations, recentActivity }: { tasks: TaskItem[]; recommendations: Recommendation[]; recentActivity: ActivityItem[] }) {
   return (
     <aside className={styles.rightRail}>
-      <Panel title="Today’s priorities" badge="5">
+      <Panel title="Today’s priorities" badge={tasks.filter(t => !t.checked).length.toString()}>
         <div className={styles.taskList}>
           {tasks.map((task) => (
             <label key={task.label}>

@@ -39,26 +39,7 @@ import {
   WandSparkles,
 } from 'lucide-react'
 import styles from './dashboard.module.css'
-import {
-  conversations,
-  dateRangeLabel,
-  emailMetrics,
-  emailProcess,
-  emails,
-  leadMetrics,
-  leadProcess,
-  leads,
-  leadStages,
-  leadTabs,
-  messageMetrics,
-  messageProcess,
-  siteRequestMetrics,
-  siteRequestProcess,
-  siteRequests,
-  videoMetrics,
-  videoProcess,
-  videos,
-} from './mock-data'
+import * as mock from './mock-data'
 import type {
   ConversationRecord,
   DashboardSection,
@@ -70,6 +51,7 @@ import type {
   SiteRequestRecord,
   TableTab,
   VideoRecord,
+  CrmDashboardProps,
 } from './types'
 
 type MenuItem = {
@@ -186,7 +168,14 @@ const PAGE_META: Record<DashboardSection, { title: string; description: string; 
   },
 }
 
-export function CrmDashboard({ section }: { section: DashboardSection }) {
+export function CrmDashboard({ 
+  section,
+  initialLeads = [],
+  initialVideos = [],
+  initialEmails = [],
+  initialConversations = [],
+  initialSiteRequests = [],
+}: CrmDashboardProps) {
   const meta = PAGE_META[section]
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
@@ -208,7 +197,7 @@ export function CrmDashboard({ section }: { section: DashboardSection }) {
             </label>
             <button className={styles.button}>
               <CalendarDays size={16} />
-              {dateRangeLabel}
+              {mock.dateRangeLabel}
               <ChevronDown size={16} />
             </button>
             <button className={styles.button}>
@@ -242,7 +231,13 @@ export function CrmDashboard({ section }: { section: DashboardSection }) {
           </div>
         </header>
 
-        {renderSection(section)}
+        {renderSection(section, {
+          initialLeads,
+          initialVideos,
+          initialEmails,
+          initialConversations,
+          initialSiteRequests,
+        })}
       </main>
     </div>
   )
@@ -296,20 +291,20 @@ function Sidebar({ currentSection }: { currentSection: DashboardSection }) {
   )
 }
 
-function renderSection(section: DashboardSection) {
+function renderSection(section: DashboardSection, props: Omit<CrmDashboardProps, 'section'>) {
   switch (section) {
     case 'overview':
-      return <OverviewSection />
+      return <OverviewSection initialLeads={props.initialLeads} />
     case 'leads':
-      return <LeadsSection />
+      return <LeadsSection initialLeads={props.initialLeads} />
     case 'videos':
-      return <VideosSection />
+      return <VideosSection initialVideos={props.initialVideos} />
     case 'emails':
-      return <EmailsSection />
+      return <EmailsSection initialEmails={props.initialEmails} />
     case 'messages':
-      return <MessagesSection />
+      return <MessagesSection initialConversations={props.initialConversations} />
     case 'site-requests':
-      return <SiteRequestsSection />
+      return <SiteRequestsSection initialSiteRequests={props.initialSiteRequests} />
     case 'integrations':
       return <IntegrationsSection />
     default:
@@ -317,22 +312,22 @@ function renderSection(section: DashboardSection) {
   }
 }
 
-function OverviewSection() {
-  const [selectedId, setSelectedId] = useState(leads[0].id)
+function OverviewSection({ initialLeads = [] }: { initialLeads?: LeadRecord[] }) {
+  const [selectedId, setSelectedId] = useState(initialLeads[0]?.id || '')
   const [query, setQuery] = useState('')
   const [activeTab, setActiveTab] = useState('All leads')
   const [stage, setStage] = useState<'All stages' | LeadStage>('All stages')
   const [showStageMenu, setShowStageMenu] = useState(true)
 
-  const filtered = useFilteredLeads(query, stage, activeTab)
-  const selectedLead = leads.find((lead) => lead.id === selectedId) ?? leads[0]
+  const filtered = useFilteredLeads(query, stage, activeTab, initialLeads)
+  const selectedLead = initialLeads.find((lead) => lead.id === selectedId) ?? initialLeads[0]
 
   return (
     <>
-      <MetricGrid items={leadMetrics} />
+      <MetricGrid items={mock.leadMetrics} />
       <ProcessRow
         title="Guide to Sale: Your sales process"
-        steps={leadProcess}
+        steps={mock.leadProcess}
         activeStep={3}
         nextActionTitle="Next best action"
         nextActionText="Follow up with 5 high-intent leads"
@@ -382,21 +377,21 @@ function OverviewSection() {
   )
 }
 
-function LeadsSection() {
-  const [selectedId, setSelectedId] = useState(leads[0].id)
+function LeadsSection({ initialLeads = [] }: { initialLeads?: LeadRecord[] }) {
+  const [selectedId, setSelectedId] = useState(initialLeads[0]?.id || '')
   const [query, setQuery] = useState('')
   const [activeTab, setActiveTab] = useState('All leads')
   const [stage, setStage] = useState<'All stages' | LeadStage>('All stages')
   const [showStageMenu, setShowStageMenu] = useState(true)
-  const filtered = useFilteredLeads(query, stage, activeTab)
-  const selectedLead = leads.find((lead) => lead.id === selectedId) ?? leads[0]
+  const filtered = useFilteredLeads(query, stage, activeTab, initialLeads)
+  const selectedLead = initialLeads.find((lead) => lead.id === selectedId) ?? initialLeads[0]
 
   return (
     <>
-      <MetricGrid items={leadMetrics} />
+      <MetricGrid items={mock.leadMetrics} />
       <ProcessRow
         title="Guide to Sale: Your lead conversion process"
-        steps={leadProcess}
+        steps={mock.leadProcess}
         activeStep={3}
         nextActionTitle="Next best action"
         nextActionText="Follow up with 5 high-intent leads"
@@ -445,29 +440,61 @@ function LeadsSection() {
   )
 }
 
-function VideosSection() {
+function VideosSection({ initialVideos = [] }: { initialVideos?: VideoRecord[] }) {
   const [query, setQuery] = useState('')
-  const [selectedId, setSelectedId] = useState(videos[0].id)
+  const [selectedId, setSelectedId] = useState(initialVideos[0]?.id || '')
   const [showStageMenu, setShowStageMenu] = useState(true)
   const [stage, setStage] = useState('All stages')
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return videos.filter((video) => {
+    return initialVideos.filter((video) => {
       const matchesQuery = normalized
         ? `${video.title} ${video.company} ${video.owner} ${video.status}`.toLowerCase().includes(normalized)
         : true
       const matchesStage = stage === 'All stages' || video.funnelStage === stage
       return matchesQuery && matchesStage
     })
-  }, [query, stage])
-  const selectedVideo = videos.find((video) => video.id === selectedId) ?? videos[0]
+  }, [query, stage, initialVideos])
+  const selectedVideo = initialVideos.find((video) => video.id === selectedId) ?? initialVideos[0] ?? null
+
+  if (!selectedVideo) {
+    return (
+      <>
+        <MetricGrid items={mock.videoMetrics} />
+        <ProcessRow
+          title="Guide to Sale: Your video sales process"
+          steps={mock.videoProcess}
+          activeStep={3}
+          nextActionTitle="Next best action"
+          nextActionText="Add CTA to 3 high-intent videos"
+        />
+
+        <div className={styles.panelGrid}>
+          <div className={cx(styles.panel, styles.tablePanel)}>
+            <Tabs tabs={videoTabs} activeTab={activeTab} onChange={setActiveTab} />
+            <VideoToolbar
+              query={query}
+              onQueryChange={setQuery}
+              stage={stage}
+              onStageChange={setStage}
+              showStageMenu={showStageMenu}
+              onToggleStageMenu={() => setShowStageMenu((value) => !value)}
+            />
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
+              No videos found. Upload or create videos to see them here.
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
 
   return (
     <>
-      <MetricGrid items={videoMetrics} />
+      <MetricGrid items={mock.videoMetrics} />
       <ProcessRow
         title="Guide to Sale: Your video sales process"
-        steps={videoProcess}
+        steps={mock.videoProcess}
         activeStep={3}
         nextActionTitle="Next best action"
         nextActionText="Add CTA to 3 high-intent videos"
@@ -550,23 +577,23 @@ function VideosSection() {
               </span>
             </div>
           </div>
-          <div className={styles.list}>
+      <div className={styles.list}>
             <div>
-              <strong>{selectedVideo.title}</strong>
-              <div className={styles.subtle}>{selectedVideo.company}</div>
+              <strong>{selectedVideo?.title}</strong>
+              <div className={styles.subtitle}>{selectedVideo?.company}</div>
             </div>
-            <div className={styles.listRow}><span>Owner</span><strong>{selectedVideo.owner}</strong></div>
+            <div className={styles.listRow}><span>Owner</span><strong>{selectedVideo?.owner}</strong></div>
             <div className={styles.listRow}><span>Created</span><strong>May 10, 2025</strong></div>
             <div className={styles.listRow}><span>Last updated</span><strong>May 16, 2025</strong></div>
             <div className={styles.listRow}><span>Views</span><strong>3</strong></div>
             <div className={styles.goalRow}>
-              <div className={styles.goalHead}><span>Watch rate</span><strong>{selectedVideo.watchRate}%</strong></div>
-              <div className={styles.barTrack}><div className={styles.barFill} style={{ width: `${selectedVideo.watchRate}%` }} /></div>
+              <div className={styles.goalHead}><span>Watch rate</span><strong>{selectedVideo?.watchRate}%</strong></div>
+              <div className={styles.barTrack}><div className={styles.barFill} style={{ width: `${selectedVideo?.watchRate ?? 0}%` }} /></div>
             </div>
           </div>
           <div className={styles.list}>
             <div className={styles.panelTitle}>CTA configuration</div>
-            <button className={styles.buttonGhost}>{selectedVideo.cta} <ChevronDown size={14} /></button>
+            <button className={styles.buttonGhost}>{selectedVideo?.cta} <ChevronDown size={14} /></button>
             <button className={styles.buttonGhost}>https://calendly.com/online2day/demo <ChevronDown size={14} /></button>
             <button className={styles.button}><ExternalLink size={15} /> Preview CTA</button>
           </div>
@@ -576,30 +603,30 @@ function VideosSection() {
   )
 }
 
-function EmailsSection() {
+function EmailsSection({ initialEmails = [] }: { initialEmails?: EmailRecord[] }) {
   const [query, setQuery] = useState('')
-  const [selectedId, setSelectedId] = useState(emails[1].id)
+  const [selectedId, setSelectedId] = useState(initialEmails[1]?.id || initialEmails[0]?.id || '')
   const [stage, setStage] = useState('All stages')
   const [showStageMenu, setShowStageMenu] = useState(true)
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return emails.filter((email) => {
+    return initialEmails.filter((email) => {
       const matchesQuery = normalized
         ? `${email.template} ${email.audience} ${email.subject} ${email.owner}`.toLowerCase().includes(normalized)
         : true
       const matchesStage = stage === 'All stages' || email.stage === stage
       return matchesQuery && matchesStage
     })
-  }, [query, stage])
-  const selectedEmail = emails.find((email) => email.id === selectedId) ?? emails[0]
+  }, [query, stage, initialEmails])
+  const selectedEmail = initialEmails.find((email) => email.id === selectedId) ?? initialEmails[0]
 
   return (
     <>
-      <MetricGrid items={emailMetrics} />
+      <MetricGrid items={mock.emailMetrics} />
       <ProcessRow
         title="Guide to Sale: Your email conversion process"
-        steps={emailProcess}
+        steps={mock.emailProcess}
         activeStep={4}
         nextActionTitle="Next best action"
         nextActionText="Send a follow-up to 8 leads who opened but didn’t reply."
@@ -700,25 +727,25 @@ function EmailsSection() {
   )
 }
 
-function MessagesSection() {
-  const [selectedId, setSelectedId] = useState(conversations[0].id)
+function MessagesSection({ initialConversations = [] }: { initialConversations?: ConversationRecord[] }) {
+  const [selectedId, setSelectedId] = useState(initialConversations[0]?.id || '')
   const [query, setQuery] = useState('')
-  const selectedConversation = conversations.find((item) => item.id === selectedId) ?? conversations[0]
+  const selectedConversation = initialConversations.find((item) => item.id === selectedId) ?? initialConversations[0]
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return conversations.filter((conversation) =>
+    return initialConversations.filter((conversation) =>
       normalized
         ? `${conversation.name} ${conversation.company} ${conversation.preview}`.toLowerCase().includes(normalized)
         : true
     )
-  }, [query])
+  }, [query, initialConversations])
 
   return (
     <>
-      <MetricGrid items={messageMetrics} />
+      <MetricGrid items={mock.messageMetrics} />
       <ProcessRow
         title="Guide to Sale: Your chat conversion process"
-        steps={messageProcess}
+        steps={mock.messageProcess}
         activeStep={2}
         nextActionTitle="Next best action"
         nextActionText="Reply to 3 high-intent conversations waiting over 10 minutes."
@@ -883,32 +910,28 @@ function MessagesSection() {
   )
 }
 
-function SiteRequestsSection() {
-  const [selectedId, setSelectedId] = useState(siteRequests[0].id)
+function SiteRequestsSection({ initialSiteRequests = [] }: { initialSiteRequests?: SiteRequestRecord[] }) {
+  const [selectedId, setSelectedId] = useState(initialSiteRequests[0]?.id || '')
   const [query, setQuery] = useState('')
-  const [stage, setStage] = useState('All stages')
-  const [showStageMenu, setShowStageMenu] = useState(true)
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return siteRequests.filter((request) => {
-      const matchesQuery = normalized
-        ? `${request.request} ${request.company} ${request.owner} ${request.stage}`.toLowerCase().includes(normalized)
+    return initialSiteRequests.filter((req) =>
+      normalized
+        ? `${req.request} ${req.company} ${req.owner}`.toLowerCase().includes(normalized)
         : true
-      const matchesStage = stage === 'All stages' || request.stage === stage
-      return matchesQuery && matchesStage
-    })
-  }, [query, stage])
-  const selected = siteRequests.find((item) => item.id === selectedId) ?? siteRequests[0]
+    )
+  }, [query, initialSiteRequests])
+  const selected = initialSiteRequests.find((item) => item.id === selectedId) ?? initialSiteRequests[0]
 
   return (
     <>
-      <MetricGrid items={siteRequestMetrics} />
+      <MetricGrid items={mock.siteRequestMetrics} />
       <ProcessRow
-        title="Guide to Sale: Your site request delivery process"
-        steps={siteRequestProcess}
-        activeStep={4}
+        title="Guide to Sale: Your project conversion process"
+        steps={mock.siteRequestProcess}
+        activeStep={1}
         nextActionTitle="Next best action"
-        nextActionText="Send scope proposal for 3 qualified requests"
+        nextActionText="Qualify 3 new high-priority site requests."
       />
 
       <div className={styles.requestColumns}>
@@ -1814,21 +1837,15 @@ function IntegrationCard({
   )
 }
 
-function useFilteredLeads(query: string, stage: 'All stages' | LeadStage, activeTab: string) {
+function useFilteredLeads(query: string, stage: 'All stages' | LeadStage, activeTab: string, initialLeads: LeadRecord[] = []) {
   return useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return leads.filter((lead) => {
+    return initialLeads.filter((lead) => {
       const matchesQuery = normalized
-        ? `${lead.contactName} ${lead.role} ${lead.company} ${lead.owner} ${lead.stage}`.toLowerCase().includes(normalized)
+        ? `${lead.contactName} ${lead.role} ${lead.company} ${lead.stage} ${lead.owner}`.toLowerCase().includes(normalized)
         : true
       const matchesStage = stage === 'All stages' || lead.stage === stage
-      const matchesTab =
-        activeTab === 'All leads' ||
-        (activeTab === 'High intent' && lead.score >= 80) ||
-        (activeTab === 'Follow-up due' && ['Send follow-up', 'Book meeting', 'Nudge reply'].includes(lead.nextAction)) ||
-        (activeTab === 'At risk' && lead.engagement < 50) ||
-        (activeTab === 'Won' && lead.stage === 'Won')
-
+      const matchesTab = activeTab === 'All leads' || (activeTab === 'High intent' && lead.score > 80) || (activeTab === 'Won' && lead.stage === 'Won')
       return matchesQuery && matchesStage && matchesTab
     })
   }, [query, stage, activeTab])

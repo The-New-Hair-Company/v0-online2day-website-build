@@ -1,10 +1,8 @@
 import { CrmDashboard } from '@/components/crm-dashboard/crm-dashboard'
+import { getSiteRequests } from '@/app/actions/dashboard'
 
-export const metadata = {
-  title: 'Site Requests | Online2Day CRM Dashboard',
-  description: 'Website and app request pipeline for Online2Day.',
-}
-
-export default function DashboardSiteRequestsPage() {
-  return <CrmDashboard section="site-requests" />
+export default async function SiteRequestsPage() {
+  const initialSiteRequests = await getSiteRequests()
+  
+  return <CrmDashboard section="site-requests" initialSiteRequests={initialSiteRequests} />
 }

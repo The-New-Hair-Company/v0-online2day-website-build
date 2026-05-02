@@ -1,10 +1,8 @@
 import { CrmDashboard } from '@/components/crm-dashboard/crm-dashboard'
+import { getEmails } from '@/app/actions/dashboard'
 
-export const metadata = {
-  title: 'Emails | Online2Day CRM Dashboard',
-  description: 'Email performance and campaign workspace for Online2Day.',
-}
-
-export default function DashboardEmailsPage() {
-  return <CrmDashboard section="emails" />
+export default async function EmailsPage() {
+  const initialEmails = await getEmails()
+  
+  return <CrmDashboard section="emails" initialEmails={initialEmails} />
 }

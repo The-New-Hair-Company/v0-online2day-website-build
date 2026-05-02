@@ -116,3 +116,12 @@ export type SidePanelItem = {
   subtitle?: string
   action?: string
 }
+
+export interface CrmDashboardProps {
+  section: DashboardSection
+  initialLeads?: LeadRecord[]
+  initialVideos?: VideoRecord[]
+  initialEmails?: EmailRecord[]
+  initialConversations?: ConversationRecord[]
+  initialSiteRequests?: SiteRequestRecord[]
+}

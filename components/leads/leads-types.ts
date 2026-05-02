@@ -52,7 +52,7 @@ export type Lead = {
   logoClass: string
   score: number
   stage: LeadStage
-  owner: OwnerName
+  owner: string
   source: LeadSource
   sourceIcon: IconName
   lastActivity: string
@@ -79,7 +79,7 @@ export type LeadSourcePerformance = {
 }
 
 export type OwnerPerformance = {
-  owner: OwnerName
+  owner: string
   leads: number
   response: string
   meetings: number

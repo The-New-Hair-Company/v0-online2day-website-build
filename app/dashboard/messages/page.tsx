@@ -1,10 +1,8 @@
 import { CrmDashboard } from '@/components/crm-dashboard/crm-dashboard'
+import { getConversations } from '@/app/actions/dashboard'
 
-export const metadata = {
-  title: 'Messages | Online2Day CRM Dashboard',
-  description: 'Conversation workspace for Online2Day.',
-}
-
-export default function DashboardMessagesPage() {
-  return <CrmDashboard section="messages" />
+export default async function MessagesPage() {
+  const initialConversations = await getConversations()
+  
+  return <CrmDashboard section="messages" initialConversations={initialConversations} />
 }
