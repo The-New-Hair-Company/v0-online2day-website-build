@@ -111,6 +111,7 @@ function enrichMetrics(raw: RawMetric[], section: 'leads' | 'video' | 'email' | 
 type MenuItem = {
   label: string
   icon: ComponentType<{ size?: number }>
+  href?: string
 }
 
 const cx = (...classes: Array<string | false | undefined>) => classes.filter(Boolean).join(' ')
@@ -159,10 +160,11 @@ const PAGE_META: Record<DashboardSection, { title: string; description: string; 
     searchPlaceholder: 'Search videos, leads, companies...',
     createLabel: 'Create / Upload Video',
     createItems: [
-      { label: 'Record new video', icon: Video },
-      { label: 'Upload existing video', icon: Upload },
-      { label: 'Use template', icon: Grid2x2 },
-      { label: 'Create AI intro', icon: Bot },
+      { label: 'Open video editor', icon: WandSparkles, href: '/dashboard/videos/editor' },
+      { label: 'Record new video', icon: Video, href: '/dashboard/videos/editor?mode=record' },
+      { label: 'Upload existing video', icon: Upload, href: '/dashboard/videos/editor?mode=upload' },
+      { label: 'Use template', icon: Grid2x2, href: '/dashboard/videos/editor?mode=template' },
+      { label: 'Create AI intro', icon: Bot, href: '/dashboard/videos/editor?mode=ai-intro' },
       { label: 'Import from library', icon: Download },
     ],
   },
@@ -286,10 +288,17 @@ export function CrmDashboard({
                   {meta.createItems.map((item) => {
                     const Icon = item.icon
                     return (
-                      <button key={item.label} type="button">
-                        <Icon size={16} />
-                        {item.label}
-                      </button>
+                      item.href ? (
+                        <Link key={item.label} href={item.href}>
+                          <Icon size={16} />
+                          {item.label}
+                        </Link>
+                      ) : (
+                        <button key={item.label} type="button">
+                          <Icon size={16} />
+                          {item.label}
+                        </button>
+                      )
                     )
                   })}
                 </div>

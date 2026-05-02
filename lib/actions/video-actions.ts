@@ -4,6 +4,19 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { logLeadEvent } from './lead-actions'
 
+type EditorProjectPayload = {
+  title: string
+  leadId: string
+  duration: number
+  format: string
+  scenes: Array<Record<string, unknown>>
+  timeline: Array<Record<string, unknown>>
+  brand: Record<string, unknown>
+  cta: Record<string, unknown>
+  email: Record<string, unknown>
+  settings: Record<string, unknown>
+}
+
 export async function uploadLeadVideo(leadId: string, formData: FormData) {
   const supabase = await createClient()
   const { data: user } = await supabase.auth.getUser()
@@ -79,4 +92,57 @@ export async function deleteLeadVideo(assetId: string, leadId: string, storagePa
   revalidatePath('/dashboard/videos')
   revalidatePath(`/dashboard/leads/${leadId}`)
   return { success: true }
+}
+
+export async function saveVideoEditorProject(payload: EditorProjectPayload) {
+  const supabase = await createClient()
+  const { data: user } = await supabase.auth.getUser()
+
+  if (!payload.leadId) return { error: 'Choose a lead before saving the video project.' }
+  if (!payload.title.trim()) return { error: 'Give the video project a title.' }
+
+  const slug = `${payload.leadId.slice(0, 8)}-editor-${Date.now()}`
+  const projectMetadata = {
+    editorProject: true,
+    duration: payload.duration,
+    format: payload.format,
+    scenes: payload.scenes,
+    timeline: payload.timeline,
+    brand: payload.brand,
+    cta: payload.cta,
+    email: payload.email,
+    settings: payload.settings,
+    createdBy: user.user?.email || 'unknown',
+  }
+
+  const { data: asset, error } = await supabase
+    .from('lead_assets')
+    .insert({
+      lead_id: payload.leadId,
+      name: payload.title,
+      type: 'video',
+      url: '',
+      storage_path: '',
+      slug,
+      metadata: projectMetadata,
+    } as any)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Editor project save error:', error)
+    return { error: error.message }
+  }
+
+  await logLeadEvent(payload.leadId, 'Video Editor Project Saved', `Video project "${payload.title}" saved by ${user.user?.email || 'unknown'}`, {
+    slug,
+    assetId: asset.id,
+    duration: payload.duration,
+    format: payload.format,
+  })
+
+  revalidatePath('/dashboard/videos')
+  revalidatePath('/dashboard/emails')
+  revalidatePath(`/dashboard/leads/${payload.leadId}`)
+  return { success: true, asset, slug }
 }

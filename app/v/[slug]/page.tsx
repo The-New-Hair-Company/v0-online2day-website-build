@@ -20,6 +20,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
   let lead: any = asset?.lead
   let videoUrl: string | null = asset?.url || null
   let videoName: string = asset?.name || ''
+  let editorProject: any = asset?.metadata && typeof asset.metadata === 'object' && 'editorProject' in asset.metadata ? asset.metadata : null
 
   if (!lead) {
     const { data: directLead } = await supabase
@@ -43,6 +44,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
     if (latestAssets?.[0]) {
       videoUrl = latestAssets[0].url
       videoName = latestAssets[0].name
+      editorProject = latestAssets[0].metadata && typeof latestAssets[0].metadata === 'object' && 'editorProject' in latestAssets[0].metadata ? latestAssets[0].metadata : null
     }
   }
 
@@ -84,6 +86,27 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
                   playsInline
                   preload="metadata"
                 />
+              </div>
+            ) : editorProject ? (
+              <div className="aspect-video relative overflow-hidden bg-gradient-to-br from-[#081225] via-[#0b1020] to-[#111827]">
+                <div className="absolute inset-8 border border-white/10 rounded-xl" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_18%,rgba(47,107,255,0.35),transparent_30%)]" />
+                <div className="relative h-full p-10 flex flex-col justify-center">
+                  <div className="text-violet-300 text-xs font-bold uppercase tracking-[0.2em] mb-5">Online2Day video project</div>
+                  <h2 className="text-4xl md:text-6xl font-black text-white tracking-tight max-w-3xl">
+                    {editorProject.scenes?.[0]?.headline || videoName || 'Personalised strategy video'}
+                  </h2>
+                  <p className="mt-5 text-white/60 text-lg max-w-2xl">
+                    {editorProject.scenes?.[0]?.note || 'This CRM-generated video project is ready for review and follow-up.'}
+                  </p>
+                  <div className="mt-8 flex flex-wrap gap-3">
+                    {(editorProject.scenes || []).slice(0, 4).map((scene: any, index: number) => (
+                      <span key={scene.id || index} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/70">
+                        {index + 1}. {scene.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="aspect-video flex flex-col items-center justify-center bg-[#111] text-white/30">

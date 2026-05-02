@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import type { ComponentType } from 'react'
 import {
-  BarChart3,
   Crown,
   FileInput,
   Grid3X3,
@@ -25,15 +24,17 @@ type NavItem = {
   badge?: string
 }
 
-export function DashboardSidebar({ active }: { active?: 'overview' | 'leads' | 'settings' }) {
+type ActiveDashboardSection = 'overview' | 'leads' | 'videos' | 'emails' | 'messages' | 'site-requests' | 'integrations' | 'settings'
+
+export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }) {
   const navItems: NavItem[] = [
     { label: 'Overview', href: '/dashboard/overview', icon: Grid3X3, active: active === 'overview' },
     { label: 'Leads', href: '/dashboard/leads', icon: Users, active: active === 'leads' },
-    { label: 'Videos', href: '/dashboard/videos', icon: Video },
-    { label: 'Emails', href: '/dashboard/emails', icon: Mail },
-    { label: 'Messages', href: '/dashboard/messages', icon: MessageCircle, badge: '4' },
-    { label: 'Site Requests', href: '/dashboard/site-requests', icon: FileInput },
-    { label: 'Integrations', href: '/dashboard/integrations', icon: Plug },
+    { label: 'Videos', href: '/dashboard/videos', icon: Video, active: active === 'videos' },
+    { label: 'Emails', href: '/dashboard/emails', icon: Mail, active: active === 'emails' },
+    { label: 'Messages', href: '/dashboard/messages', icon: MessageCircle, badge: '4', active: active === 'messages' },
+    { label: 'Site Requests', href: '/dashboard/site-requests', icon: FileInput, active: active === 'site-requests' },
+    { label: 'Integrations', href: '/dashboard/integrations', icon: Plug, active: active === 'integrations' },
     { label: 'Settings', href: '/dashboard/settings', icon: Settings, active: active === 'settings' },
   ]
 
