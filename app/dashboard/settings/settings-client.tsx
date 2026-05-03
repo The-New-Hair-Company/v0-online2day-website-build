@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Check, Crown, KeyRound, Palette, Type } from 'lucide-react'
+import { Check, Crown, KeyRound, Type } from 'lucide-react'
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import styles from '@/components/leads/LeadsDashboard.module.css'
+import { logAuditEntry } from '@/lib/actions/audit-actions'
+import { getAdminPrefs, setAdminPrefs } from '@/lib/actions/settings-actions'
 
 type ThemeChoice = 'dark' | 'light'
 type TextSize = 'sm' | 'md' | 'lg' | 'xl'
@@ -29,11 +31,6 @@ const defaultAccessibility: AccessibilitySettings = {
   lineHeight: 'standard',
 }
 
-function logGdpr(action: string, resource: string, id: string, changes?: string) {
-  const entry = { ts: new Date().toISOString(), action, resource, id, changes }
-  const existing = JSON.parse(localStorage.getItem('gdpr_audit') || '[]')
-  localStorage.setItem('gdpr_audit', JSON.stringify([entry, ...existing].slice(0, 500)))
-}
 
 function textSizeFromScale(scale: number): TextSize {
   if (scale < 96) return 'sm'
@@ -71,8 +68,11 @@ export function SettingsClient() {
     setMotion(next.motion)
     setFont(next.font)
     setLineHeight(next.lineHeight)
-    setLicenseKey(localStorage.getItem('crm_license_key') || '')
-    setLicenseStatus((localStorage.getItem('crm_license_status') as typeof licenseStatus) || 'trial')
+
+    getAdminPrefs(['license.key', 'license.status']).then((prefs) => {
+      setLicenseKey(prefs['license.key'] || '')
+      setLicenseStatus((prefs['license.status'] as typeof licenseStatus) || 'trial')
+    })
   }, [])
 
   function saveAccessibility(patch: Partial<AccessibilitySettings>) {
@@ -103,23 +103,21 @@ export function SettingsClient() {
     localStorage.setItem(ACCESSIBILITY_KEY, JSON.stringify(next))
     localStorage.setItem('crm_theme', next.theme)
     localStorage.setItem('crm_textsize', next.textSize === 'xl' ? 'lg' : next.textSize)
-    logGdpr('update', 'site_accessibility_setting', 'global', JSON.stringify(patch))
+    logAuditEntry('update', 'site_accessibility_setting', 'global', JSON.stringify(patch))
   }
 
-  function activateLicense() {
+  async function activateLicense() {
     if (!licenseKey.trim()) return
-    localStorage.setItem('crm_license_key', licenseKey.trim())
-    localStorage.setItem('crm_license_status', 'active')
+    await setAdminPrefs({ 'license.key': licenseKey.trim(), 'license.status': 'active' })
     setLicenseStatus('active')
-    logGdpr('activate', 'license', 'online2day', 'license key saved')
+    logAuditEntry('activate', 'license', 'online2day', 'license key saved')
   }
 
-  function revokeLicense() {
-    localStorage.removeItem('crm_license_key')
-    localStorage.setItem('crm_license_status', 'none')
+  async function revokeLicense() {
+    await setAdminPrefs({ 'license.key': '', 'license.status': 'none' })
     setLicenseKey('')
     setLicenseStatus('none')
-    logGdpr('revoke', 'license', 'online2day')
+    logAuditEntry('revoke', 'license', 'online2day')
   }
 
   return (

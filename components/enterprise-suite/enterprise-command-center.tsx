@@ -43,6 +43,16 @@ import {
 } from 'lucide-react'
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import styles from './enterprise-suite.module.css'
+import {
+  getEnabledFeatures,
+  setEnabledFeatures,
+  getEnterpriseTasks,
+  addEnterpriseTask,
+  toggleEnterpriseTask,
+  getEnterpriseEvents,
+  addEnterpriseEvent,
+} from '@/lib/actions/enterprise-actions'
+import { logAuditEntry, getAuditLog } from '@/lib/actions/audit-actions'
 
 type Category =
   | 'Calendar & meetings'
@@ -77,8 +87,11 @@ type AuditEntry = {
   detail: string
 }
 
-const STORAGE_KEY = 'o2d_enterprise_command_center'
-const LOG_KEY = 'o2d_enterprise_command_log'
+type TaskItem = {
+  id: string
+  title: string
+  isDone: boolean
+}
 
 const enterpriseChanges: EnterpriseChange[] = [
   { id: 'internal-calendar', category: 'Calendar & meetings', title: 'Internal calendar board', detail: 'Shared operational calendar for calls, build reviews, launches and renewals.', action: 'Open board', icon: CalendarDays },
@@ -135,34 +148,6 @@ const enterpriseChanges: EnterpriseChange[] = [
 
 const categories: Array<Category | 'All'> = ['All', 'Calendar & meetings', 'Video calling', 'Pipeline intelligence', 'Comms & sequences', 'Data governance', 'Ops & delivery', 'Growth & performance']
 
-const defaultEvents: CalendarEvent[] = [
-  { id: 'evt-1', title: 'Pipeline standup', time: '09:30', owner: 'Sales', type: 'Internal' },
-  { id: 'evt-2', title: 'Video review', time: '11:00', owner: 'Creative', type: 'Review' },
-  { id: 'evt-3', title: 'Client launch check', time: '15:00', owner: 'Delivery', type: 'Launch' },
-]
-
-const defaultTasks = ['Review hot leads', 'Prepare video call agenda', 'Check Resend campaign copy']
-
-function readArray(key: string, fallback: string[]) {
-  if (typeof window === 'undefined') return fallback
-  try {
-    const value = JSON.parse(localStorage.getItem(key) || 'null')
-    return Array.isArray(value) ? value : fallback
-  } catch {
-    return fallback
-  }
-}
-
-function readLog() {
-  if (typeof window === 'undefined') return [] as AuditEntry[]
-  try {
-    const value = JSON.parse(localStorage.getItem(LOG_KEY) || '[]')
-    return Array.isArray(value) ? value : []
-  } catch {
-    return []
-  }
-}
-
 function downloadFile(filename: string, content: string, type: string) {
   const blob = new Blob([content], { type })
   const url = URL.createObjectURL(blob)
@@ -177,8 +162,8 @@ export function EnterpriseCommandCenter() {
   const [activeCategory, setActiveCategory] = useState<Category | 'All'>('All')
   const [query, setQuery] = useState('')
   const [enabled, setEnabled] = useState<string[]>([])
-  const [events, setEvents] = useState<CalendarEvent[]>(defaultEvents)
-  const [tasks, setTasks] = useState<string[]>(defaultTasks)
+  const [events, setEvents] = useState<CalendarEvent[]>([])
+  const [tasks, setTasks] = useState<TaskItem[]>([])
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([])
   const [roomLink, setRoomLink] = useState('')
   const [callStatus, setCallStatus] = useState('No live room yet')
@@ -191,27 +176,50 @@ export function EnterpriseCommandCenter() {
   const [roi, setRoi] = useState(0)
 
   useEffect(() => {
-    setEnabled(readArray(STORAGE_KEY, []))
-    setAuditLog(readLog())
+    getEnabledFeatures().then(setEnabled)
+    getEnterpriseTasks().then(setTasks)
+    getEnterpriseEvents().then((evts) =>
+      setEvents(evts.map((e) => ({ id: e.id, title: e.title, time: e.time, owner: '', type: e.type })))
+    )
+    getAuditLog(18).then((rows) =>
+      setAuditLog(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (rows as any[]).map((r) => ({
+          id: r.id,
+          time: new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          action: r.action,
+          detail: [r.resource, r.changes].filter(Boolean).join(': '),
+        }))
+      )
+    )
   }, [])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(enabled))
-  }, [enabled])
-
   function record(action: string, detail: string) {
-    const entry = { id: `${Date.now()}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), action, detail }
-    setAuditLog((current) => {
-      const next = [entry, ...current].slice(0, 18)
-      localStorage.setItem(LOG_KEY, JSON.stringify(next))
-      return next
-    })
+    const entry: AuditEntry = { id: `${Date.now()}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), action, detail }
+    setAuditLog((current) => [entry, ...current].slice(0, 18))
+    logAuditEntry(action, 'enterprise', undefined, detail)
   }
 
   function markEnabled(change: EnterpriseChange) {
-    setEnabled((current) => current.includes(change.id) ? current : [...current, change.id])
+    setEnabled((current) => {
+      if (current.includes(change.id)) return current
+      const next = [...current, change.id]
+      setEnabledFeatures(next)
+      return next
+    })
     record(change.title, change.detail)
+  }
+
+  function addTaskOptimistic(title: string) {
+    const tempId = `temp-${Date.now()}`
+    setTasks((current) => [{ id: tempId, title, isDone: false }, ...current])
+    addEnterpriseTask(title)
+  }
+
+  function addEventOptimistic(title: string, time: string, type: string, owner = '') {
+    const tempId = `temp-${Date.now()}`
+    setEvents((current) => [{ id: tempId, title, time, owner, type }, ...current])
+    addEnterpriseEvent(title, time, type)
   }
 
   async function copyText(text: string, success: string) {
@@ -231,13 +239,12 @@ export function EnterpriseCommandCenter() {
       return
     }
     if (change.id === 'discovery-event') {
-      const next = { id: `evt-${Date.now()}`, title: 'Discovery and scope review', time: '13:30', owner: 'Growth', type: 'Discovery' }
-      setEvents((current) => [next, ...current])
+      addEventOptimistic('Discovery and scope review', '13:30', 'Discovery', 'Growth')
       setWorkspaceStatus('Discovery event added to the internal calendar.')
       return
     }
     if (change.id === 'ics-export') {
-      const event = events[0] || defaultEvents[0]
+      const event = events[0] || { title: 'Pipeline standup' }
       downloadFile('online2day-internal-event.ics', `BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
@@ -260,12 +267,12 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'availability-slots') {
-      setEvents((current) => [{ id: `evt-${Date.now()}`, title: 'Open availability window', time: '16:00', owner: 'Team', type: 'Availability' }, ...current])
+      addEventOptimistic('Open availability window', '16:00', 'Availability', 'Team')
       setWorkspaceStatus('Availability slot generated.')
       return
     }
     if (change.id === 'follow-up-task') {
-      setTasks((current) => ['Send follow-up summary after next meeting', ...current])
+      addTaskOptimistic('Send follow-up summary after next meeting')
       setWorkspaceStatus('Post-meeting follow-up task created.')
       return
     }
@@ -291,7 +298,7 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'screen-share') {
-      setTasks((current) => ['Open CRM context, proposal tab and video editor before sharing screen', ...current])
+      addTaskOptimistic('Open CRM context, proposal tab and video editor before sharing screen')
       setWorkspaceStatus('Screen-share checklist added.')
       return
     }
@@ -301,7 +308,7 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'recording-consent') {
-      setTasks((current) => ['Confirm recording consent before saving any call asset', ...current])
+      addTaskOptimistic('Confirm recording consent before saving any call asset')
       setWorkspaceStatus('Recording consent gate enabled.')
       return
     }
@@ -321,7 +328,7 @@ END:VCALENDAR`, 'text/calendar')
     }
     if (change.id === 'sla-timer') {
       setTimerActive(true)
-      setTasks((current) => ['Respond to high-intent lead inside SLA window', ...current])
+      addTaskOptimistic('Respond to high-intent lead inside SLA window')
       return
     }
     if (change.id === 'forecast-scenario') {
@@ -330,7 +337,7 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'priority-matrix') {
-      setTasks((current) => ['Priority matrix: hot leads, build blockers, renewal watch, nurture lane', ...current])
+      addTaskOptimistic('Priority matrix: hot leads, build blockers, renewal watch, nurture lane')
       return
     }
     if (change.id === 'proposal-mailto') {
@@ -353,7 +360,7 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'lighthouse-budget') {
-      setTasks((current) => ['Keep public mobile Lighthouse budget at 90+ for performance and accessibility', ...current])
+      addTaskOptimistic('Keep public mobile Lighthouse budget at 90+ for performance and accessibility')
       return
     }
     if (change.id === 'roi-calculator') {
@@ -372,12 +379,12 @@ END:VCALENDAR`, 'text/calendar')
     }
     if (change.id === 'churn-risk') {
       setRiskScore(18)
-      setTasks((current) => ['Churn mitigation: schedule value review and send usage proof', ...current])
+      addTaskOptimistic('Churn mitigation: schedule value review and send usage proof')
       return
     }
 
     const taskLabel = `${change.title}: ${change.action}`
-    setTasks((current) => current.includes(taskLabel) ? current : [taskLabel, ...current])
+    if (!tasks.some((t) => t.title === taskLabel)) addTaskOptimistic(taskLabel)
     setWorkspaceStatus(`${change.title} enabled.`)
   }
 
@@ -427,7 +434,7 @@ END:VCALENDAR`, 'text/calendar')
                 <div key={event.id} className={styles.eventItem}>
                   <span>{event.time}</span>
                   <strong>{event.title}</strong>
-                  <em>{event.owner} - {event.type}</em>
+                  <em>{event.owner ? `${event.owner} - ` : ''}{event.type}</em>
                 </div>
               ))}
             </div>
@@ -491,11 +498,23 @@ END:VCALENDAR`, 'text/calendar')
           <article className={styles.panel}>
             <header><ClipboardCheck size={18} /><strong>Tasks created by features</strong></header>
             <div className={styles.taskList}>
-              {tasks.slice(0, 10).map((task) => <label key={task}><input type="checkbox" />{task}</label>)}
+              {tasks.slice(0, 10).map((task) => (
+                <label key={task.id}>
+                  <input
+                    type="checkbox"
+                    checked={task.isDone}
+                    onChange={() => {
+                      setTasks((current) => current.map((t) => t.id === task.id ? { ...t, isDone: !t.isDone } : t))
+                      toggleEnterpriseTask(task.id, !task.isDone)
+                    }}
+                  />
+                  {task.title}
+                </label>
+              ))}
             </div>
           </article>
           <article className={styles.panel}>
-            <header><ShieldCheck size={18} /><strong>Local audit trail</strong></header>
+            <header><ShieldCheck size={18} /><strong>Audit trail</strong></header>
             <div className={styles.auditList}>
               {auditLog.length ? auditLog.map((entry) => (
                 <div key={entry.id}><span>{entry.time}</span><strong>{entry.action}</strong><p>{entry.detail}</p></div>

@@ -10,6 +10,7 @@ import type { Lead } from '@/components/leads/leads-types'
 import type { LeadEventRow } from '@/app/actions/dashboard'
 import { sendEnterpriseEmail } from '@/lib/actions/email-actions'
 import { uploadLeadVideo } from '@/lib/actions/video-actions'
+import { logAuditEntry } from '@/lib/actions/audit-actions'
 
 type Props = {
   lead: Lead
@@ -17,9 +18,7 @@ type Props = {
 }
 
 function logGdpr(action: string, resource: string, id: string, changes?: string) {
-  const entry = { ts: new Date().toISOString(), action, resource, id, changes }
-  const existing = JSON.parse(localStorage.getItem('gdpr_audit') || '[]')
-  localStorage.setItem('gdpr_audit', JSON.stringify([entry, ...existing].slice(0, 500)))
+  logAuditEntry(action, resource, id, changes)
 }
 
 function relativeTime(isoString: string) {

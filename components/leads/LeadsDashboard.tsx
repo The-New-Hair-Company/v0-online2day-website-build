@@ -8,6 +8,8 @@ import styles from './LeadsDashboard.module.css'
 import type { IconName, Lead, LeadStage, Metric, OwnerPerformance, PipelineStage, LeadSourcePerformance, TaskItem, Recommendation, ActivityItem } from './leads-types'
 import { createLeadFromObject, logActivityEvent } from '@/lib/actions/lead-actions'
 import { createTask, completeTask } from '@/lib/actions/task-actions'
+import { logAuditEntry } from '@/lib/actions/audit-actions'
+import { importContactsFromRows } from '@/lib/actions/import-actions'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -46,8 +48,6 @@ type TimerState = {
   description: string
 }
 
-type GdprLog = { ts: string; action: string; resource: string; id: string; changes?: string }
-
 type ActivityType = 'call' | 'email' | 'meeting' | 'note' | 'task'
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -65,12 +65,7 @@ const pageMeta = {
 }
 
 function gdprLog(action: string, resource: string, id: string, changes?: string) {
-  const entry: GdprLog = { ts: new Date().toISOString(), action, resource, id, changes }
-  try {
-    const existing: GdprLog[] = JSON.parse(localStorage.getItem('gdpr_audit') || '[]')
-    existing.unshift(entry)
-    localStorage.setItem('gdpr_audit', JSON.stringify(existing.slice(0, 500)))
-  } catch {}
+  logAuditEntry(action, resource, id, changes)
 }
 
 function formatSeconds(s: number) {
@@ -225,7 +220,7 @@ export default function LeadsDashboard({
     router.push(`/dashboard/leads/${id}`)
   }
 
-  function showNotice(title: string, detail = 'Action completed.') {
+  function showNotice(title: string, detail = 'Done.') {
     setNotice({ title, detail })
     window.setTimeout(() => setNotice(null), 3400)
   }
@@ -1238,15 +1233,48 @@ function CreateTaskModal({ leads, onClose, onSave }: { leads: Lead[]; onClose: (
 
 // ─── UPLOAD CONTACTS MODAL ───────────────────────────────────────────────────
 
+function parseCsv(text: string): Record<string, string>[] {
+  const lines = text.split(/\r?\n/).filter(Boolean)
+  if (lines.length < 2) return []
+  const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase())
+  return lines.slice(1).map(line => {
+    const vals = line.split(',').map(v => v.replace(/^"|"$/g, '').trim())
+    const row: Record<string, string> = {}
+    headers.forEach((h, i) => { row[h] = vals[i] ?? '' })
+    return row
+  })
+}
+
 function UploadContactsModal({ onClose, onImport }: { onClose: () => void; onImport: (count: number) => void }) {
   const [dragOver, setDragOver] = useState(false)
   const [file, setFile] = useState<File | null>(null)
-  const [mapping, setMapping] = useState(false)
+  const [nameCol, setNameCol] = useState('name')
+  const [emailCol, setEmailCol] = useState('email')
+  const [companyCol, setCompanyCol] = useState('company')
+  const [defaultStage, setDefaultStage] = useState('New')
+  const [importing, setImporting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  function handleFile(f: File) {
-    setFile(f)
-    setMapping(true)
+  function handleFile(f: File) { setFile(f) }
+
+  async function handleImport() {
+    if (!file || importing) return
+    setImporting(true)
+    try {
+      const text = await file.text()
+      const rows = parseCsv(text).map(row => ({
+        name: row[nameCol] || row['name'] || '',
+        email: row[emailCol] || row['email'] || '',
+        company: row[companyCol] || row['company'] || '',
+        phone: row['phone'] || row['mobile'] || '',
+        source: row['source'] || 'Import',
+        stage: row['stage'] || '',
+      }))
+      const result = await importContactsFromRows(rows, file.name, defaultStage)
+      onImport(result.imported ?? 0)
+    } finally {
+      setImporting(false)
+    }
   }
 
   return (
@@ -1270,15 +1298,11 @@ function UploadContactsModal({ onClose, onImport }: { onClose: () => void; onImp
               >
                 <div className={styles.dropzoneIcon}><Icon name="upload" /></div>
                 <strong>Drop your file here, or click to browse</strong>
-                <span>Supports CSV, Excel (XLSX), JSON, and vCard (VCF)</span>
+                <span>Supports CSV files with a header row</span>
                 <div className={styles.formatBadges}>
-                  {['CSV', 'XLSX', 'JSON', 'VCF'].map(f => <span key={f} className={styles.formatBadge}>{f}</span>)}
+                  {['CSV'].map(f => <span key={f} className={styles.formatBadge}>{f}</span>)}
                 </div>
-                <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls,.json,.vcf" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
-              </div>
-              <div className={styles.formRow}>
-                <label>Or paste a public URL to a CSV file</label>
-                <input className={styles.formInput} placeholder="https://example.com/contacts.csv" />
+                <input ref={inputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
               </div>
             </>
           ) : (
@@ -1286,31 +1310,39 @@ function UploadContactsModal({ onClose, onImport }: { onClose: () => void; onImp
               <div className={styles.uploadedFile}>
                 <Icon name="check" />
                 <span>{file.name} ({(file.size / 1024).toFixed(1)} KB)</span>
-                <button className={styles.btnSecondary} onClick={() => { setFile(null); setMapping(false) }} style={{ padding: '4px 10px', minHeight: 28, fontSize: 12 }}>Remove</button>
+                <button className={styles.btnSecondary} onClick={() => setFile(null)} style={{ padding: '4px 10px', minHeight: 28, fontSize: 12 }}>Remove</button>
               </div>
               <div className={styles.formRow}>
                 <label>Map "Name" column</label>
-                <select className={styles.formSelect}><option>name</option><option>full_name</option><option>contact</option></select>
+                <select className={styles.formSelect} value={nameCol} onChange={e => setNameCol(e.target.value)}>
+                  <option value="name">name</option><option value="full_name">full_name</option><option value="contact">contact</option>
+                </select>
               </div>
               <div className={styles.formRow}>
                 <label>Map "Email" column</label>
-                <select className={styles.formSelect}><option>email</option><option>email_address</option><option>e-mail</option></select>
+                <select className={styles.formSelect} value={emailCol} onChange={e => setEmailCol(e.target.value)}>
+                  <option value="email">email</option><option value="email_address">email_address</option><option value="e-mail">e-mail</option>
+                </select>
               </div>
               <div className={styles.formRow}>
                 <label>Map "Company" column</label>
-                <select className={styles.formSelect}><option>company</option><option>organization</option><option>employer</option></select>
+                <select className={styles.formSelect} value={companyCol} onChange={e => setCompanyCol(e.target.value)}>
+                  <option value="company">company</option><option value="organization">organization</option><option value="employer">employer</option>
+                </select>
               </div>
               <div className={styles.formRow}>
                 <label>Default stage for imported leads</label>
-                <select className={styles.formSelect}>{stageOptions.map(s => <option key={s}>{s}</option>)}</select>
+                <select className={styles.formSelect} value={defaultStage} onChange={e => setDefaultStage(e.target.value)}>
+                  {stageOptions.map(s => <option key={s}>{s}</option>)}
+                </select>
               </div>
             </>
           )}
         </div>
         <div className={styles.modalFooter}>
           <button className={styles.btnSecondary} onClick={onClose}>Cancel</button>
-          <button className={styles.btnPrimary} disabled={!file} onClick={() => onImport(42)} style={{ opacity: file ? 1 : 0.5 }}>
-            <Icon name="upload" />Import Contacts
+          <button className={styles.btnPrimary} disabled={!file || importing} onClick={handleImport} style={{ opacity: file ? 1 : 0.5 }}>
+            <Icon name="upload" />{importing ? 'Importing…' : 'Import Contacts'}
           </button>
         </div>
       </div>
