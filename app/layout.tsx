@@ -1,12 +1,8 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import AuthRecoveryHandler from '@/components/auth-recovery-handler'
 import { AccessibilitySettingsButton } from '@/components/accessibility-settings'
-
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: 'online2day - Bespoke Web Development | UK',
@@ -35,12 +31,14 @@ export default function RootLayout({
                 var settings = JSON.parse(localStorage.getItem('o2d_accessibility_settings') || '{}');
                 var root = document.documentElement;
                 var theme = settings.theme || localStorage.getItem('crm_theme') || 'dark';
+                var textScale = settings.textScale || 100;
                 root.dataset.theme = theme;
                 root.dataset.textSize = settings.textSize || localStorage.getItem('crm_textsize') || 'md';
                 root.dataset.contrast = settings.contrast || 'standard';
                 root.dataset.motion = settings.motion || 'standard';
                 root.dataset.font = settings.font || 'standard';
                 root.dataset.lineHeight = settings.lineHeight || 'standard';
+                root.style.setProperty('--accessibility-text-scale', String(textScale / 100));
                 root.classList.toggle('dark', theme === 'dark');
               } catch (error) {}
             `,

@@ -1,196 +1,81 @@
-'use client'
-
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Menu, X } from 'lucide-react'
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { Menu } from 'lucide-react'
+
+const navItems = [
+  { href: '/services', label: 'Services' },
+  { href: '/work', label: 'Work' },
+  { href: '/pricing', label: 'Pricing' },
+  { href: '/blog', label: 'Blog' },
+  { href: '/about', label: 'About' },
+]
+
+function BrandLink() {
+  return (
+    <Link href="/" className="text-xl font-bold tracking-tight" aria-label="Online2Day home">
+      <span className="text-foreground">online</span>
+      <span className="text-primary">2day</span>
+    </Link>
+  )
+}
+
+function NavLinks({ mobile = false }: { mobile?: boolean }) {
+  return (
+    <>
+      {navItems.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          className={`${mobile ? 'block py-1' : ''} text-sm font-medium text-muted-foreground transition-colors hover:text-foreground`}
+        >
+          {item.label}
+        </Link>
+      ))}
+    </>
+  )
+}
+
+function HeaderActions({ mobile = false }: { mobile?: boolean }) {
+  return (
+    <div className={mobile ? 'grid gap-2 border-t border-border pt-3' : 'hidden items-center gap-3 md:flex'}>
+      <Button variant="ghost" asChild>
+        <Link href="/auth/login">Login</Link>
+      </Button>
+      <Button variant="outline" asChild>
+        <Link href="/dashboard">Dashboard</Link>
+      </Button>
+      <Button asChild>
+        <Link href="/contact">Get Started</Link>
+      </Button>
+    </div>
+  )
+}
 
 export function Header() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [user, setUser] = useState<any | null>(null)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const supabase = createClient()
-
-    // Get initial session
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      setUser(session?.user ?? null)
-
-      if (session?.user) {
-        // Check if admin
-        const { data: roleData } = await supabase
-          .from('user_profiles')
-          .select('role')
-          .eq('user_id', session.user.id)
-          .single()
-
-        setIsAdmin(roleData?.role === 'admin')
-      }
-
-      setLoading(false)
-    }
-
-    getSession()
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        supabase
-          .from('user_profiles')
-          .select('role')
-          .eq('user_id', session.user.id)
-          .single()
-          .then(({ data }) => {
-            setIsAdmin(data?.role === 'admin')
-          })
-      } else {
-        setIsAdmin(false)
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  const handleSignOut = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    window.location.href = '/'
-  }
-
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
+    <header className="fixed left-0 right-0 top-0 z-50 border-b border-border bg-background/88 backdrop-blur-lg">
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
-          <Link href="/" className="text-xl font-bold tracking-tight">
-            <span className="text-foreground">online</span>
-            <span className="text-primary">2day</span>
-          </Link>
+        <div className="flex h-16 items-center justify-between">
+          <BrandLink />
 
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-8">
-            <Link href="/services" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Services
-            </Link>
-            <Link href="/work" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Work
-            </Link>
-            <Link href="/blog" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Blog
-            </Link>
-            <Link href="/about" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              About
-            </Link>
+          <nav className="hidden items-center gap-8 md:flex" aria-label="Primary navigation">
+            <NavLinks />
           </nav>
 
-          <div className="hidden md:flex items-center gap-3">
-            {loading ? (
-              <div className="w-20 h-8 bg-muted animate-pulse rounded" />
-            ) : user ? (
-              <>
-                {isAdmin ? (
-                  <Button variant="ghost" asChild>
-                    <Link href="/dashboard">Dashboard</Link>
-                  </Button>
-                ) : (
-                  <Button variant="ghost" asChild>
-                    <Link href="/profile">Profile</Link>
-                  </Button>
-                )}
-                <Button variant="outline" onClick={handleSignOut}>
-                  Sign Out
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button variant="ghost" asChild>
-                  <Link href="/auth/login">Login</Link>
-                </Button>
-                <Button asChild>
-                  <Link href="/contact">Get Started</Link>
-                </Button>
-              </>
-            )}
-          </div>
+          <HeaderActions />
 
-          {/* Mobile Menu Button */}
-          <button
-            className="md:hidden"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label="Toggle menu"
-          >
-            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
-        </div>
-
-        {/* Mobile Navigation */}
-        {mobileMenuOpen && (
-          <nav className="md:hidden py-4 border-t border-border">
-            <div className="flex flex-col gap-4">
-              <Link
-                href="/services"
-                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Services
-              </Link>
-              <Link
-                href="/work"
-                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Work
-              </Link>
-              <Link
-                href="/blog"
-                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Blog
-              </Link>
-              <Link
-                href="/about"
-                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                About
-              </Link>
-              <div className="flex flex-col gap-2 pt-2 border-t border-border">
-                {loading ? (
-                  <div className="w-full h-8 bg-muted animate-pulse rounded" />
-                ) : user ? (
-                  <>
-                    {isAdmin ? (
-                      <Button variant="ghost" asChild>
-                        <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)}>Dashboard</Link>
-                      </Button>
-                    ) : (
-                      <Button variant="ghost" asChild>
-                        <Link href="/profile" onClick={() => setMobileMenuOpen(false)}>Profile</Link>
-                      </Button>
-                    )}
-                    <Button variant="outline" onClick={() => { handleSignOut(); setMobileMenuOpen(false); }}>
-                      Sign Out
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button variant="ghost" asChild>
-                      <Link href="/auth/login" onClick={() => setMobileMenuOpen(false)}>Login</Link>
-                    </Button>
-                    <Button asChild>
-                      <Link href="/contact" onClick={() => setMobileMenuOpen(false)}>Get Started</Link>
-                    </Button>
-                  </>
-                )}
+          <details className="group relative md:hidden">
+            <summary className="grid h-10 w-10 cursor-pointer list-none place-items-center rounded-lg border border-border bg-card text-foreground [&::-webkit-details-marker]:hidden" aria-label="Open navigation menu">
+              <Menu className="h-5 w-5" />
+            </summary>
+            <nav className="absolute right-0 top-12 w-[min(88vw,320px)] rounded-xl border border-border bg-card p-4 shadow-2xl shadow-black/20" aria-label="Mobile navigation">
+              <div className="grid gap-3">
+                <NavLinks mobile />
+                <HeaderActions mobile />
               </div>
-            </div>
-          </nav>
-        )}
+            </nav>
+          </details>
+        </div>
       </div>
     </header>
   )

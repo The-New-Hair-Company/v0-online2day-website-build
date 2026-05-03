@@ -31,16 +31,16 @@
 :global(html[data-theme='light']) .pricingShell {
   --bg: #f4f7fb;
   --panel: rgba(255, 255, 255, 0.96);
-  --panel-2: rgba(244, 248, 255, 0.92);
-  --line: rgba(126, 145, 178, 0.30);
-  --line-strong: rgba(37, 99, 235, 0.50);
+  --panel-2: rgba(244, 248, 255, 0.94);
+  --line: rgba(126, 145, 178, 0.28);
+  --line-strong: rgba(37, 99, 235, 0.46);
   --text: #111827;
   --muted: #526070;
-  --muted-2: #6b7788;
+  --muted-2: #718096;
   color: var(--text);
   background:
-    radial-gradient(circle at 24% -8%, rgba(47, 107, 255, 0.08), transparent 28%),
-    radial-gradient(circle at 80% 10%, rgba(23, 215, 193, 0.04), transparent 24%),
+    radial-gradient(circle at 24% -8%, rgba(47, 107, 255, 0.10), transparent 28%),
+    radial-gradient(circle at 80% 10%, rgba(23, 215, 193, 0.08), transparent 24%),
     var(--bg);
 }
 
@@ -2080,45 +2080,89 @@
 /* ─── SETTINGS (LIGHT THEME) ───────────────────────────────────────────────── */
 
 .shell[data-theme="light"] {
-  --bg: #f4f6fb;
-  --panel: rgba(255, 255, 255, 0.95);
-  --panel-2: rgba(240, 244, 252, 0.9);
-  --line: rgba(180, 194, 220, 0.5);
-  --line-strong: rgba(47, 107, 255, 0.5);
-  --text: #0d1526;
-  --muted: #5a6580;
-  --muted-2: #7a859c;
+  --bg: #f4f7fb;
+  --panel: rgba(255, 255, 255, 0.96);
+  --panel-2: rgba(244, 248, 255, 0.94);
+  --line: rgba(126, 145, 178, 0.28);
+  --line-strong: rgba(37, 99, 235, 0.46);
+  --text: #111827;
+  --muted: #526070;
+  --muted-2: #718096;
   color: var(--text);
   background:
-    radial-gradient(circle at 24% -8%, rgba(47, 107, 255, 0.08), transparent 28%),
-    radial-gradient(circle at 80% 10%, rgba(23, 215, 193, 0.04), transparent 24%),
+    radial-gradient(circle at 24% -8%, rgba(47, 107, 255, 0.10), transparent 28%),
+    radial-gradient(circle at 80% 10%, rgba(23, 215, 193, 0.08), transparent 24%),
     var(--bg);
 }
 
 .shell[data-theme="light"] .sidebar {
-  background: linear-gradient(180deg, rgba(240, 244, 255, 0.98), rgba(230, 238, 255, 0.98));
-  border-color: rgba(180, 194, 220, 0.5);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 246, 255, 0.98));
+  border-color: rgba(126, 145, 178, 0.28);
+}
+
+:global(html[data-theme='light']) .detailShell .sidebar,
+:global(html[data-theme='light']) .settingsShell .sidebar,
+:global(html[data-theme='light']) .pricingShell .sidebar,
+:global(html[data-theme='light']) .sidebar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 246, 255, 0.98));
+  border-color: rgba(126, 145, 178, 0.28);
 }
 
 .shell[data-theme="light"] .brand span {
-  color: #1a50cc;
+  color: #1d4ed8;
+}
+
+:global(html[data-theme='light']) .detailShell .brand span,
+:global(html[data-theme='light']) .settingsShell .brand span,
+:global(html[data-theme='light']) .pricingShell .brand span,
+:global(html[data-theme='light']) .brand span {
+  color: #1d4ed8;
 }
 
 .shell[data-theme="light"] .brand p {
-  color: #5a6580;
+  color: #64748b;
+}
+
+:global(html[data-theme='light']) .detailShell .brand p,
+:global(html[data-theme='light']) .settingsShell .brand p,
+:global(html[data-theme='light']) .pricingShell .brand p,
+:global(html[data-theme='light']) .brand p {
+  color: #64748b;
 }
 
 .shell[data-theme="light"] .navItem {
-  color: #3d4e6a;
+  color: #475569;
+}
+
+:global(html[data-theme='light']) .detailShell .navItem,
+:global(html[data-theme='light']) .settingsShell .navItem,
+:global(html[data-theme='light']) .pricingShell .navItem,
+:global(html[data-theme='light']) .navItem {
+  color: #475569;
 }
 
 .shell[data-theme="light"] .navItem svg {
-  color: #4d6090;
+  color: #64748b;
+}
+
+:global(html[data-theme='light']) .detailShell .navItem svg,
+:global(html[data-theme='light']) .settingsShell .navItem svg,
+:global(html[data-theme='light']) .pricingShell .navItem svg,
+:global(html[data-theme='light']) .navItem svg {
+  color: #64748b;
 }
 
 .shell[data-theme="light"] .navItemActive {
-  color: #1a50cc;
-  background: linear-gradient(90deg, rgba(47, 107, 255, 0.14), rgba(47, 107, 255, 0.05));
+  color: #1d4ed8;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.13), rgba(37, 99, 235, 0.04));
+}
+
+:global(html[data-theme='light']) .detailShell .navItemActive,
+:global(html[data-theme='light']) .settingsShell .navItemActive,
+:global(html[data-theme='light']) .pricingShell .navItemActive,
+:global(html[data-theme='light']) .navItemActive {
+  color: #1d4ed8;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.13), rgba(37, 99, 235, 0.04));
 }
 
 .shell[data-theme="light"] .metricCard,
@@ -2128,33 +2172,33 @@
 .shell[data-theme="light"] .railPanel,
 .shell[data-theme="light"] .commandBar,
 .shell[data-theme="light"] .modal {
-  background: linear-gradient(180deg, rgba(255,255,255,0.97), rgba(244,248,255,0.97));
-  border-color: rgba(180, 194, 220, 0.45);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.98));
+  border-color: rgba(126, 145, 178, 0.26);
 }
 
 .shell[data-theme="light"] .leadsTable th {
-  color: #4d6090;
+  color: #64748b;
 }
 
 .shell[data-theme="light"] .leadsTable td {
-  color: #1e2d44;
+  color: #1f2937;
 }
 
 .shell[data-theme="light"] .filterButton,
 .shell[data-theme="light"] .utilityButton,
 .shell[data-theme="light"] .commandActions button {
-  background: rgba(255,255,255,0.9);
-  color: #1e2d44;
-  border-color: rgba(180, 194, 220, 0.5);
+  background: rgba(255, 255, 255, 0.92);
+  color: #1f2937;
+  border-color: rgba(126, 145, 178, 0.28);
 }
 
 .shell[data-theme="light"] .formInput,
 .shell[data-theme="light"] .formSelect,
 .shell[data-theme="light"] .formTextarea,
 .shell[data-theme="light"] .timerLeadSelect {
-  background: rgba(240, 244, 252, 0.9);
-  color: #1e2d44;
-  border-color: rgba(180, 194, 220, 0.5);
+  background: rgba(255, 255, 255, 0.92);
+  color: #111827;
+  border-color: rgba(126, 145, 178, 0.28);
 }
 
 /* ─── TEXT SIZE VARIANTS ───────────────────────────────────────────────────── */
@@ -2596,6 +2640,25 @@
   gap: 8px;
 }
 
+.textScaleControl {
+  min-width: min(360px, 100%);
+  display: grid;
+  gap: 10px;
+}
+
+.textScaleControl input {
+  width: 100%;
+  accent-color: #3c7cff;
+}
+
+.textScaleMeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #b8c5d9;
+  font-size: 13px;
+}
+
 .textSizeOption {
   border: 1px solid rgba(115, 144, 190, 0.22);
   background: rgba(255,255,255,0.03);
@@ -2748,6 +2811,80 @@
   border-color: rgba(62, 127, 255, 0.55);
   background: linear-gradient(180deg, rgba(20, 30, 52, 0.98), rgba(12, 18, 32, 0.98));
   box-shadow: 0 0 0 1px rgba(47, 107, 255, 0.15) inset, 0 24px 60px rgba(24, 98, 255, 0.12);
+}
+
+:global(html[data-theme='light']) .detailShell {
+  color: #111827;
+  background:
+    radial-gradient(circle at 24% -8%, rgba(47, 107, 255, 0.10), transparent 28%),
+    radial-gradient(circle at 80% 10%, rgba(23, 215, 193, 0.08), transparent 24%),
+    #f4f7fb;
+}
+
+:global(html[data-theme='light']) .settingsShell,
+:global(html[data-theme='light']) .pricingShell {
+  color: #111827;
+  background:
+    radial-gradient(circle at 20% -5%, rgba(47, 107, 255, 0.10), transparent 30%),
+    radial-gradient(circle at 80% 10%, rgba(23, 215, 193, 0.08), transparent 25%),
+    #f4f7fb;
+}
+
+:global(html[data-theme='light']) .detailCard,
+:global(html[data-theme='light']) .settingsSection,
+:global(html[data-theme='light']) .licenseCard,
+:global(html[data-theme='light']) .pricingCard {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.98));
+  border-color: rgba(126, 145, 178, 0.26);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
+}
+
+:global(html[data-theme='light']) .pricingCardPro {
+  border-color: rgba(37, 99, 235, 0.38);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(239, 246, 255, 0.98));
+  box-shadow: 0 24px 60px rgba(37, 99, 235, 0.12);
+}
+
+:global(html[data-theme='light']) .settingsSectionHeader,
+:global(html[data-theme='light']) .detailCardHeader,
+:global(html[data-theme='light']) .leadHeroCard {
+  border-color: rgba(126, 145, 178, 0.18);
+}
+
+:global(html[data-theme='light']) .settingRowInfo strong,
+:global(html[data-theme='light']) .licenseInfo strong,
+:global(html[data-theme='light']) .leadHeroInfo h1 {
+  color: #111827;
+}
+
+:global(html[data-theme='light']) .settingsSectionHeader p,
+:global(html[data-theme='light']) .settingRowInfo span,
+:global(html[data-theme='light']) .licenseInfo span,
+:global(html[data-theme='light']) .pricingHero p,
+:global(html[data-theme='light']) .detailBreadcrumb {
+  color: #64748b;
+}
+
+:global(html[data-theme='light']) .settingsTab,
+:global(html[data-theme='light']) .pricingBillingBtn,
+:global(html[data-theme='light']) .themeOption span,
+:global(html[data-theme='light']) .textScaleMeta,
+:global(html[data-theme='light']) .textSizeOption {
+  color: #475569;
+}
+
+:global(html[data-theme='light']) .themeOption,
+:global(html[data-theme='light']) .textSizeOption,
+:global(html[data-theme='light']) .pricingBillingToggle {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(126, 145, 178, 0.28);
+}
+
+:global(html[data-theme='light']) .pricingHero h1 {
+  background: linear-gradient(135deg, #111827, #1d4ed8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .pricingPopular {

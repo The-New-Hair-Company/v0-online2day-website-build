@@ -4,6 +4,7 @@ import {
   Crown,
   FileInput,
   Grid3X3,
+  LayoutDashboard,
   LogOut,
   Mail,
   MessageCircle,
@@ -24,7 +25,7 @@ type NavItem = {
   badge?: string
 }
 
-type ActiveDashboardSection = 'overview' | 'leads' | 'videos' | 'emails' | 'messages' | 'site-requests' | 'integrations' | 'settings'
+type ActiveDashboardSection = 'overview' | 'leads' | 'videos' | 'emails' | 'messages' | 'site-requests' | 'integrations' | 'settings' | 'enterprise'
 
 export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }) {
   const navItems: NavItem[] = [
@@ -33,6 +34,7 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
     { label: 'Videos', href: '/dashboard/videos', icon: Video, active: active === 'videos' },
     { label: 'Emails', href: '/dashboard/emails', icon: Mail, active: active === 'emails' },
     { label: 'Messages', href: '/dashboard/messages', icon: MessageCircle, badge: '4', active: active === 'messages' },
+    { label: 'Enterprise', href: '/dashboard/enterprise', icon: LayoutDashboard, active: active === 'enterprise' },
     { label: 'Site Requests', href: '/dashboard/site-requests', icon: FileInput, active: active === 'site-requests' },
     { label: 'Integrations', href: '/dashboard/integrations', icon: Plug, active: active === 'integrations' },
     { label: 'Settings', href: '/dashboard/settings', icon: Settings, active: active === 'settings' },

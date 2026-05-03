@@ -49,34 +49,34 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
   }
 
   return (
-    <div className="min-h-screen bg-[#0d0d14] flex flex-col">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Tracking pixel — fires once on page load */}
       <VideoTracker leadId={lead.id} />
 
       {/* Subtle top bar */}
-      <div className="border-b border-white/5 px-8 py-4 flex items-center justify-between">
-        <span className="text-white/40 text-sm font-medium tracking-wide">Online2Day</span>
-        <span className="text-white/20 text-xs">Personalised for {lead.name}</span>
+      <div className="border-b border-border px-8 py-4 flex items-center justify-between bg-card/50">
+        <span className="text-muted-foreground text-sm font-medium tracking-wide">Online2Day</span>
+        <span className="text-muted-foreground text-xs">Personalised for {lead.name}</span>
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-start py-16 px-6">
         <div className="max-w-4xl w-full">
           {/* Header */}
           <div className="text-center mb-10">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 text-xs font-semibold uppercase tracking-wider mb-6">
-              ✦ Personalised Message
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-primary/10 border border-primary/20 rounded-full text-primary text-xs font-semibold uppercase tracking-wider mb-6">
+              Personalised Message
             </div>
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 leading-tight">
+            <h1 className="text-4xl md:text-5xl font-bold mb-4 leading-tight">
               Hey {lead.name}
-              {lead.company ? <span className="text-violet-400"> at {lead.company}</span> : ''},
+              {lead.company ? <span className="text-primary"> at {lead.company}</span> : ''},
             </h1>
-            <p className="text-white/50 text-lg max-w-xl mx-auto leading-relaxed">
+            <p className="text-muted-foreground text-lg max-w-xl mx-auto leading-relaxed">
               We recorded a short personalised video just for you. Have a watch — we think you'll love what we've put together.
             </p>
           </div>
 
           {/* Video Player */}
-          <div className="relative bg-black rounded-2xl overflow-hidden shadow-[0_0_80px_rgba(124,58,237,0.2)] border border-white/10 mb-10">
+          <div className="relative bg-black rounded-2xl overflow-hidden shadow-2xl shadow-primary/10 border border-border mb-10">
             {videoUrl ? (
               <div className="aspect-video">
                 <video
@@ -92,7 +92,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
                 <div className="absolute inset-8 border border-white/10 rounded-xl" />
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_18%,rgba(47,107,255,0.35),transparent_30%)]" />
                 <div className="relative h-full p-10 flex flex-col justify-center">
-                  <div className="text-violet-300 text-xs font-bold uppercase tracking-[0.2em] mb-5">Online2Day video project</div>
+                  <div className="text-blue-300 text-xs font-bold uppercase tracking-[0.2em] mb-5">Online2Day video project</div>
                   <h2 className="text-4xl md:text-6xl font-black text-white tracking-tight max-w-3xl">
                     {editorProject.scenes?.[0]?.headline || videoName || 'Personalised strategy video'}
                   </h2>
@@ -110,8 +110,8 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
               </div>
             ) : (
               <div className="aspect-video flex flex-col items-center justify-center bg-[#111] text-white/30">
-                <div className="w-20 h-20 rounded-full bg-violet-500/10 flex items-center justify-center mb-4">
-                  <div className="w-0 h-0 border-t-[12px] border-t-transparent border-l-[22px] border-l-violet-400 border-b-[12px] border-b-transparent ml-2" />
+                <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                  <div className="w-0 h-0 border-t-[12px] border-t-transparent border-l-[22px] border-l-primary border-b-[12px] border-b-transparent ml-2" />
                 </div>
                 <p className="text-sm">Video will appear here once uploaded</p>
               </div>
@@ -122,14 +122,14 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
             <Link
               href="/contact"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-violet-600 text-white font-semibold rounded-xl hover:bg-violet-700 transition-all shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-semibold rounded-xl hover:opacity-90 transition-all shadow-lg shadow-primary/20"
             >
               <Calendar size={18} />
               Book a Call with Us
             </Link>
             <a
               href="mailto:hello@online2day.com"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-white/5 border border-white/10 text-white font-semibold rounded-xl hover:bg-white/10 transition-all"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-card border border-border text-foreground font-semibold rounded-xl hover:bg-muted transition-all"
             >
               <Mail size={18} />
               Reply by Email
@@ -138,8 +138,8 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
 
           {/* Trust footer */}
           <div className="text-center space-y-1">
-            <p className="text-white/20 text-sm">This message was created exclusively for {lead.name}.</p>
-            <p className="text-white/10 text-xs">Online2Day · hello@online2day.com</p>
+            <p className="text-muted-foreground text-sm">This message was created exclusively for {lead.name}.</p>
+            <p className="text-muted-foreground/70 text-xs">Online2Day · hello@online2day.com</p>
           </div>
         </div>
       </div>

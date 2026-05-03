@@ -116,12 +116,13 @@ type MenuItem = {
 
 const cx = (...classes: Array<string | false | undefined>) => classes.filter(Boolean).join(' ')
 
-const NAV_ITEMS: Array<{ label: string; href: string; section: DashboardSection; icon: ComponentType<{ size?: number }>; badge?: string; group: string }> = [
+const NAV_ITEMS: Array<{ label: string; href: string; section?: DashboardSection; icon: ComponentType<{ size?: number }>; badge?: string; group: string }> = [
   { label: 'Overview', href: '/dashboard/overview', section: 'overview', icon: Grid2x2, group: 'MAIN' },
   { label: 'Leads', href: '/dashboard/leads', section: 'leads', icon: Users, group: 'MAIN' },
   { label: 'Videos', href: '/dashboard/videos', section: 'videos', icon: Video, group: 'MAIN' },
   { label: 'Emails', href: '/dashboard/emails', section: 'emails', icon: Mail, group: 'MAIN' },
   { label: 'Messages', href: '/dashboard/messages', section: 'messages', icon: MessageSquare, badge: '4', group: 'MAIN' },
+  { label: 'Enterprise', href: '/dashboard/enterprise', icon: Columns3, group: 'MAIN' },
   { label: 'Site Requests', href: '/dashboard/site-requests', section: 'site-requests', icon: Inbox, group: 'REQUESTS' },
   { label: 'Integrations', href: '/dashboard/integrations', section: 'integrations', icon: Settings2, group: 'TOOLS' },
 ]

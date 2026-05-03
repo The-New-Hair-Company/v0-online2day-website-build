@@ -6,6 +6,7 @@ import { Check, Eye, Settings, Type } from 'lucide-react'
 type AccessibilitySettings = {
   theme: 'dark' | 'light'
   textSize: 'sm' | 'md' | 'lg' | 'xl'
+  textScale: number
   contrast: 'standard' | 'high'
   motion: 'standard' | 'reduced'
   font: 'standard' | 'readable'
@@ -17,10 +18,25 @@ const STORAGE_KEY = 'o2d_accessibility_settings'
 const defaults: AccessibilitySettings = {
   theme: 'dark',
   textSize: 'md',
+  textScale: 100,
   contrast: 'standard',
   motion: 'standard',
   font: 'standard',
   lineHeight: 'standard',
+}
+
+function textSizeFromScale(scale: number): AccessibilitySettings['textSize'] {
+  if (scale < 96) return 'sm'
+  if (scale < 112) return 'md'
+  if (scale < 124) return 'lg'
+  return 'xl'
+}
+
+function scaleFromTextSize(size: AccessibilitySettings['textSize']) {
+  if (size === 'sm') return 94
+  if (size === 'lg') return 112
+  if (size === 'xl') return 124
+  return 100
 }
 
 function readSettings(): AccessibilitySettings {
@@ -36,6 +52,7 @@ function readSettings(): AccessibilitySettings {
       ...stored,
       theme: stored.theme || legacyTheme || defaults.theme,
       textSize: stored.textSize || legacyText || defaults.textSize,
+      textScale: Number(stored.textScale || scaleFromTextSize(stored.textSize || legacyText || defaults.textSize)),
     }
   } catch {
     return defaults
@@ -50,6 +67,7 @@ function applySettings(settings: AccessibilitySettings) {
   root.dataset.motion = settings.motion
   root.dataset.font = settings.font
   root.dataset.lineHeight = settings.lineHeight
+  root.style.setProperty('--accessibility-text-scale', String(settings.textScale / 100))
   root.classList.toggle('dark', settings.theme === 'dark')
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
@@ -69,7 +87,14 @@ export function AccessibilitySettingsButton() {
 
   function update(patch: Partial<AccessibilitySettings>) {
     setSettings((current) => {
-      const next = { ...current, ...patch }
+      const patchedScale = patch.textScale
+      const patchedTextSize = patch.textSize
+      const next = {
+        ...current,
+        ...patch,
+        textScale: patchedScale ?? (patchedTextSize ? scaleFromTextSize(patchedTextSize) : current.textScale),
+        textSize: patchedTextSize ?? (patchedScale ? textSizeFromScale(patchedScale) : current.textSize),
+      }
       applySettings(next)
       return next
     })
@@ -85,18 +110,7 @@ export function AccessibilitySettingsButton() {
       ] as const,
       onChange: (value: AccessibilitySettings['theme']) => update({ theme: value }),
     },
-    {
-      label: 'Text size',
-      value: settings.textSize,
-      options: [
-        { label: 'Small', value: 'sm' },
-        { label: 'Medium', value: 'md' },
-        { label: 'Large', value: 'lg' },
-        { label: 'Extra', value: 'xl' },
-      ] as const,
-      onChange: (value: AccessibilitySettings['textSize']) => update({ textSize: value }),
-    },
-  ], [settings.theme, settings.textSize])
+  ], [settings.theme])
 
   return (
     <div className="accessibility-widget">
@@ -128,6 +142,36 @@ export function AccessibilitySettingsButton() {
               </div>
             </div>
           ))}
+
+          <div className="accessibility-group">
+            <span>Text size</span>
+            <label className="accessibility-slider">
+              <span>Scale</span>
+              <strong>{settings.textScale}%</strong>
+              <input
+                type="range"
+                min="90"
+                max="132"
+                step="2"
+                value={settings.textScale}
+                onChange={(event) => update({ textScale: Number(event.target.value) })}
+                aria-label="Text size scale"
+              />
+            </label>
+            <div>
+              {(['sm', 'md', 'lg', 'xl'] as const).map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  className={settings.textSize === size ? 'is-active' : undefined}
+                  onClick={() => update({ textSize: size })}
+                >
+                  {settings.textSize === size ? <Check size={13} /> : null}
+                  {size === 'sm' ? 'Small' : size === 'md' ? 'Medium' : size === 'lg' ? 'Large' : 'Extra'}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="accessibility-group">
             <span>Comfort</span>

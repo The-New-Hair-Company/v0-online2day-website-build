@@ -21,15 +21,15 @@
 :global(html[data-theme='light']) .shell {
   --bg: #f4f7fb;
   --panel: rgba(255, 255, 255, 0.96);
-  --panel-2: rgba(245, 248, 253, 0.94);
-  --line: rgba(126, 145, 178, 0.30);
+  --panel-2: rgba(244, 248, 255, 0.94);
+  --line: rgba(126, 145, 178, 0.28);
   --line-strong: rgba(37, 99, 235, 0.46);
   --text: #111827;
   --muted: #526070;
   color: var(--text);
   background:
-    radial-gradient(circle at 18% -6%, rgba(47, 107, 255, 0.08), transparent 28%),
-    radial-gradient(circle at 82% 6%, rgba(23, 215, 193, 0.05), transparent 22%),
+    radial-gradient(circle at 18% -6%, rgba(47, 107, 255, 0.10), transparent 28%),
+    radial-gradient(circle at 82% 6%, rgba(23, 215, 193, 0.08), transparent 22%),
     var(--bg);
 }
 
@@ -131,11 +131,12 @@
 
 .statusGrid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
   gap: 10px;
 }
 
 .statusCard,
+.guidePanel,
 .stagePanel,
 .inspector,
 .timelinePanel,
@@ -165,6 +166,126 @@
 
 .statusCard strong {
   font-size: 22px;
+}
+
+.guidePanel {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: minmax(210px, 0.72fr) minmax(280px, 1.25fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.guideIntro,
+.guideActions,
+.guideTelemetry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.guideIntro svg,
+.guideTelemetry svg {
+  color: #62a0ff;
+}
+
+.guideIntro div {
+  display: grid;
+  gap: 3px;
+}
+
+.guideIntro span,
+.guideTelemetry span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.guideSteps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.guideSteps button,
+.guideActions button {
+  min-height: 38px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+  color: #dbe6f7;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.guideSteps button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.guideSteps span {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: rgba(47, 107, 255, 0.14);
+  color: #93c5fd;
+  font-size: 11px;
+}
+
+.guideSteps strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.guideStepActive {
+  border-color: var(--line-strong) !important;
+  background: rgba(47, 107, 255, 0.16) !important;
+  box-shadow: 0 0 0 1px rgba(47, 107, 255, 0.18) inset;
+}
+
+.guideStepActive span {
+  background: #2f6bff;
+  color: #fff;
+}
+
+.guideActions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.guideActions button {
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.guideTelemetry {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(116, 147, 196, 0.10);
+  padding-top: 10px;
+}
+
+.guideTelemetry span {
+  border: 1px solid rgba(116, 147, 196, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 6px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .editorGrid {
@@ -208,6 +329,12 @@
   background: rgba(47, 107, 255, 0.18) !important;
 }
 
+.toolButtonActive {
+  border-color: var(--line-strong) !important;
+  color: #fff !important;
+  background: rgba(47, 107, 255, 0.18) !important;
+}
+
 .toolRail span {
   font-size: 10px;
 }
@@ -239,6 +366,7 @@
 .inspector select,
 .inspector textarea,
 .emailPanel input,
+.emailPanel select,
 .emailPanel textarea {
   border: 1px solid rgba(97, 127, 178, 0.32);
   border-radius: 8px;
@@ -265,7 +393,6 @@
 
 .canvas {
   width: min(960px, 100%);
-  aspect-ratio: 16 / 9;
   border-radius: 16px;
   position: relative;
   overflow: hidden;
@@ -273,6 +400,43 @@
     radial-gradient(circle at 22% 16%, color-mix(in srgb, var(--scene-color), transparent 48%), transparent 28%),
     linear-gradient(135deg, rgba(8, 16, 32, 1), rgba(3, 7, 14, 1) 62%, color-mix(in srgb, var(--brand-color), #000 50%));
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.12) inset;
+  transition: aspect-ratio 220ms ease, box-shadow 220ms ease;
+}
+
+.canvasGrid::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255,255,255,0.08) 1px, transparent 1px);
+  background-size: 12.5% 12.5%;
+  mask-image: linear-gradient(180deg, transparent, #000 20%, #000 80%, transparent);
+}
+
+.canvasGuided {
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.55), 0 0 0 2px rgba(47, 107, 255, 0.3) inset;
+}
+
+.canvasGuided .videoFrame {
+  animation: guideFocus 1400ms ease-in-out infinite alternate;
+}
+
+.reducedMotionCanvas .videoFrame,
+.reducedMotionCanvas .guideCursor {
+  animation: none !important;
+}
+
+.canvasLargeText .videoFrame h2 {
+  font-size: clamp(42px, 5.6vw, 76px);
+  line-height: 1;
+}
+
+.canvasLargeText .videoFrame p,
+.canvasLargeText .captionBar,
+.canvasLargeText .transcriptBadge {
+  font-size: 20px;
 }
 
 .safeZone {
@@ -302,6 +466,19 @@
   color: #fff;
   font-size: 26px;
   font-weight: 900;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.logoPill[data-placement='top-right'] {
+  left: auto;
+  right: 0;
+}
+
+.logoPill[data-placement='bottom-left'] {
+  top: auto;
+  bottom: 82px;
 }
 
 .sceneType {
@@ -312,6 +489,7 @@
   text-transform: uppercase;
   font-size: 11px;
   letter-spacing: 0.08em;
+  margin-top: 44px;
 }
 
 .videoFrame h2 {
@@ -355,6 +533,37 @@
   bottom: 34px;
   justify-content: center;
   background: rgba(0,0,0,0.56);
+}
+
+.transcriptBadge {
+  justify-self: start;
+  border-radius: 8px;
+  background: rgba(23, 215, 193, 0.12);
+  color: #c9fff7;
+  border: 1px solid rgba(23, 215, 193, 0.24);
+  padding: 8px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+
+.guideCursor {
+  position: absolute;
+  z-index: 4;
+  left: 18%;
+  top: 20%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #06101f;
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35);
+  animation: guideCursor 7s ease-in-out infinite;
 }
 
 .ctaButton {
@@ -528,6 +737,18 @@
   overflow: hidden;
 }
 
+.trackPlayhead {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 16px rgba(255,255,255,0.86), 0 0 24px rgba(47, 107, 255, 0.6);
+  z-index: 3;
+  transition: left 260ms ease;
+}
+
 .timelineRow em {
   position: absolute;
   top: 5px;
@@ -580,20 +801,44 @@
   font-size: 13px;
 }
 
-.featureGrid p {
+.featureButton {
+  width: 100%;
   margin: 7px 0 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding: 7px 8px;
   display: flex;
   align-items: flex-start;
   gap: 7px;
   color: #aeb9ca;
+  font: inherit;
   font-size: 12px;
   line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
 }
 
-.featureGrid p svg {
+.featureButton svg {
   color: var(--green);
   flex: 0 0 auto;
   margin-top: 2px;
+}
+
+.featureButton:hover {
+  border-color: rgba(47, 107, 255, 0.3);
+  background: rgba(47, 107, 255, 0.10);
+  color: #fff;
+}
+
+.featureActive {
+  border-color: rgba(34, 197, 94, 0.36) !important;
+  background: rgba(34, 197, 94, 0.08) !important;
+  color: #eafff0 !important;
+}
+
+.featureActive svg {
+  color: #86efac;
 }
 
 .statusText {
@@ -606,18 +851,103 @@
   font-size: 12px;
 }
 
+@keyframes guideFocus {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes guideCursor {
+  0%, 100% {
+    left: 18%;
+    top: 20%;
+  }
+  24% {
+    left: 65%;
+    top: 18%;
+  }
+  48% {
+    left: 70%;
+    top: 66%;
+  }
+  72% {
+    left: 28%;
+    top: 72%;
+  }
+}
+
+:global(html[data-motion='reduced']) .canvasGuided .videoFrame,
+:global(html[data-motion='reduced']) .guideCursor {
+  animation: none !important;
+}
+
+:global(html[data-theme='light']) .toolRail,
+:global(html[data-theme='light']) .statusCard,
+:global(html[data-theme='light']) .guidePanel,
+:global(html[data-theme='light']) .stagePanel,
+:global(html[data-theme='light']) .inspector,
+:global(html[data-theme='light']) .timelinePanel,
+:global(html[data-theme='light']) .featurePanel,
+:global(html[data-theme='light']) .emailPanel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.98));
+  border-color: rgba(126, 145, 178, 0.26);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
+}
+
+:global(html[data-theme='light']) .canvasWrap {
+  background:
+    linear-gradient(90deg, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+    rgba(241, 246, 255, 0.72);
+  border-color: rgba(126, 145, 178, 0.20);
+}
+
+:global(html[data-theme='light']) .stageToolbar input,
+:global(html[data-theme='light']) .stageToolbar select,
+:global(html[data-theme='light']) .inspector input,
+:global(html[data-theme='light']) .inspector select,
+:global(html[data-theme='light']) .inspector textarea,
+:global(html[data-theme='light']) .emailPanel input,
+:global(html[data-theme='light']) .emailPanel select,
+:global(html[data-theme='light']) .emailPanel textarea {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(126, 145, 178, 0.30);
+  color: #111827;
+}
+
+:global(html[data-theme='light']) .toolRail button,
+:global(html[data-theme='light']) .featureButton {
+  color: #475569;
+}
+
+:global(html[data-theme='light']) .timelineRow div,
+:global(html[data-theme='light']) .sceneStrip button,
+:global(html[data-theme='light']) .featureGrid section {
+  background: rgba(255, 255, 255, 0.74);
+  border-color: rgba(126, 145, 178, 0.20);
+}
+
 @media (max-width: 1420px) {
   .statusGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .editorGrid,
-  .lowerGrid {
+  .lowerGrid,
+  .guidePanel {
     grid-template-columns: 1fr;
   }
 
   .toolRail {
     grid-template-columns: repeat(6, 1fr);
+  }
+
+  .guideActions,
+  .guideTelemetry {
+    justify-content: flex-start;
   }
 
   .stagePanel {
@@ -644,7 +974,8 @@
 
   .statusGrid,
   .featureGrid,
-  .sceneStrip {
+  .sceneStrip,
+  .guideSteps {
     grid-template-columns: 1fr;
   }
 

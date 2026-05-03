@@ -11,6 +11,7 @@ type TextSize = 'sm' | 'md' | 'lg' | 'xl'
 type AccessibilitySettings = {
   theme: ThemeChoice
   textSize: TextSize
+  textScale: number
   contrast: 'standard' | 'high'
   motion: 'standard' | 'reduced'
   font: 'standard' | 'readable'
@@ -21,6 +22,7 @@ const ACCESSIBILITY_KEY = 'o2d_accessibility_settings'
 const defaultAccessibility: AccessibilitySettings = {
   theme: 'dark',
   textSize: 'md',
+  textScale: 100,
   contrast: 'standard',
   motion: 'standard',
   font: 'standard',
@@ -33,10 +35,25 @@ function logGdpr(action: string, resource: string, id: string, changes?: string)
   localStorage.setItem('gdpr_audit', JSON.stringify([entry, ...existing].slice(0, 500)))
 }
 
+function textSizeFromScale(scale: number): TextSize {
+  if (scale < 96) return 'sm'
+  if (scale < 112) return 'md'
+  if (scale < 124) return 'lg'
+  return 'xl'
+}
+
+function scaleFromTextSize(size: TextSize) {
+  if (size === 'sm') return 94
+  if (size === 'lg') return 112
+  if (size === 'xl') return 124
+  return 100
+}
+
 export function SettingsClient() {
   const [activeTab, setActiveTab] = useState<'appearance' | 'license'>('appearance')
   const [theme, setTheme] = useState<ThemeChoice>('dark')
   const [textSize, setTextSize] = useState<TextSize>('md')
+  const [textScale, setTextScale] = useState(100)
   const [contrast, setContrast] = useState<AccessibilitySettings['contrast']>('standard')
   const [motion, setMotion] = useState<AccessibilitySettings['motion']>('standard')
   const [font, setFont] = useState<AccessibilitySettings['font']>('standard')
@@ -49,6 +66,7 @@ export function SettingsClient() {
     const next = { ...defaultAccessibility, ...stored }
     setTheme(next.theme)
     setTextSize(next.textSize)
+    setTextScale(next.textScale || scaleFromTextSize(next.textSize))
     setContrast(next.contrast)
     setMotion(next.motion)
     setFont(next.font)
@@ -58,9 +76,17 @@ export function SettingsClient() {
   }, [])
 
   function saveAccessibility(patch: Partial<AccessibilitySettings>) {
-    const next = { theme, textSize, contrast, motion, font, lineHeight, ...patch }
+    const patchedScale = patch.textScale
+    const patchedTextSize = patch.textSize
+    const next = {
+      ...{ theme, textSize, textScale, contrast, motion, font, lineHeight },
+      ...patch,
+      textScale: patchedScale ?? (patchedTextSize ? scaleFromTextSize(patchedTextSize) : textScale),
+      textSize: patchedTextSize ?? (patchedScale ? textSizeFromScale(patchedScale) : textSize),
+    }
     setTheme(next.theme)
     setTextSize(next.textSize)
+    setTextScale(next.textScale)
     setContrast(next.contrast)
     setMotion(next.motion)
     setFont(next.font)
@@ -72,6 +98,7 @@ export function SettingsClient() {
     document.documentElement.dataset.motion = next.motion
     document.documentElement.dataset.font = next.font
     document.documentElement.dataset.lineHeight = next.lineHeight
+    document.documentElement.style.setProperty('--accessibility-text-scale', String(next.textScale / 100))
     document.documentElement.classList.toggle('dark', next.theme === 'dark')
     localStorage.setItem(ACCESSIBILITY_KEY, JSON.stringify(next))
     localStorage.setItem('crm_theme', next.theme)
@@ -102,7 +129,7 @@ export function SettingsClient() {
         <div className={styles.titleRow}>
           <h1>Settings</h1>
         </div>
-        <p className={styles.subtle}>Preferences are saved locally and picked up by the leads dashboard.</p>
+        <p className={styles.subtle}>Preferences are saved locally and applied across the website, dashboard, editor and video pages.</p>
 
         <div className={styles.settingsTabs} role="tablist">
           <button className={`${styles.settingsTab} ${activeTab === 'appearance' ? styles.settingsTabActive : ''}`} onClick={() => setActiveTab('appearance')}>Appearance</button>
@@ -129,12 +156,24 @@ export function SettingsClient() {
               </div>
               <div className={styles.settingRow}>
                 <div className={styles.settingRowInfo}><strong>Text size</strong><span>Scale interface copy for comfort.</span></div>
-                <div className={styles.textSizeOptions}>
-                  {(['sm', 'md', 'lg', 'xl'] as TextSize[]).map((size) => (
-                    <button key={size} className={`${styles.textSizeOption} ${textSize === size ? styles.textSizeOptionActive : ''}`} onClick={() => saveAccessibility({ textSize: size })}>
-                      <Type size={size === 'sm' ? 14 : size === 'md' ? 18 : size === 'lg' ? 22 : 26} />
-                    </button>
-                  ))}
+                <div className={styles.textScaleControl}>
+                  <div className={styles.textScaleMeta}><Type size={16} /><strong>{textScale}%</strong></div>
+                  <input
+                    type="range"
+                    min="90"
+                    max="132"
+                    step="2"
+                    value={textScale}
+                    onChange={(event) => saveAccessibility({ textScale: Number(event.target.value) })}
+                    aria-label="Sitewide text size scale"
+                  />
+                  <div className={styles.textSizeOptions}>
+                    {(['sm', 'md', 'lg', 'xl'] as TextSize[]).map((size) => (
+                      <button key={size} className={`${styles.textSizeOption} ${textSize === size ? styles.textSizeOptionActive : ''}`} onClick={() => saveAccessibility({ textSize: size })}>
+                        <Type size={size === 'sm' ? 14 : size === 'md' ? 18 : size === 'lg' ? 22 : 26} />
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className={styles.settingRow}>
