@@ -131,6 +131,106 @@ export async function updateLeadStatus(leadId: string, status: string) {
   return { success: true }
 }
 
+export async function createLeadFromObject(data: {
+  name: string
+  company?: string
+  role?: string
+  email?: string
+  phone?: string
+  linkedin?: string
+  source?: string
+  stage?: string
+  value?: string
+  notes?: string
+}) {
+  const supabase = await createClient()
+  const { data: user } = await supabase.auth.getUser()
+
+  if (!data.name?.trim()) return { error: 'Name is required.' }
+
+  const numericValue = data.value
+    ? Number(data.value.replace(/[^0-9.]/g, '')) || null
+    : null
+
+  const { data: lead, error } = await supabase
+    .from('leads')
+    .insert({
+      name: data.name.trim(),
+      company: data.company?.trim() || null,
+      role: data.role?.trim() || null,
+      email: data.email?.trim() || null,
+      phone: data.phone?.trim() || null,
+      linkedin_url: data.linkedin?.trim() || null,
+      source: data.source || 'Website',
+      status: data.stage || 'New',
+      value: numericValue,
+      notes: data.notes?.trim() || null,
+      assigned_to: user.user?.id || null,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('createLeadFromObject error:', error)
+    return { error: error.message }
+  }
+
+  if (lead) {
+    await logLeadEvent(lead.id, 'Lead Created', `Lead created: ${data.name}`)
+    await supabase.from('activity_feed').insert({
+      actor_name: user.user?.email || 'Admin',
+      type: 'lead_created',
+      entity_type: 'lead',
+      entity_id: lead.id,
+      entity_name: data.name,
+      description: `New lead added: ${data.name}${data.company ? ` (${data.company})` : ''}`,
+    })
+  }
+
+  revalidatePath('/dashboard/leads')
+  revalidatePath('/dashboard/overview')
+  return { success: true, lead }
+}
+
+export async function logActivityEvent(data: {
+  leadId?: string | null
+  type: string
+  notes?: string
+  durationMinutes?: number
+  billable?: boolean
+}) {
+  const supabase = await createClient()
+  const { data: user } = await supabase.auth.getUser()
+
+  if (data.leadId) {
+    await supabase.from('lead_events').insert({
+      lead_id: data.leadId,
+      type: data.type.charAt(0).toUpperCase() + data.type.slice(1),
+      note: data.notes?.trim() || `${data.type} activity logged`,
+      created_by: user.user?.id || null,
+      metadata: {
+        durationMinutes: data.durationMinutes,
+        billable: data.billable,
+      },
+    })
+  }
+
+  await supabase.from('activity_feed').insert({
+    actor_name: user.user?.email || 'Admin',
+    type: `activity_${data.type}`,
+    entity_type: data.leadId ? 'lead' : null,
+    entity_id: data.leadId || null,
+    description: data.notes?.trim() || `${data.type} activity logged${data.durationMinutes ? ` (${data.durationMinutes} min)` : ''}`,
+  })
+
+  if (data.leadId) {
+    revalidatePath(`/dashboard/leads/${data.leadId}`)
+  }
+  revalidatePath('/dashboard/overview')
+  revalidatePath('/dashboard/leads')
+  return { success: true }
+}
+
 export async function logLeadEvent(leadId: string, type: string, note?: string, metadata?: Record<string, unknown>) {
   const supabase = await createClient()
   const { data: user } = await supabase.auth.getUser()

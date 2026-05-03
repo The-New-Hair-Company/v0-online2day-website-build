@@ -65,6 +65,9 @@ export type Lead = {
   engagement: number
   value: string
   nextAction: string
+  email?: string
+  phone?: string
+  notes?: string
   selected?: boolean
 }
 
@@ -94,6 +97,7 @@ export type OwnerPerformance = {
 }
 
 export type TaskItem = {
+  id?: string
   label: string
   time: string
   checked?: boolean

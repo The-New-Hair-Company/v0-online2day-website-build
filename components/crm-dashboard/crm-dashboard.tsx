@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import type { ComponentType, MouseEvent, ReactNode } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -45,8 +45,8 @@ import {
   WandSparkles,
 } from 'lucide-react'
 import styles from './dashboard.module.css'
-import * as mock from './mock-data'
 import { sendEnterpriseEmail } from '@/lib/actions/email-actions'
+import { sendConversationReply } from '@/lib/actions/message-actions'
 import type {
   ConversationRecord,
   CrmDashboardProps,
@@ -64,6 +64,40 @@ import type {
   TableTab,
   VideoRecord,
 } from './types'
+
+// ─── STATIC CONFIG ────────────────────────────────────────────────────────────
+
+const LEAD_STAGES: Array<'All stages' | LeadStage> = [
+  'All stages', 'New', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won',
+]
+
+const LEAD_PROCESS: ProcessStep[] = [
+  { step: 1, label: 'Capture lead' },
+  { step: 2, label: 'Qualify' },
+  { step: 3, label: 'Personalise outreach' },
+  { step: 4, label: 'Send video' },
+  { step: 5, label: 'Handle objections' },
+  { step: 6, label: 'Book call' },
+  { step: 7, label: 'Close' },
+]
+
+function currentDateRangeLabel() {
+  const end = new Date()
+  const start = new Date(end)
+  start.setDate(start.getDate() - 7)
+  const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return `${fmt(start)} – ${fmt(end)}`
+}
+
+function computeLeadTabs(leads: LeadRecord[]) {
+  return [
+    { label: 'All leads', count: leads.length },
+    { label: 'High intent', count: leads.filter(l => l.score >= 80).length },
+    { label: 'Follow-up due', count: leads.filter(l => l.stage !== 'Won').length },
+    { label: 'At risk', count: leads.filter(l => l.score < 50).length },
+    { label: 'Won', count: leads.filter(l => l.stage === 'Won').length },
+  ]
+}
 
 function enrichMetrics(raw: RawMetric[], section: 'leads' | 'video' | 'email' | 'siteRequest'): MetricItem[] {
   const iconMaps: Record<string, Record<string, MetricItem['icon']>> = {
@@ -243,17 +277,17 @@ export function CrmDashboard({
   const meta = PAGE_META[section]
   const router = useRouter()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [dateRange, setDateRange] = useState(mock.dateRangeLabel)
+  const [dateRange, setDateRange] = useState(currentDateRangeLabel())
   const [globalSearch, setGlobalSearch] = useState('')
   const [notice, setNotice] = useState<{ title: string; detail: string } | null>(null)
 
-  const resolvedLeadMetrics = rawLeadMetrics ? enrichMetrics(rawLeadMetrics, 'leads') : mock.leadMetrics
-  const resolvedVideoMetrics = rawVideoMetrics ? enrichMetrics(rawVideoMetrics, 'video') : mock.videoMetrics
-  const resolvedEmailMetrics = rawEmailMetrics ? enrichMetrics(rawEmailMetrics, 'email') : mock.emailMetrics
-  const resolvedSiteRequestMetrics = rawSiteRequestMetrics ? enrichMetrics(rawSiteRequestMetrics, 'siteRequest') : mock.siteRequestMetrics
-  const resolvedIntegrationStatus: IntegrationStatus = integrationStatus ?? mock.integrationStatusSummary
+  const resolvedLeadMetrics = rawLeadMetrics ? enrichMetrics(rawLeadMetrics, 'leads') : []
+  const resolvedVideoMetrics = rawVideoMetrics ? enrichMetrics(rawVideoMetrics, 'video') : []
+  const resolvedEmailMetrics = rawEmailMetrics ? enrichMetrics(rawEmailMetrics, 'email') : []
+  const resolvedSiteRequestMetrics = rawSiteRequestMetrics ? enrichMetrics(rawSiteRequestMetrics, 'siteRequest') : []
+  const resolvedIntegrationStatus: IntegrationStatus = integrationStatus ?? { connected: 0, suggested: 0, pending: 0 }
 
-  function showNotice(title: string, detail = 'Action completed.') {
+  function showNotice(title: string, detail = 'Done.') {
     setNotice({ title, detail })
     window.setTimeout(() => setNotice(null), 3600)
   }
@@ -300,19 +334,19 @@ export function CrmDashboard({
     if (/book call|calendly|schedule call/i.test(normalized)) return router.push('/contact')
     if (/send proposal|share resource|convert to project|mark as scoped/i.test(normalized)) return showNotice(normalized, 'Workflow state recorded for the selected CRM item.')
     if (/filters|status|owner|source|audience|channel|score|budget|priority|type|goal|more filters/i.test(normalized)) return showNotice('Filter control active', 'Use the table controls and stage menus to narrow this workspace.')
-    if (/columns/i.test(normalized)) return showNotice('Columns saved', 'Column preferences are kept for this workspace session.')
+    if (/columns/i.test(normalized)) return showNotice('Columns saved', 'Column preferences saved.')
     if (/sort|latest|last edited|last activity/i.test(normalized)) return showNotice('Sort applied', 'The table is now using the selected ordering preference.')
     if (/preview/i.test(normalized)) return showNotice('Preview opened', 'Preview mode is ready for review before sending.')
     if (/campaign|sequence|template|send test|send email/i.test(normalized)) return showNotice('Email workflow ready', 'Use the email composer to send, test, and attach videos from the database.')
     if (/reply|note|attach|internal note|schedule send|send update/i.test(normalized)) return showNotice('Conversation action queued', 'The selected conversation action is ready in this workspace.')
     if (/clear filters/i.test(normalized)) return showNotice('Filters cleared', 'The current table filters have been reset.')
     if (/may|calendar|date/i.test(normalized)) {
-      setDateRange((current) => current === mock.dateRangeLabel ? 'This month' : mock.dateRangeLabel)
+      setDateRange((current) => current === currentDateRangeLabel() ? 'This month' : currentDateRangeLabel())
       return showNotice('Date range updated', 'Dashboard metrics and tables will use the selected range.')
     }
     if (/^\d+$|<|>/.test(normalized)) return showNotice('Page changed', 'Pagination state updated for this table.')
 
-    showNotice(normalized, 'Action acknowledged in the CRM workspace.')
+    showNotice(normalized, 'Action noted.')
   }
 
   function handleShellClick(event: MouseEvent<HTMLDivElement>) {
@@ -514,7 +548,7 @@ function renderSection(section: DashboardSection, props: ResolvedSectionProps) {
   }
 }
 
-function OverviewSection({ initialLeads = [], metrics = mock.leadMetrics }: { initialLeads?: LeadRecord[]; metrics?: MetricItem[] }) {
+function OverviewSection({ initialLeads = [], metrics = [] }: { initialLeads?: LeadRecord[]; metrics?: MetricItem[] }) {
   const [selectedId, setSelectedId] = useState(initialLeads[0]?.id || '')
   const [query, setQuery] = useState('')
   const [activeTab, setActiveTab] = useState('All leads')
@@ -529,7 +563,7 @@ function OverviewSection({ initialLeads = [], metrics = mock.leadMetrics }: { in
       <MetricGrid items={metrics} />
       <ProcessRow
         title="Guide to Sale: Your sales process"
-        steps={mock.leadProcess}
+        steps={LEAD_PROCESS}
         activeStep={3}
         nextActionTitle="Next best action"
         nextActionText="Follow up with 5 high-intent leads"
@@ -556,7 +590,7 @@ function OverviewSection({ initialLeads = [], metrics = mock.leadMetrics }: { in
 
       <div className={styles.panelGrid}>
         <div className={cx(styles.panel, styles.tablePanel)}>
-          <Tabs tabs={mock.leadTabs} activeTab={activeTab} onChange={setActiveTab} />
+          <Tabs tabs={computeLeadTabs(initialLeads)} activeTab={activeTab} onChange={setActiveTab} />
           <LeadToolbar
             query={query}
             onQueryChange={setQuery}
@@ -579,7 +613,7 @@ function OverviewSection({ initialLeads = [], metrics = mock.leadMetrics }: { in
   )
 }
 
-function LeadsSection({ initialLeads = [], metrics = mock.leadMetrics }: { initialLeads?: LeadRecord[]; metrics?: MetricItem[] }) {
+function LeadsSection({ initialLeads = [], metrics = [] }: { initialLeads?: LeadRecord[]; metrics?: MetricItem[] }) {
   const [selectedId, setSelectedId] = useState(initialLeads[0]?.id || '')
   const [query, setQuery] = useState('')
   const [activeTab, setActiveTab] = useState('All leads')
@@ -593,7 +627,7 @@ function LeadsSection({ initialLeads = [], metrics = mock.leadMetrics }: { initi
       <MetricGrid items={metrics} />
       <ProcessRow
         title="Guide to Sale: Your lead conversion process"
-        steps={mock.leadProcess}
+        steps={LEAD_PROCESS}
         activeStep={3}
         nextActionTitle="Next best action"
         nextActionText="Follow up with 5 high-intent leads"
@@ -619,7 +653,7 @@ function LeadsSection({ initialLeads = [], metrics = mock.leadMetrics }: { initi
 
       <div className={styles.panelGrid}>
         <div className={cx(styles.panel, styles.tablePanel)}>
-          <Tabs tabs={mock.leadTabs} activeTab={activeTab} onChange={setActiveTab} />
+          <Tabs tabs={computeLeadTabs(initialLeads)} activeTab={activeTab} onChange={setActiveTab} />
           <LeadToolbar
             query={query}
             onQueryChange={setQuery}
@@ -642,7 +676,7 @@ function LeadsSection({ initialLeads = [], metrics = mock.leadMetrics }: { initi
   )
 }
 
-function VideosSection({ initialVideos = [], metrics = mock.videoMetrics }: { initialVideos?: VideoRecord[]; metrics?: MetricItem[] }) {
+function VideosSection({ initialVideos = [], metrics = [] }: { initialVideos?: VideoRecord[]; metrics?: MetricItem[] }) {
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(initialVideos[0]?.id || '')
   const [showStageMenu, setShowStageMenu] = useState(true)
@@ -705,7 +739,7 @@ function VideosSection({ initialVideos = [], metrics = mock.videoMetrics }: { in
 
   return (
     <>
-      <MetricGrid items={mock.videoMetrics} />
+      <MetricGrid items={metrics} />
 
       <div className={styles.panelGrid}>
         <div className={cx(styles.panel, styles.tablePanel)}>
@@ -802,7 +836,7 @@ function VideosSection({ initialVideos = [], metrics = mock.videoMetrics }: { in
 
 function EmailsSection({
   initialEmails = [],
-  metrics = mock.emailMetrics,
+  metrics = [],
   composerData = { leads: [], videos: [] },
 }: {
   initialEmails?: EmailRecord[]
@@ -1071,7 +1105,20 @@ function MessagesHeader({ stats }: { stats?: { unread: number; waiting: number; 
 function MessagesSection({ initialConversations = [], messageStats }: { initialConversations?: ConversationRecord[]; messageStats?: { unread: number; waiting: number; open: number; resolved: number } }) {
   const [selectedId, setSelectedId] = useState(initialConversations[0]?.id || '')
   const [query, setQuery] = useState('')
+  const [replyText, setReplyText] = useState('')
+  const [isPending, startTransition] = useTransition()
+  const router = useRouter()
   const selectedConversation = initialConversations.find((item) => item.id === selectedId) ?? initialConversations[0]
+
+  function handleSendReply() {
+    const text = replyText.trim()
+    if (!text || !selectedConversation) return
+    startTransition(async () => {
+      await sendConversationReply(selectedConversation.id, text)
+      setReplyText('')
+      router.refresh()
+    })
+  }
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     return initialConversations.filter((conversation) =>
@@ -1191,7 +1238,13 @@ function MessagesSection({ initialConversations = [], messageStats }: { initialC
               <button className={styles.chipButton}>Email</button>
             </div>
             <div className={styles.replyInput}>
-              <input placeholder="Type your message..." />
+              <input
+                placeholder="Type your message..."
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendReply()}
+                disabled={isPending}
+              />
             </div>
             <div className={styles.replyActions}>
               <button className={styles.chipButton}>Template</button>
@@ -1199,7 +1252,9 @@ function MessagesSection({ initialConversations = [], messageStats }: { initialC
               <button className={styles.chipButton}>Internal note</button>
               <button className={styles.chipButton}>Send video</button>
               <button className={styles.chipButton}>Schedule send</button>
-              <button className={styles.buttonPrimary}>Send reply</button>
+              <button className={styles.buttonPrimary} onClick={handleSendReply} disabled={isPending || !replyText.trim()}>
+                {isPending ? 'Sending…' : 'Send reply'}
+              </button>
             </div>
           </div>
             </>
@@ -1244,7 +1299,7 @@ function MessagesSection({ initialConversations = [], messageStats }: { initialC
   )
 }
 
-function SiteRequestsSection({ initialSiteRequests = [], metrics = mock.siteRequestMetrics }: { initialSiteRequests?: SiteRequestRecord[]; metrics?: MetricItem[] }) {
+function SiteRequestsSection({ initialSiteRequests = [], metrics = [] }: { initialSiteRequests?: SiteRequestRecord[]; metrics?: MetricItem[] }) {
   const [selectedId, setSelectedId] = useState(initialSiteRequests[0]?.id || '')
   const [query, setQuery] = useState('')
   const [showStageMenu, setShowStageMenu] = useState(false)
@@ -1459,7 +1514,7 @@ function IntegrationStatusBar({ status }: { status: IntegrationStatus }) {
   )
 }
 
-function IntegrationsSection({ integrationStatus = mock.integrationStatusSummary }: { integrationStatus?: IntegrationStatus }) {
+function IntegrationsSection({ integrationStatus = { connected: 0, suggested: 0, pending: 0 } }: { integrationStatus?: IntegrationStatus }) {
   return (
     <>
       <IntegrationStatusBar status={integrationStatus} />
@@ -1632,7 +1687,7 @@ function LeadToolbar({
         </button>
         {showStageMenu ? (
           <div className={styles.dropdown}>
-            {mock.leadStages.map((item) => (
+            {LEAD_STAGES.map((item) => (
               <button key={item} className={cx(stage === item && styles.dropdownActive)} onClick={() => onStageChange(item)}>
                 {item}
               </button>

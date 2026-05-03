@@ -65,6 +65,7 @@ export async function getLeads(): Promise<Lead[]> {
     engagement: row.engagement || 0,
     value: row.value ? `$${Number(row.value).toLocaleString()}` : '$0',
     nextAction: row.next_action || 'Follow up',
+    email: row.email || undefined,
   }))
 }
 
@@ -96,7 +97,7 @@ export async function getLeadRecords(): Promise<LeadRecord[]> {
 export async function getVideos(): Promise<VideoRecord[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
-    .from('videos' as any)
+    .from('videos')
     .select('*, lead:lead_id(name, company, status)')
     .order('created_at', { ascending: false })
   if (error || !data) return []
@@ -183,7 +184,7 @@ export async function getEmailComposerData() {
 export async function getConversations(): Promise<ConversationRecord[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
-    .from('conversations' as any)
+    .from('conversations')
     .select('*, messages(id, content, is_read, created_at, sender_id, message_type)')
     .order('last_message_at', { ascending: false })
   if (error || !data) return []
@@ -213,7 +214,7 @@ export async function getConversations(): Promise<ConversationRecord[]> {
 export async function getSiteRequests(): Promise<SiteRequestRecord[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
-    .from('site_requests' as any)
+    .from('site_requests')
     .select('*')
     .order('created_at', { ascending: false })
   if (error || !data) return []
@@ -245,7 +246,7 @@ export async function getDashboardMetrics() {
   const lastWeekStr = lastWeekDate.toISOString().split('T')[0]
 
   const { data: snapshots } = await supabase
-    .from('metric_snapshots' as any)
+    .from('metric_snapshots')
     .select('*')
     .eq('section', 'leads')
     .gte('snapshot_date', lastWeekStr)
@@ -347,15 +348,15 @@ export async function getDashboardMetrics() {
 export async function getVideoMetrics() {
   const supabase = await createClient()
   const { data: snaps } = await supabase
-    .from('metric_snapshots' as any).select('*').eq('section', 'videos')
-  const snap = (snaps as any[] || []).reduce((acc: Record<string, number[]>, s) => {
+    .from('metric_snapshots').select('*').eq('section', 'videos')
+  const snap = (snaps || []).reduce((acc: Record<string, number[]>, s) => {
     if (!acc[s.metric_label]) acc[s.metric_label] = []
     acc[s.metric_label].push(Number(s.value_numeric))
     return acc
   }, {})
 
-  const { data: videos } = await supabase.from('videos' as any).select('watch_rate, meetings_booked, created_at, status')
-  const vids = videos as any[] || []
+  const { data: videos } = await supabase.from('videos').select('watch_rate, meetings_booked, created_at, status')
+  const vids = videos || []
   const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
   const totalVideos = vids.length
@@ -384,8 +385,8 @@ export async function getEmailMetrics() {
   const supabase = await createClient()
   const { data: templates } = await supabase.from('email_templates').select('*')
   const tmpl = (templates as any[]) || []
-  const { data: snaps } = await supabase.from('metric_snapshots' as any).select('*').eq('section', 'emails')
-  const snap = (snaps as any[] || []).reduce((acc: Record<string, number[]>, s) => {
+  const { data: snaps } = await supabase.from('metric_snapshots').select('*').eq('section', 'emails')
+  const snap = (snaps || []).reduce((acc: Record<string, number[]>, s) => {
     if (!acc[s.metric_label]) acc[s.metric_label] = []
     acc[s.metric_label].push(Number(s.value_numeric))
     return acc
@@ -425,10 +426,10 @@ export async function getEmailMetrics() {
 
 export async function getSiteRequestMetrics() {
   const supabase = await createClient()
-  const { data } = await supabase.from('site_requests' as any).select('stage, budget_max, created_at')
-  const reqs = (data as any[]) || []
-  const { data: snaps } = await supabase.from('metric_snapshots' as any).select('*').eq('section', 'site_requests')
-  const snap = (snaps as any[] || []).reduce((acc: Record<string, number[]>, s) => {
+  const { data } = await supabase.from('site_requests').select('stage, budget_max, created_at')
+  const reqs = data || []
+  const { data: snaps } = await supabase.from('metric_snapshots').select('*').eq('section', 'site_requests')
+  const snap = (snaps || []).reduce((acc: Record<string, number[]>, s) => {
     if (!acc[s.metric_label]) acc[s.metric_label] = []
     acc[s.metric_label].push(Number(s.value_numeric))
     return acc
@@ -457,10 +458,10 @@ export async function getSiteRequestMetrics() {
 
 export async function getMessageMetrics() {
   const supabase = await createClient()
-  const { data } = await supabase.from('conversations' as any).select('status, unread_count, resolved_at')
-  const convs = (data as any[]) || []
-  const { data: snaps } = await supabase.from('metric_snapshots' as any).select('*').eq('section', 'messages')
-  const snap = (snaps as any[] || []).reduce((acc: Record<string, number[]>, s) => {
+  const { data } = await supabase.from('conversations').select('status, unread_count, resolved_at')
+  const convs = data || []
+  const { data: snaps } = await supabase.from('metric_snapshots').select('*').eq('section', 'messages')
+  const snap = (snaps || []).reduce((acc: Record<string, number[]>, s) => {
     if (!acc[s.metric_label]) acc[s.metric_label] = []
     acc[s.metric_label].push(Number(s.value_numeric))
     return acc
@@ -489,7 +490,7 @@ export async function getMessageMetrics() {
 export async function getIntegrationStatus() {
   const supabase = await createClient()
   const { data } = await supabase.from('integrations').select('status')
-  const integrations = (data || []) as any[]
+  const integrations = data || []
   const connected = integrations.filter(i => i.status === 'connected' || i.status === 'Configured').length
   const pending = integrations.filter(i => i.status === 'pending').length
   const suggested = Math.max(0, integrations.length - connected - pending)
@@ -501,11 +502,12 @@ export async function getIntegrationStatus() {
 export async function getTasks(): Promise<TaskItem[]> {
   const supabase = await createClient()
   const { data } = await supabase
-    .from('lead_tasks').select('*, lead:lead_id(company)').order('due_at', { ascending: true }).limit(10)
+    .from('lead_tasks').select('*').order('due_at', { ascending: true }).limit(10)
   if (!data) return []
-  return data.map((t: any) => ({
+  return data.map((t) => ({
+    id: t.id,
     label: t.title || 'Task',
-    time: t.due_at ? new Date(t.due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No due date',
+    time: t.due_at ? new Date(t.due_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No due date',
     checked: t.is_done || false,
   }))
 }
@@ -513,9 +515,9 @@ export async function getTasks(): Promise<TaskItem[]> {
 export async function getRecentActivity(): Promise<ActivityItem[]> {
   const supabase = await createClient()
   const { data } = await supabase
-    .from('activity_feed' as any).select('*').order('created_at', { ascending: false }).limit(10)
+    .from('activity_feed').select('*').order('created_at', { ascending: false }).limit(10)
   if (!data) return []
-  return (data as any[]).map(e => ({
+  return data.map(e => ({
     title: e.description || 'Activity',
     time: relativeTime(e.created_at),
   }))
@@ -548,15 +550,37 @@ export async function getRecommendations(): Promise<Recommendation[]> {
 export async function getGoals() {
   const supabase = await createClient()
   const { data } = await supabase
-    .from('goals' as any).select('*').order('created_at', { ascending: true })
+    .from('goals').select('*').order('created_at', { ascending: true })
   if (!data) return []
-  return (data as any[]).map(g => ({
+  return data.map(g => ({
     label: g.label,
     current: Number(g.current_value),
     target: Number(g.target_value),
     unit: g.unit as 'count' | 'dollar',
     pct: g.target_value > 0 ? Math.round((g.current_value / g.target_value) * 100) : 0,
   }))
+}
+
+// ─── LEAD EVENTS (per-lead timeline) ─────────────────────────────────────────
+
+export type LeadEventRow = {
+  id: string
+  type: string
+  note: string | null
+  title: string | null
+  created_at: string
+  metadata: Record<string, unknown> | null
+}
+
+export async function getLeadEvents(leadId: string): Promise<LeadEventRow[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('lead_events')
+    .select('id, type, note, title, created_at, metadata')
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: false })
+    .limit(20)
+  return (data || []) as LeadEventRow[]
 }
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────

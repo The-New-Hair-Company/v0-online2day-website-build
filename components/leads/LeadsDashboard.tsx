@@ -6,6 +6,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import styles from './LeadsDashboard.module.css'
 import type { IconName, Lead, LeadStage, Metric, OwnerPerformance, PipelineStage, LeadSourcePerformance, TaskItem, Recommendation, ActivityItem } from './leads-types'
+import { createLeadFromObject, logActivityEvent } from '@/lib/actions/lead-actions'
+import { createTask, completeTask } from '@/lib/actions/task-actions'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -420,6 +422,7 @@ export default function LeadsDashboard({
             recentActivity={recentActivity}
             section={section}
             pipelineStages={pipelineStages}
+            onCompleteTask={async (id) => { await completeTask(id); router.refresh() }}
           />
         </section>
       </main>
@@ -469,15 +472,19 @@ export default function LeadsDashboard({
         />
       )}
       {activeModal === 'addLead' && (
-        <AddLeadModal onClose={() => setActiveModal(null)} onSave={(lead) => {
+        <AddLeadModal onClose={() => setActiveModal(null)} onSave={async (lead) => {
           gdprLog('create', 'lead', lead.name, JSON.stringify(lead))
+          await createLeadFromObject(lead)
           setActiveModal(null)
+          router.refresh()
         }} />
       )}
       {activeModal === 'createTask' && (
-        <CreateTaskModal leads={initialLeads} onClose={() => setActiveModal(null)} onSave={(task) => {
+        <CreateTaskModal leads={initialLeads} onClose={() => setActiveModal(null)} onSave={async (task) => {
           gdprLog('create', 'task', task.title, JSON.stringify(task))
+          await createTask({ title: task.title, leadId: task.leadId, dueDate: task.dueDate, dueTime: task.dueTime, notes: task.notes })
           setActiveModal(null)
+          router.refresh()
         }} />
       )}
       {activeModal === 'uploadContacts' && (
@@ -487,9 +494,11 @@ export default function LeadsDashboard({
         }} />
       )}
       {activeModal === 'logActivity' && (
-        <LogActivityModal leads={initialLeads} onClose={() => setActiveModal(null)} onSave={(act) => {
+        <LogActivityModal leads={initialLeads} onClose={() => setActiveModal(null)} onSave={async (act) => {
           gdprLog('create', 'activity', act.leadId || 'general', JSON.stringify(act))
+          await logActivityEvent({ leadId: act.leadId, type: act.type, notes: act.notes, durationMinutes: act.durationMinutes, billable: act.billable })
           setActiveModal(null)
+          router.refresh()
         }} />
       )}
       {activeModal === 'export' && (
@@ -939,9 +948,9 @@ function TopLeadsPanel({ leads }: { leads: Lead[] }) {
 
 // ─── RIGHT RAIL ───────────────────────────────────────────────────────────────
 
-function RightRail({ tasks, recommendations, recentActivity, section = 'leads', pipelineStages = [] }: {
+function RightRail({ tasks, recommendations, recentActivity, section = 'leads', pipelineStages = [], onCompleteTask }: {
   tasks: TaskItem[]; recommendations: Recommendation[]; recentActivity: ActivityItem[]
-  section?: DashboardSection; pipelineStages?: PipelineStage[]
+  section?: DashboardSection; pipelineStages?: PipelineStage[]; onCompleteTask?: (id: string) => void
 }) {
   return (
     <aside className={styles.rightRail}>
@@ -961,7 +970,14 @@ function RightRail({ tasks, recommendations, recentActivity, section = 'leads', 
       <Panel title="Today's priorities" badge={tasks.filter(t => !t.checked).length.toString()}>
         <div className={styles.taskList}>
           {tasks.map(t => (
-            <label key={t.label}><input type="checkbox" checked={Boolean(t.checked)} readOnly /><span>{t.label}</span><time>{t.time}</time></label>
+            <label key={t.label}>
+              <input
+                type="checkbox"
+                checked={Boolean(t.checked)}
+                onChange={() => { if (t.id && !t.checked && onCompleteTask) onCompleteTask(t.id) }}
+              />
+              <span>{t.label}</span><time>{t.time}</time>
+            </label>
           ))}
         </div>
         <a className={styles.panelLink} href="#">View all tasks →</a>

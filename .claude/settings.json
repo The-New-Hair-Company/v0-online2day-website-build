@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npm run *)",
-      "Bash(pkill -f \"next dev\")"
+      "Bash(pkill -f \"next dev\")",
+      "mcp__supabase__list_projects"
     ]
   }
 }
