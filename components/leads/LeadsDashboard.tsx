@@ -15,12 +15,18 @@ import { importContactsFromRows } from '@/lib/actions/import-actions'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
+type PipelineSummary = {
+  total: number; active: number; won: number; avgDeal: number
+  totalFormatted: string; activeFormatted: string; wonFormatted: string; avgDealFormatted: string
+}
+
 interface LeadsDashboardProps {
   section?: DashboardSection
   initialLeads?: Lead[]
   metrics?: Metric[]
   ownerPerformance?: OwnerPerformance[]
   pipelineStages?: PipelineStage[]
+  pipelineSummary?: PipelineSummary
   processSteps?: string[]
   recentActivity?: ActivityItem[]
   recommendations?: Recommendation[]
@@ -79,6 +85,7 @@ export default function LeadsDashboard({
   metrics = [],
   ownerPerformance = [],
   pipelineStages = [],
+  pipelineSummary,
   processSteps = [],
   recentActivity = [],
   recommendations = [],
@@ -338,6 +345,7 @@ export default function LeadsDashboard({
               <>
                 <AnalyticsStrip
                   pipelineStages={pipelineStages}
+                  pipelineSummary={pipelineSummary}
                   sourcePerformance={sourcePerformance}
                   ownerPerformance={ownerPerformance}
                   totalLeadsCount={initialLeads.length}
@@ -412,6 +420,7 @@ export default function LeadsDashboard({
             recentActivity={recentActivity}
             section={section}
             pipelineStages={pipelineStages}
+            pipelineSummary={pipelineSummary}
             onCompleteTask={async (id) => { await completeTask(id); router.refresh() }}
           />
         </section>
@@ -722,14 +731,30 @@ function Sparkline({ values }: { values: number[] }) {
 
 // ─── ANALYTICS STRIP ─────────────────────────────────────────────────────────
 
-function AnalyticsStrip({ pipelineStages, sourcePerformance, ownerPerformance, totalLeadsCount }: {
-  pipelineStages: PipelineStage[]; sourcePerformance: LeadSourcePerformance[]
-  ownerPerformance: OwnerPerformance[]; totalLeadsCount: number
+function AnalyticsStrip({ pipelineStages, pipelineSummary, sourcePerformance, ownerPerformance, totalLeadsCount }: {
+  pipelineStages: PipelineStage[]; pipelineSummary?: PipelineSummary
+  sourcePerformance: LeadSourcePerformance[]; ownerPerformance: OwnerPerformance[]; totalLeadsCount: number
 }) {
   return (
     <section className={styles.analyticsGrid}>
       <article className={styles.analyticsCard}>
         <h3>Pipeline by stage</h3>
+        {pipelineSummary && (
+          <div className={styles.pipelineSummaryRow}>
+            <div className={styles.pipelineStat}>
+              <span>Total</span><strong>{pipelineSummary.totalFormatted}</strong>
+            </div>
+            <div className={styles.pipelineStat}>
+              <span>Active</span><strong>{pipelineSummary.activeFormatted}</strong>
+            </div>
+            <div className={styles.pipelineStat}>
+              <span>Won</span><strong>{pipelineSummary.wonFormatted}</strong>
+            </div>
+            <div className={styles.pipelineStat}>
+              <span>Avg deal</span><strong>{pipelineSummary.avgDealFormatted}</strong>
+            </div>
+          </div>
+        )}
         <div className={styles.funnelRow}>
           <Funnel pipelineStages={pipelineStages} />
           <div className={styles.stageLegend}>
@@ -737,12 +762,14 @@ function AnalyticsStrip({ pipelineStages, sourcePerformance, ownerPerformance, t
               <div key={s.label}>
                 <i style={{ backgroundColor: s.color }} />
                 <span>{s.label}</span>
-                <strong>{s.count} ({s.percentage}%)</strong>
+                <strong>{s.count} · {s.valueFormatted}</strong>
               </div>
             ))}
           </div>
         </div>
-        <div className={styles.analyticsFooter}>Total <strong>{totalLeadsCount}</strong></div>
+        <div className={styles.analyticsFooter}>
+          {totalLeadsCount} leads · {pipelineSummary?.totalFormatted ?? '£0'} pipeline
+        </div>
       </article>
       <article className={styles.analyticsCard}>
         <h3>Lead source performance</h3>
@@ -899,23 +926,38 @@ function TopLeadsPanel({ leads }: { leads: Lead[] }) {
 
 // ─── RIGHT RAIL ───────────────────────────────────────────────────────────────
 
-function RightRail({ tasks, recommendations, recentActivity, section = 'leads', pipelineStages = [], onCompleteTask }: {
+function RightRail({ tasks, recommendations, recentActivity, section = 'leads', pipelineStages = [], pipelineSummary, onCompleteTask }: {
   tasks: TaskItem[]; recommendations: Recommendation[]; recentActivity: ActivityItem[]
-  section?: DashboardSection; pipelineStages?: PipelineStage[]; onCompleteTask?: (id: string) => void
+  section?: DashboardSection; pipelineStages?: PipelineStage[]; pipelineSummary?: PipelineSummary; onCompleteTask?: (id: string) => void
 }) {
   return (
     <aside className={styles.rightRail}>
       {section === 'leads' && pipelineStages.length > 0 && (
         <article className={styles.analyticsCard}>
           <h3>Pipeline by stage</h3>
+          {pipelineSummary && (
+            <div className={styles.pipelineSummaryRow}>
+              <div className={styles.pipelineStat}><span>Total</span><strong>{pipelineSummary.totalFormatted}</strong></div>
+              <div className={styles.pipelineStat}><span>Active</span><strong>{pipelineSummary.activeFormatted}</strong></div>
+            </div>
+          )}
           <div className={styles.funnelRow}>
             <Funnel pipelineStages={pipelineStages} />
             <div className={styles.stageLegend}>
               {pipelineStages.map(s => (
-                <div key={s.label}><i style={{ backgroundColor: s.color }} /><span>{s.label}</span><strong>{s.count} ({s.percentage}%)</strong></div>
+                <div key={s.label}>
+                  <i style={{ backgroundColor: s.color }} />
+                  <span>{s.label}</span>
+                  <strong>{s.count} · {s.valueFormatted}</strong>
+                </div>
               ))}
             </div>
           </div>
+          {pipelineSummary && (
+            <div className={styles.analyticsFooter}>
+              Avg deal <strong>{pipelineSummary.avgDealFormatted}</strong> · Won <strong>{pipelineSummary.wonFormatted}</strong>
+            </div>
+          )}
         </article>
       )}
       <Panel title="Today's priorities" badge={tasks.filter(t => !t.checked).length.toString()}>

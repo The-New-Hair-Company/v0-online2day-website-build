@@ -310,19 +310,34 @@ export async function getDashboardMetrics() {
   const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
   const newLeads = leads.filter(l => new Date(l.created_at) >= sevenDaysAgo).length
   const qualifiedLeads = leads.filter(l => l.status === 'Qualified').length
-  const pipelineValue = leads.reduce((s, l) => s + (Number(l.value) || 0), 0)
 
-  // Pipeline stages
+  // Pipeline value: sum of all non-null deal values
+  const pipelineValue = leads.reduce((s, l) => s + (Number(l.value) || 0), 0)
+  const activePipelineValue = leads
+    .filter(l => l.status !== 'Won')
+    .reduce((s, l) => s + (Number(l.value) || 0), 0)
+  const wonValue = leads
+    .filter(l => l.status === 'Won')
+    .reduce((s, l) => s + (Number(l.value) || 0), 0)
+  const leadsWithValue = leads.filter(l => Number(l.value) > 0).length
+  const avgDealSize = leadsWithValue > 0 ? Math.round(pipelineValue / leadsWithValue) : 0
+
+  // Pipeline stages — include value per stage
   const stageOrder = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won']
   const pipelineStages: PipelineStage[] = stageOrder
-    .map(stage => ({
-      label: stage as LeadStage,
-      count: leads.filter(l => l.status === stage).length,
-      percentage: 0,
-      color: getStageColor(stage),
-    }))
+    .map(stage => {
+      const stageLeads = leads.filter(l => l.status === stage)
+      const count = stageLeads.length
+      const value = stageLeads.reduce((s, l) => s + (Number(l.value) || 0), 0)
+      return { label: stage as LeadStage, count, value, color: getStageColor(stage) }
+    })
     .filter(s => s.count > 0)
-    .map(s => ({ ...s, percentage: totalLeads > 0 ? Math.round((s.count / totalLeads) * 100) : 0 }))
+    .map(s => ({
+      ...s,
+      valueFormatted: `£${s.value.toLocaleString()}`,
+      percentage: totalLeads > 0 ? Math.round((s.count / totalLeads) * 100) : 0,
+      valuePercentage: pipelineValue > 0 ? Math.round((s.value / pipelineValue) * 100) : 0,
+    }))
 
   // Source performance
   const sourceMap = new Map<string, { leads: number; value: number }>()
@@ -371,10 +386,21 @@ export async function getDashboardMetrics() {
     { label: 'Total leads', value: `${totalLeads}`, delta: getDelta('total_leads', totalLeads), icon: 'users', sparkline: getSparkline('total_leads') },
     { label: 'New this week', value: `${newLeads}`, delta: getDelta('new_leads_week', newLeads), icon: 'calendar', sparkline: getSparkline('new_leads_week') },
     { label: 'Qualified leads', value: `${qualifiedLeads}`, delta: getDelta('qualified_leads', qualifiedLeads), icon: 'diamond', sparkline: getSparkline('qualified_leads') },
-    { label: 'Pipeline value', value: `$${pipelineValue.toLocaleString()}`, delta: getDelta('pipeline_value', pipelineValue), icon: 'dollar', sparkline: getSparkline('pipeline_value') },
+    { label: 'Pipeline value', value: `£${pipelineValue.toLocaleString()}`, delta: getDelta('pipeline_value', pipelineValue), icon: 'dollar', sparkline: getSparkline('pipeline_value') },
   ]
 
-  return { metrics, pipelineStages, sourcePerformance, ownerPerformance, totalLeads }
+  const pipelineSummary = {
+    total: pipelineValue,
+    active: activePipelineValue,
+    won: wonValue,
+    avgDeal: avgDealSize,
+    totalFormatted: `£${pipelineValue.toLocaleString()}`,
+    activeFormatted: `£${activePipelineValue.toLocaleString()}`,
+    wonFormatted: `£${wonValue.toLocaleString()}`,
+    avgDealFormatted: `£${avgDealSize.toLocaleString()}`,
+  }
+
+  return { metrics, pipelineStages, pipelineSummary, sourcePerformance, ownerPerformance, totalLeads }
 }
 
 // ─── SECTION METRICS ─────────────────────────────────────────────────────────

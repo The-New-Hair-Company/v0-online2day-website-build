@@ -76,7 +76,10 @@ export type Lead = {
 export type PipelineStage = {
   label: LeadStage
   count: number
+  value: number
+  valueFormatted: string
   percentage: number
+  valuePercentage: number
   color: string
 }
 

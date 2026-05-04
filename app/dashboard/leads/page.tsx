@@ -8,7 +8,7 @@ export const metadata = {
 
 export default async function DashboardLeadsPage() {
   const initialLeads = await getLeads()
-  const { metrics, pipelineStages, sourcePerformance, ownerPerformance } = await getDashboardMetrics()
+  const { metrics, pipelineStages, pipelineSummary, sourcePerformance, ownerPerformance } = await getDashboardMetrics()
   const tasks = await getTasks()
   const recentActivity = await getRecentActivity()
   const recommendations = await getRecommendations()
@@ -19,6 +19,7 @@ export default async function DashboardLeadsPage() {
       metrics={metrics}
       ownerPerformance={ownerPerformance}
       pipelineStages={pipelineStages}
+      pipelineSummary={pipelineSummary}
       processSteps={['Capture lead', 'Qualify', 'Personalise outreach', 'Send video', 'Handle objections', 'Book call', 'Close']}
       recentActivity={recentActivity}
       recommendations={recommendations}
