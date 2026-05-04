@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { useRef, useState, useTransition } from 'react'
-import { Calendar, Check, Clock, Mail, Paperclip, Phone, Send, Upload, Video } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
+import { Icon, Avatar, Score, StageBadge, getInitials } from '@/components/leads/DashboardComponents'
 import styles from '@/components/leads/LeadsDashboard.module.css'
 import type { Lead } from '@/components/leads/leads-types'
 import type { LeadEventRow } from '@/app/actions/dashboard'
@@ -43,18 +43,18 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
   const [isPendingEmail, startEmailTransition] = useTransition()
   const [isPendingUpload, startUploadTransition] = useTransition()
 
-  const initials = lead.contactName.split(' ').map((part) => part[0]).join('')
+  const initials = getInitials(lead.contactName)
 
   const timeline = leadEvents.length > 0
     ? leadEvents.map((ev) => ({
         title: ev.type,
         detail: ev.note || '',
         time: relativeTime(ev.created_at),
-        icon: Clock,
+        icon: 'clock' as const,
       }))
     : [
-        { title: 'Lead detail opened', detail: `${lead.contactName} from ${lead.company}`, time: 'Just now', icon: Clock },
-        { title: lead.nextAction, detail: `Recommended next step while lead is in ${lead.stage}.`, time: lead.lastActivity, icon: Check },
+        { title: 'Lead detail opened', detail: `${lead.contactName} from ${lead.company}`, time: 'Just now', icon: 'clock' as const },
+        { title: lead.nextAction, detail: `Recommended next step while lead is in ${lead.stage}.`, time: lead.lastActivity, icon: 'check' as const },
       ]
 
   function handleVideoSelect(file: File) {
@@ -106,22 +106,22 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
 
         <section className={styles.detailCard}>
           <div className={styles.leadHeroCard}>
-            <div className={styles.leadHeroAvatar}>{initials}</div>
+            <Avatar initials={initials} size="lg" />
             <div className={styles.leadHeroInfo}>
               <h1>{lead.contactName}</h1>
               <p>{lead.role} at {lead.company}</p>
               <div className={styles.leadHeroActions}>
-                <button className={styles.btnPrimary} onClick={handleSendEmail} disabled={isPendingEmail}><Mail size={16} />{isPendingEmail ? 'Sending…' : 'Send email'}</button>
-                <button className={styles.btnSecondary}><Phone size={16} />Call</button>
-                <button className={styles.btnSecondary}><Calendar size={16} />Book call</button>
+                <button className={styles.btnPrimary} onClick={handleSendEmail} disabled={isPendingEmail}><Icon name="mail" />{isPendingEmail ? 'Sending…' : 'Send email'}</button>
+                <button className={styles.btnSecondary}><Icon name="phone" />Call</button>
+                <button className={styles.btnSecondary}><Icon name="calendar" />Book call</button>
               </div>
             </div>
           </div>
           <div className={styles.detailMetaGrid}>
-            <div className={styles.detailMetaItem}><span>Stage</span><strong>{lead.stage}</strong></div>
-            <div className={styles.detailMetaItem}><span>Score</span><strong>{lead.score}</strong></div>
+            <div className={styles.detailMetaItem}><span>Stage</span><StageBadge stage={lead.stage} /></div>
+            <div className={styles.detailMetaItem}><span>Score</span><Score value={lead.score} /></div>
             <div className={styles.detailMetaItem}><span>Owner</span><strong>{lead.owner}</strong></div>
-            <div className={styles.detailMetaItem}><span>Source</span><strong>{lead.source}</strong></div>
+            <div className={styles.detailMetaItem}><span>Source</span><strong><Icon name="globe" />{lead.source}</strong></div>
             <div className={styles.detailMetaItem}><span>Value</span><strong>{lead.value}</strong></div>
             <div className={styles.detailMetaItem}><span>Engagement</span><strong>{lead.engagement}%</strong></div>
           </div>
@@ -130,7 +130,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
         <div className={styles.detailGrid}>
           <div>
             <section className={styles.detailCard}>
-              <header className={styles.detailCardHeader}><Video size={18} /><h2>Video upload</h2></header>
+              <header className={styles.detailCardHeader}><Icon name="video" /><h2>Video upload</h2></header>
               <div className={styles.detailCardBody}>
                 <div
                   className={styles.videoUploadZone}
@@ -142,7 +142,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
                     if (file) handleVideoSelect(file)
                   }}
                 >
-                  <Upload size={30} />
+                  <Icon name="upload" size={30} />
                   <h3>{videoFile ? videoFile.name : 'Drop a personalised video here'}</h3>
                   <p>
                     {uploadStatus === 'uploading' ? 'Uploading…'
@@ -158,35 +158,34 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
                 </div>
                 {videoFile && uploadStatus === 'idle' && (
                   <button className={styles.btnPrimary} style={{ marginTop: 12 }} onClick={handleUploadVideo} disabled={isPendingUpload}>
-                    <Upload size={16} />Upload to lead
+                    <Icon name="upload" />Upload to lead
                   </button>
                 )}
               </div>
             </section>
 
             <section className={styles.detailCard}>
-              <header className={styles.detailCardHeader}><Mail size={18} /><h2>Email composer</h2>{sent ? <span className={styles.gdprBadge}><Check size={13} />Sent</span> : null}</header>
+              <header className={styles.detailCardHeader}><Icon name="mail" /><h2>Email composer</h2>{sent ? <span className={styles.gdprBadge}><Icon name="check" />Sent</span> : null}</header>
               <div className={styles.detailCardBody}>
                 <div className={styles.emailComposer}>
-                  <div className={styles.emailBestPractice}><Paperclip size={16} />Personalise the first two lines and include one clear next step. Sends are logged for GDPR audit review.</div>
+                  <div className={styles.emailBestPractice}><Icon name="paperclip" />Personalise the first two lines and include one clear next step. Sends are logged for GDPR audit review.</div>
                   {emailError ? <p style={{ color: 'var(--error, red)', fontSize: 13, marginBottom: 8 }}>{emailError}</p> : null}
                   <input className={styles.formInput} value={subject} onChange={(event) => setSubject(event.target.value)} />
                   <textarea className={styles.formTextarea} value={body} onChange={(event) => setBody(event.target.value)} rows={9} />
-                  <button className={styles.btnPrimary} onClick={handleSendEmail} disabled={isPendingEmail}><Send size={16} />{isPendingEmail ? 'Sending…' : 'Send and log email'}</button>
+                  <button className={styles.btnPrimary} onClick={handleSendEmail} disabled={isPendingEmail}><Icon name="send" />{isPendingEmail ? 'Sending…' : 'Send and log email'}</button>
                 </div>
               </div>
             </section>
           </div>
 
           <aside className={styles.detailCard}>
-            <header className={styles.detailCardHeader}><Clock size={18} /><h2>Activity timeline</h2></header>
+            <header className={styles.detailCardHeader}><Icon name="clock" /><h2>Activity timeline</h2></header>
             <div className={styles.detailCardBody}>
               <div className={styles.activityTimeline}>
                 {timeline.map((item, idx) => {
-                  const Icon = item.icon
                   return (
                     <div key={idx} className={styles.timelineItem}>
-                      <div className={styles.timelineDot}><Icon size={18} /></div>
+                      <div className={styles.timelineDot}><Icon name={item.icon} /></div>
                       <div className={styles.timelineContent}>
                         <strong>{item.title}</strong>
                         {item.detail ? <p>{item.detail}</p> : null}

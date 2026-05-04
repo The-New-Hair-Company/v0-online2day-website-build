@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { getLeads, getLeadEvents } from '@/app/actions/dashboard'
+import { getLead, getLeadEvents } from '@/app/actions/dashboard'
 import { LeadDetailClient } from './lead-detail-client'
 
 export const metadata = {
@@ -9,8 +9,7 @@ export const metadata = {
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const [leads, leadEvents] = await Promise.all([getLeads(), getLeadEvents(id)])
-  const lead = leads.find((item) => item.id === id)
+  const [lead, leadEvents] = await Promise.all([getLead(id), getLeadEvents(id)])
 
   if (!lead) {
     notFound()

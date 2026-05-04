@@ -44,6 +44,8 @@ export type IconName =
   | 'timer'
   | 'warning'
   | 'info'
+  | 'paperclip'
+  | 'send'
 
 export type LeadStage = 'New' | 'Contacted' | 'Qualified' | 'Proposal Sent' | 'Negotiation' | 'Won'
 export type LeadSource = 'Website' | 'Referral' | 'Cold outreach' | 'Ads' | 'Organic'
@@ -114,4 +116,11 @@ export type Recommendation = {
 export type ActivityItem = {
   title: string
   time: string
+}
+
+export type LeadContact = {
+  email?: string
+  phone?: string
+  linkedin?: string
+  website?: string
 }

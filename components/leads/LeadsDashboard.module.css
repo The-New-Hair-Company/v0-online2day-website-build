@@ -921,6 +921,12 @@
   font-size: 9px;
 }
 
+.avatarLg {
+  width: 64px;
+  height: 64px;
+  font-size: 22px;
+}
+
 .score {
   display: inline-flex;
   width: 26px;

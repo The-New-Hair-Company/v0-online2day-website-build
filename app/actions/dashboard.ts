@@ -68,6 +68,40 @@ export async function getLeads(): Promise<Lead[]> {
     email: row.email || undefined,
   }))
 }
+export async function getLead(id: string): Promise<Lead | null> {
+  const supabase = await createClient()
+  const { data: row, error } = await supabase
+    .from('leads').select('*').eq('id', id).single()
+  if (error || !row) return null
+
+  let ownerName = 'Unassigned'
+  if (row.assigned_to) {
+    const { data: profile } = await supabase
+      .from('user_profiles').select('full_name').eq('user_id', row.assigned_to).single()
+    if (profile) ownerName = profile.full_name || 'Unknown'
+  }
+
+  return {
+    id: row.id,
+    contactName: row.name || 'Unknown',
+    role: row.role || 'Contact',
+    company: row.company || 'Private',
+    companyMark: (row.company || 'P').substring(0, 2).toUpperCase(),
+    logoClass: 'logoGeneric',
+    score: row.score || 0,
+    stage: (row.status as LeadStage) || 'New',
+    owner: ownerName,
+    source: (row.source as any) || 'Website',
+    sourceIcon: 'globe',
+    lastActivity: relativeTime(row.last_contacted_at),
+    engagement: row.engagement || 0,
+    value: row.value ? `$${Number(row.value).toLocaleString()}` : '$0',
+    nextAction: row.next_action || 'Follow up',
+    email: row.email || undefined,
+    phone: row.phone || undefined,
+    notes: row.notes || undefined,
+  }
+}
 
 export async function getLeadRecords(): Promise<LeadRecord[]> {
   const supabase = await createClient()
