@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import type { ComponentType, MouseEvent, ReactNode } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -1089,213 +1089,235 @@ function EnterpriseEmailComposer({
   )
 }
 
-function MessagesHeader({ stats }: { stats?: { unread: number; waiting: number; open: number; resolved: number } }) {
-  const s = stats ?? { unread: 12, waiting: 8, open: 48, resolved: 21 }
-  return (
-    <div className={styles.statusBar}>
-      <strong style={{ fontSize: 16 }}>Conversations</strong>
-      <span className={cx(styles.pill, styles.pillRed)}>{s.unread} unread</span>
-      <span className={cx(styles.pill, styles.pillYellow)}>{s.waiting} waiting</span>
-      <span className={cx(styles.pill, styles.pillBlue)}>{s.open} open</span>
-      <span className={cx(styles.pill, styles.pillGreen)}>{s.resolved} resolved today</span>
-    </div>
-  )
-}
-
-function MessagesSection({ initialConversations = [], messageStats }: { initialConversations?: ConversationRecord[]; messageStats?: { unread: number; waiting: number; open: number; resolved: number } }) {
+function MessagesSection({ initialConversations = [] }: { initialConversations?: ConversationRecord[]; messageStats?: { unread: number; waiting: number; open: number; resolved: number } }) {
   const [selectedId, setSelectedId] = useState(initialConversations[0]?.id || '')
   const [query, setQuery] = useState('')
   const [replyText, setReplyText] = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
-  const selectedConversation = initialConversations.find((item) => item.id === selectedId) ?? initialConversations[0]
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const selectedConversation = initialConversations.find((c) => c.id === selectedId) ?? initialConversations[0]
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [selectedId, selectedConversation?.messages.length])
+
+  const stats = useMemo(() => ({
+    total: initialConversations.length,
+    unread: initialConversations.reduce((s, c) => s + (c.unread || 0), 0),
+    high: initialConversations.filter((c) => c.priority === 'High').length,
+  }), [initialConversations])
 
   function handleSendReply() {
     const text = replyText.trim()
-    if (!text || !selectedConversation) return
+    if (!text || !selectedConversation || isPending) return
     startTransition(async () => {
       await sendConversationReply(selectedConversation.id, text)
       setReplyText('')
       router.refresh()
     })
   }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendReply()
+    }
+  }
+
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return initialConversations.filter((conversation) =>
-      normalized
-        ? `${conversation.name} ${conversation.company} ${conversation.preview}`.toLowerCase().includes(normalized)
-        : true
+    return initialConversations.filter((c) =>
+      normalized ? `${c.name} ${c.company} ${c.preview}`.toLowerCase().includes(normalized) : true
     )
   }, [query, initialConversations])
 
-  return (
-    <>
-      <MessagesHeader stats={messageStats} />
+  function channelLabel(channel: string) {
+    const c = channel?.toLowerCase() || ''
+    if (c.includes('email')) return 'Email'
+    if (c.includes('chat') || c.includes('web')) return 'Web chat'
+    if (c.includes('phone')) return 'Phone'
+    return channel || 'Chat'
+  }
 
-      <div className={styles.chatLayout}>
-        <div className={cx(styles.panel, styles.tablePanel)}>
-          <Tabs tabs={[{ label: 'All inboxes', count: 48 }, { label: 'Unassigned', count: 6 }, { label: 'High intent', count: 14 }, { label: 'Waiting', count: 8 }, { label: 'Resolved', count: 21 }]} activeTab="All inboxes" onChange={() => undefined} />
-          <div className={styles.toolbar}>
-            <label className={styles.smallSearch}>
-              <Search size={14} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search conversations..." />
-            </label>
-            <button className={styles.chipButton}>Channel</button>
-            <button className={styles.chipButton}>Owner</button>
-            <button className={styles.chipButton}>Status</button>
-            <button className={styles.priorityButton}>Priority <ChevronDown size={14} /></button>
-            <div className={styles.toolbarRight}>
-              <button className={styles.chipButton}>Sort: Latest</button>
-            </div>
-          </div>
-          <div className={styles.panel} style={{ border: 0, borderRadius: 0, paddingTop: 10 }}>
-            <div className={styles.conversationList}>
-              {filtered.map((conversation) => (
-                <button
-                  key={conversation.id}
-                  type="button"
-                  className={cx(styles.conversationRow, selectedId === conversation.id && styles.conversationRowActive)}
-                  onClick={() => setSelectedId(conversation.id)}
-                >
-                  <div className={styles.avatar}>{initials(conversation.name)}</div>
-                  <div>
-                    <strong>{conversation.name}</strong>
-                    <div className={styles.subtle}>{conversation.company}</div>
-                    <div>{conversation.preview}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div className={styles.subtle}>{conversation.time}</div>
-                    <div className={cx(styles.pill, priorityTone(conversation.priority))}>{conversation.priority}</div>
-                    {conversation.unread ? <div className={styles.navBadge}>{conversation.unread}</div> : null}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
+  return (
+    <div className={styles.chatLayout}>
+
+      {/* ── LEFT: conversation list ─────────────────────────── */}
+      <div className={cx(styles.panel, styles.tablePanel)}>
+        <div className={styles.msgStatBar}>
+          <strong>{stats.total} conversation{stats.total !== 1 ? 's' : ''}</strong>
+          {stats.unread > 0 && <span className={cx(styles.pill, styles.pillRed)}>{stats.unread} unread</span>}
+          {stats.high > 0 && <span className={cx(styles.pill, styles.pillYellow)}>{stats.high} urgent</span>}
         </div>
 
-        <div className={styles.messageLayout}>
-          {selectedConversation ? (
-            <>
-          <div className={styles.chatHeader}>
-            <div className={styles.identity}>
+        <div className={styles.toolbar}>
+          <label className={styles.smallSearch}>
+            <Search size={14} />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search conversations..." />
+          </label>
+        </div>
+
+        <div className={styles.conversationList}>
+          {filtered.length === 0 && (
+            <div className={styles.emptyStateMsg}>No conversations found</div>
+          )}
+          {filtered.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className={cx(styles.conversationRow, selectedId === c.id && styles.conversationRowActive)}
+              onClick={() => setSelectedId(c.id)}
+            >
+              <div className={styles.convAvatar}>{initials(c.name)}</div>
+              <div className={styles.convBody}>
+                <div className={styles.convTopLine}>
+                  <strong>{c.name}</strong>
+                  <span className={styles.convTime}>{c.time}</span>
+                </div>
+                <div className={styles.convCompany}>{c.company}</div>
+                <div className={styles.convPreview}>{c.preview}</div>
+              </div>
+              <div className={styles.convBadges}>
+                <span className={cx(styles.pill, priorityTone(c.priority))}>{c.priority}</span>
+                {c.unread ? <span className={styles.unreadDot}>{c.unread}</span> : null}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── CENTER: message thread ──────────────────────────── */}
+      <div className={styles.messageLayout}>
+        {selectedConversation ? (
+          <>
+            <div className={styles.chatHeader}>
+              <div className={styles.identity}>
+                <div className={styles.avatar}>{initials(selectedConversation.name)}</div>
+                <div>
+                  <strong>{selectedConversation.name}</strong>
+                  <div className={styles.subtle}>{selectedConversation.company} · {channelLabel(selectedConversation.channel)}</div>
+                </div>
+                <span className={cx(styles.pill, priorityTone(selectedConversation.priority))}>{selectedConversation.priority}</span>
+                {selectedConversation.status && (
+                  <span className={cx(styles.pill, styles.pillBlue)}>{selectedConversation.status}</span>
+                )}
+              </div>
+              <div className={styles.chatHeaderActions}>
+                <button className={styles.buttonGhost} title="Email"><Mail size={15} /></button>
+                <button className={styles.buttonGhost} title="Schedule call"><CalendarDays size={15} /></button>
+                <button className={styles.buttonGhost} title="Call"><Phone size={15} /></button>
+              </div>
+            </div>
+
+            <div className={styles.chatMessages}>
+              {selectedConversation.messages.map((msg) => {
+                if (msg.sender === 'note') {
+                  return (
+                    <div key={msg.id} className={styles.noteBubble}>
+                      <div className={styles.noteLabel}>Internal note</div>
+                      <div>{msg.text}</div>
+                      <div className={styles.msgTime}>{msg.time}</div>
+                    </div>
+                  )
+                }
+                const isAgent = msg.sender === 'agent'
+                return (
+                  <div key={msg.id} className={isAgent ? styles.bubbleMine : styles.bubble}>
+                    <div>{msg.text}</div>
+                    {msg.attachmentLabel && (
+                      <div className={styles.attachmentCard}>
+                        <strong>{msg.attachmentLabel}</strong>
+                        {msg.meta && <div className={styles.subtle}>{msg.meta}</div>}
+                      </div>
+                    )}
+                    <div className={cx(styles.msgTime, isAgent && styles.msgTimeMine)}>{msg.time}</div>
+                  </div>
+                )
+              })}
+              <div ref={messagesEndRef} />
+            </div>
+
+            <div className={styles.replyComposer}>
+              <div className={styles.replyInput}>
+                <textarea
+                  className={styles.composeTextarea}
+                  placeholder="Type a reply... (Enter to send, Shift+Enter for new line)"
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={isPending}
+                  rows={3}
+                />
+              </div>
+              <div className={styles.composerFooter}>
+                <span className={styles.subtle}>
+                  {replyText.length > 0 ? `${replyText.length} chars` : 'Enter to send · Shift+Enter for new line'}
+                </span>
+                <button
+                  className={styles.buttonPrimary}
+                  onClick={handleSendReply}
+                  disabled={isPending || !replyText.trim()}
+                >
+                  <Send size={14} />{isPending ? 'Sending...' : 'Send'}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className={styles.emptyChat}>
+            <MessageSquare size={36} />
+            <p>Select a conversation to start messaging</p>
+          </div>
+        )}
+      </div>
+
+      {/* ── RIGHT: contact + timeline ───────────────────────── */}
+      {selectedConversation && (
+        <div className={styles.rightRail}>
+          <RightPanel title="Contact info" actionLabel="Open in CRM">
+            <div className={styles.contactCardRow}>
               <div className={styles.avatar}>{initials(selectedConversation.name)}</div>
               <div>
                 <strong>{selectedConversation.name}</strong>
-                <div className={styles.subtle}>{selectedConversation.company} · Marketing Director</div>
+                <div className={styles.subtle}>{selectedConversation.company}</div>
               </div>
-              <span className={cx(styles.pill, styles.pillGreen)}>Qualified</span>
-              <span className={cx(styles.pill, styles.pillRed)}>High intent</span>
-            </div>
-            <div className={styles.replyActions}>
-              <button className={styles.buttonGhost}><Mail size={14} /></button>
-              <button className={styles.buttonGhost}><CalendarDays size={14} /></button>
-              <button className={styles.buttonGhost}><Phone size={14} /></button>
-              <button className={styles.buttonGhost}><Send size={14} /></button>
-            </div>
-          </div>
-
-          <div className={styles.chatMessages}>
-            {selectedConversation.messages.map((message) => {
-              if (message.sender === 'note') {
-                return (
-                  <div key={message.id} className={styles.noteBubble}>
-                    <strong>Internal note</strong> {message.time}
-                    <div>{message.text}</div>
-                  </div>
-                )
-              }
-
-              const bubbleClass = message.sender === 'agent' ? styles.bubbleMine : styles.bubble
-              return (
-                <div key={message.id} className={bubbleClass}>
-                  <div>{message.text}</div>
-                  {message.attachmentLabel ? (
-                    <div className={styles.attachmentCard}>
-                      <strong>{message.attachmentLabel}</strong>
-                      <div className={styles.subtle}>{message.meta}</div>
-                    </div>
-                  ) : null}
-                  {message.meta && !message.attachmentLabel ? <div className={styles.subtle}>{message.meta}</div> : null}
-                </div>
-              )
-            })}
-          </div>
-
-          <div className={styles.replyComposer}>
-            <div className={styles.suggestedReplies}>
-              {[
-                'Happy to help! Would you like me to share a detailed ROI breakdown specific to your industry?',
-                'Our customers typically see a 3x ROI in 6 months. I can share more case studies if that helps!',
-                'Yes! I can send over a short video demo tailored to your team’s use case. Want that now?',
-              ].map((reply) => (
-                <div key={reply} className={styles.suggestedReply}>{reply}</div>
-              ))}
-            </div>
-            <div className={styles.replyToolbar}>
-              <button className={styles.chipButton}>Reply</button>
-              <button className={styles.chipButton}>Note</button>
-              <button className={styles.chipButton}>Email</button>
-            </div>
-            <div className={styles.replyInput}>
-              <input
-                placeholder="Type your message..."
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendReply()}
-                disabled={isPending}
-              />
-            </div>
-            <div className={styles.replyActions}>
-              <button className={styles.chipButton}>Template</button>
-              <button className={styles.chipButton}>Attach</button>
-              <button className={styles.chipButton}>Internal note</button>
-              <button className={styles.chipButton}>Send video</button>
-              <button className={styles.chipButton}>Schedule send</button>
-              <button className={styles.buttonPrimary} onClick={handleSendReply} disabled={isPending || !replyText.trim()}>
-                {isPending ? 'Sending…' : 'Send reply'}
-              </button>
-            </div>
-          </div>
-            </>
-          ) : (
-            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
-              No conversation selected
-            </div>
-          )}
-        </div>
-
-        <div className={styles.rightRail}>
-          <RightPanel title="Lead snapshot" actionLabel="View in CRM">
-            <div className={styles.listRow}>
-              <div className={styles.identity}>
-                <div className={styles.logoMark}>ACME</div>
-                <div>
-                  <strong>Acme Corp</strong>
-                  <div className={styles.subtle}>Lead score 92</div>
-                </div>
-              </div>
-              <span className={cx(styles.pill, styles.pillGreen)}>Qualified</span>
             </div>
             <div className={styles.list}>
-              <div className={styles.listRow}><span>Pipeline stage</span><strong>Qualified</strong></div>
-              <div className={styles.listRow}><span>Source</span><strong>Website</strong></div>
-              <div className={styles.listRow}><span>Owner</span><strong>Sarah M.</strong></div>
-              <div className={styles.listRow}><span>Value</span><strong>$120K</strong></div>
+              <div className={styles.listRow}><span>Channel</span><strong>{channelLabel(selectedConversation.channel)}</strong></div>
+              <div className={styles.listRow}><span>Priority</span><span className={cx(styles.pill, priorityTone(selectedConversation.priority))}>{selectedConversation.priority}</span></div>
+              {selectedConversation.status && <div className={styles.listRow}><span>Status</span><strong>{selectedConversation.status}</strong></div>}
+              {selectedConversation.score > 0 && <div className={styles.listRow}><span>Lead score</span><strong>{selectedConversation.score} / 100</strong></div>}
+              <div className={styles.listRow}><span>Last message</span><strong>{selectedConversation.time}</strong></div>
+              <div className={styles.listRow}><span>Messages</span><strong>{selectedConversation.messages.length}</strong></div>
             </div>
           </RightPanel>
-          <RightPanel title="Journey / activity timeline" actionLabel="View all activity">
-            <ActivityList items={[
-              'Visited pricing page',
-              'Watched 84% of product demo',
-              'Opened follow-up email',
-              'Submitted contact form',
-              'Clicked CTA: Book a demo',
-            ]} />
+
+          <RightPanel title="Conversation timeline">
+            <div className={styles.msgTimeline}>
+              {selectedConversation.messages.slice().reverse().slice(0, 8).map((msg) => (
+                <div key={msg.id} className={cx(styles.timelineItem, msg.sender === 'note' && styles.timelineNote)}>
+                  <div
+                    className={styles.timelineDot}
+                    style={{ background: msg.sender === 'agent' ? '#3b82f6' : msg.sender === 'note' ? '#f59e0b' : '#64748b' }}
+                  />
+                  <div className={styles.timelineContent}>
+                    <span className={styles.timelineWho}>
+                      {msg.sender === 'agent' ? 'You' : msg.sender === 'note' ? 'Note' : selectedConversation.name.split(' ')[0]}
+                    </span>
+                    <div className={styles.timelineSnippet}>
+                      {msg.text.length > 55 ? `${msg.text.slice(0, 55)}...` : msg.text}
+                    </div>
+                    <div className={styles.subtle}>{msg.time}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </RightPanel>
         </div>
-      </div>
-    </>
+      )}
+    </div>
   )
 }
 
