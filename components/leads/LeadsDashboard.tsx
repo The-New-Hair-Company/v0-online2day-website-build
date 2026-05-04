@@ -468,18 +468,22 @@ export default function LeadsDashboard({
       )}
       {activeModal === 'addLead' && (
         <AddLeadModal onClose={() => setActiveModal(null)} onSave={async (lead) => {
+          const result = await createLeadFromObject(lead)
+          if (result?.error) throw new Error(result.error)
           gdprLog('create', 'lead', lead.name, JSON.stringify(lead))
-          await createLeadFromObject(lead)
           setActiveModal(null)
           router.refresh()
+          showNotice('Lead added', `${lead.name} has been added to your pipeline.`)
         }} />
       )}
       {activeModal === 'createTask' && (
         <CreateTaskModal leads={initialLeads} onClose={() => setActiveModal(null)} onSave={async (task) => {
+          const result = await createTask({ title: task.title, leadId: task.leadId, dueDate: task.dueDate, dueTime: task.dueTime, notes: task.notes })
+          if (result?.error) throw new Error(result.error)
           gdprLog('create', 'task', task.title, JSON.stringify(task))
-          await createTask({ title: task.title, leadId: task.leadId, dueDate: task.dueDate, dueTime: task.dueTime, notes: task.notes })
           setActiveModal(null)
           router.refresh()
+          showNotice('Task created', task.title)
         }} />
       )}
       {activeModal === 'uploadContacts' && (
@@ -490,10 +494,12 @@ export default function LeadsDashboard({
       )}
       {activeModal === 'logActivity' && (
         <LogActivityModal leads={initialLeads} onClose={() => setActiveModal(null)} onSave={async (act) => {
+          const result = await logActivityEvent({ leadId: act.leadId || null, type: act.type, notes: act.notes, durationMinutes: act.duration ? Number(act.duration) : undefined, billable: act.billable })
+          if (result?.error) throw new Error(result.error)
           gdprLog('create', 'activity', act.leadId || 'general', JSON.stringify(act))
-          await logActivityEvent({ leadId: act.leadId, type: act.type, notes: act.notes, durationMinutes: act.durationMinutes, billable: act.billable })
           setActiveModal(null)
           router.refresh()
+          showNotice('Activity logged', `${act.type} logged successfully.`)
         }} />
       )}
       {activeModal === 'export' && (
@@ -1119,9 +1125,23 @@ function TimerWidget({ timer, leads, onToggle, onLog, onChange, onClose }: {
 
 // ─── ADD LEAD MODAL ──────────────────────────────────────────────────────────
 
-function AddLeadModal({ onClose, onSave }: { onClose: () => void; onSave: (data: any) => void }) {
+function AddLeadModal({ onClose, onSave }: { onClose: () => void; onSave: (data: any) => Promise<void> }) {
   const [form, setForm] = useState({ name: '', company: '', role: '', email: '', phone: '', linkedin: '', source: 'Website', stage: 'New', owner: '', value: '', notes: '' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(f => ({ ...f, [field]: e.target.value }))
+
+  async function handleSave() {
+    if (!form.name.trim() || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      await onSave(form)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save lead.')
+      setSaving(false)
+    }
+  }
 
   return (
     <div className={styles.modalOverlay} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -1167,11 +1187,12 @@ function AddLeadModal({ onClose, onSave }: { onClose: () => void; onSave: (data:
             </select>
           </div>
           <div className={styles.formRow}><label>Notes</label><textarea className={styles.formTextarea} value={form.notes} onChange={set('notes')} placeholder="Initial qualification notes..." /></div>
+          {error && <p style={{ color: '#f87171', fontSize: 13, margin: '4px 0 0' }}>{error}</p>}
         </div>
         <div className={styles.modalFooter}>
-          <button className={styles.btnSecondary} onClick={onClose}>Cancel</button>
-          <button className={styles.btnPrimary} onClick={() => { if (form.name) onSave(form) }}>
-            <Icon name="plus" />Add Lead
+          <button className={styles.btnSecondary} onClick={onClose} disabled={saving}>Cancel</button>
+          <button className={styles.btnPrimary} onClick={handleSave} disabled={saving || !form.name.trim()}>
+            <Icon name="plus" />{saving ? 'Saving…' : 'Add Lead'}
           </button>
         </div>
       </div>
@@ -1181,9 +1202,23 @@ function AddLeadModal({ onClose, onSave }: { onClose: () => void; onSave: (data:
 
 // ─── CREATE TASK MODAL ───────────────────────────────────────────────────────
 
-function CreateTaskModal({ leads, onClose, onSave }: { leads: Lead[]; onClose: () => void; onSave: (data: any) => void }) {
+function CreateTaskModal({ leads, onClose, onSave }: { leads: Lead[]; onClose: () => void; onSave: (data: any) => Promise<void> }) {
   const [form, setForm] = useState({ title: '', type: 'call', leadId: '', dueDate: '', dueTime: '', priority: 'medium', notes: '' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [f]: e.target.value }))
+
+  async function handleSave() {
+    if (!form.title.trim() || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      await onSave(form)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to create task.')
+      setSaving(false)
+    }
+  }
 
   return (
     <div className={styles.modalOverlay} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -1219,11 +1254,12 @@ function CreateTaskModal({ leads, onClose, onSave }: { leads: Lead[]; onClose: (
             <div className={styles.formRow}><label>Due time</label><input className={styles.formInput} type="time" value={form.dueTime} onChange={set('dueTime')} /></div>
           </div>
           <div className={styles.formRow}><label>Notes</label><textarea className={styles.formTextarea} value={form.notes} onChange={set('notes')} placeholder="Task details..." /></div>
+          {error && <p style={{ color: '#f87171', fontSize: 13, margin: '4px 0 0' }}>{error}</p>}
         </div>
         <div className={styles.modalFooter}>
-          <button className={styles.btnSecondary} onClick={onClose}>Cancel</button>
-          <button className={styles.btnPrimary} onClick={() => { if (form.title) onSave(form) }}>
-            <Icon name="check" />Create Task
+          <button className={styles.btnSecondary} onClick={onClose} disabled={saving}>Cancel</button>
+          <button className={styles.btnPrimary} onClick={handleSave} disabled={saving || !form.title.trim()}>
+            <Icon name="check" />{saving ? 'Saving…' : 'Create Task'}
           </button>
         </div>
       </div>
@@ -1353,11 +1389,25 @@ function UploadContactsModal({ onClose, onImport }: { onClose: () => void; onImp
 // ─── LOG ACTIVITY MODAL ──────────────────────────────────────────────────────
 
 function LogActivityModal({ leads, onClose, onSave }: {
-  leads: Lead[]; onClose: () => void; onSave: (data: any) => void
+  leads: Lead[]; onClose: () => void; onSave: (data: any) => Promise<void>
 }) {
   const [actType, setActType] = useState<ActivityType>('call')
   const [form, setForm] = useState({ leadId: '', duration: '6', billable: true, notes: '', outcome: '' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [f]: e.target.value }))
+
+  async function handleSave() {
+    if (saving) return
+    setSaving(true)
+    setError('')
+    try {
+      await onSave({ type: actType, ...form })
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to log activity.')
+      setSaving(false)
+    }
+  }
 
   const actTypes: Array<{ value: ActivityType; label: string; icon: IconName }> = [
     { value: 'call', label: 'Call', icon: 'phone' },
@@ -1418,11 +1468,12 @@ function LogActivityModal({ leads, onClose, onSave }: {
             </div>
           </div>
           <div className={styles.formRow}><label>Outcome / notes</label><textarea className={styles.formTextarea} value={form.notes} onChange={set('notes')} placeholder="Brief summary of what happened..." /></div>
+          {error && <p style={{ color: '#f87171', fontSize: 13, margin: '4px 0 0' }}>{error}</p>}
         </div>
         <div className={styles.modalFooter}>
-          <button className={styles.btnSecondary} onClick={onClose}>Cancel</button>
-          <button className={styles.btnPrimary} onClick={() => onSave({ type: actType, ...form })}>
-            <Icon name="check" />Log Activity
+          <button className={styles.btnSecondary} onClick={onClose} disabled={saving}>Cancel</button>
+          <button className={styles.btnPrimary} disabled={saving} onClick={handleSave}>
+            <Icon name="check" />{saving ? 'Saving…' : 'Log Activity'}
           </button>
         </div>
       </div>

@@ -203,7 +203,7 @@ export async function logActivityEvent(data: {
   const { data: user } = await supabase.auth.getUser()
 
   if (data.leadId) {
-    await supabase.from('lead_events').insert({
+    const { error: evtError } = await supabase.from('lead_events').insert({
       lead_id: data.leadId,
       type: data.type.charAt(0).toUpperCase() + data.type.slice(1),
       note: data.notes?.trim() || `${data.type} activity logged`,
@@ -213,15 +213,17 @@ export async function logActivityEvent(data: {
         billable: data.billable,
       },
     })
+    if (evtError) return { error: evtError.message }
   }
 
-  await supabase.from('activity_feed').insert({
+  const { error: feedError } = await supabase.from('activity_feed').insert({
     actor_name: user.user?.email || 'Admin',
     type: `activity_${data.type}`,
     entity_type: data.leadId ? 'lead' : null,
     entity_id: data.leadId || null,
     description: data.notes?.trim() || `${data.type} activity logged${data.durationMinutes ? ` (${data.durationMinutes} min)` : ''}`,
   })
+  if (feedError) return { error: feedError.message }
 
   if (data.leadId) {
     revalidatePath(`/dashboard/leads/${data.leadId}`)
