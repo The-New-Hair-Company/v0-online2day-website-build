@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { canUseSystem, isAdmin } from '@/app/actions/dashboard'
 
 export default async function ProtectedPage() {
   const supabase = await createClient()
@@ -12,18 +13,13 @@ export default async function ProtectedPage() {
     redirect('/auth/login')
   }
 
-  // Check if user has admin role
-  const { data: roleData } = await supabase
-    .from('user_profiles')
-    .select('role')
-    .eq('user_id', user.id)
-    .single()
-
-  // Redirect based on role
-  if (roleData?.role === 'admin') {
+  if (await isAdmin()) {
     redirect('/dashboard')
-  } else {
-    // Regular users stay on landing page
-    redirect('/')
   }
+
+  if (await canUseSystem()) {
+    redirect('/user-dashboard')
+  }
+
+  redirect('/')
 }

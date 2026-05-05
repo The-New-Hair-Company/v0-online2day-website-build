@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { isFoundingAdminEmail, normalizeEmail } from '@/lib/license'
 
 export default function Page() {
   const [email, setEmail] = useState('')
@@ -37,16 +38,26 @@ export default function Page() {
       
       // Smart Routing: Check if user is admin
       const userId = signInData?.user?.id
+      const normalizedEmail = normalizeEmail(signInData?.user?.email || email)
       const { data: roleData } = await supabase
         .from('user_profiles')
         .select('role')
         .eq('user_id', userId)
         .single()
 
-      if (roleData?.role === 'admin') {
+      const { data: licenseData } = await supabase
+        .from('licensed_users')
+        .select('role, status')
+        .eq('email', normalizedEmail)
+        .single()
+
+      if (isFoundingAdminEmail(normalizedEmail) || roleData?.role === 'admin' || (licenseData?.role === 'admin' && licenseData?.status === 'active')) {
         router.push('/dashboard')
-      } else {
+      } else if (licenseData?.status === 'active' || licenseData?.status === 'pending') {
         router.push('/user-dashboard')
+      } else {
+        await supabase.auth.signOut()
+        setError('This account is not licensed yet. Ask an admin to add your email in Settings > License.')
       }
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')

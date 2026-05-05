@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Check, Crown, KeyRound, Type } from 'lucide-react'
+import { AlertTriangle, Check, Crown, KeyRound, Mail, ShieldCheck, Trash2, Type, UserPlus, Users } from 'lucide-react'
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import styles from '@/components/leads/LeadsDashboard.module.css'
 import { logAuditEntry } from '@/lib/actions/audit-actions'
-import { getAdminPrefs, setAdminPrefs } from '@/lib/actions/settings-actions'
+import { addLicensedUser, getAdminPrefs, getLicenseManagementState, removeLicensedUser, setAdminPrefs, updateLicensedUserRole } from '@/lib/actions/settings-actions'
+import type { LicenseManagementState, LicensedUserRole } from '@/lib/license'
 
 type ThemeChoice = 'dark' | 'light'
 type TextSize = 'sm' | 'md' | 'lg' | 'xl'
@@ -31,6 +32,14 @@ const defaultAccessibility: AccessibilitySettings = {
   lineHeight: 'standard',
 }
 
+const defaultLicenseState: LicenseManagementState = {
+  users: [],
+  seatLimit: 25,
+  activeSeatCount: 0,
+  adminEmails: [],
+  canManage: false,
+  warning: null,
+}
 
 function textSizeFromScale(scale: number): TextSize {
   if (scale < 96) return 'sm'
@@ -57,6 +66,13 @@ export function SettingsClient() {
   const [lineHeight, setLineHeight] = useState<AccessibilitySettings['lineHeight']>('standard')
   const [licenseKey, setLicenseKey] = useState('')
   const [licenseStatus, setLicenseStatus] = useState<'active' | 'trial' | 'none'>('trial')
+  const [licenseState, setLicenseState] = useState<LicenseManagementState>(defaultLicenseState)
+  const [newUserEmail, setNewUserEmail] = useState('')
+  const [newUserName, setNewUserName] = useState('')
+  const [newUserRole, setNewUserRole] = useState<LicensedUserRole>('member')
+  const [licenseNotice, setLicenseNotice] = useState('')
+  const [licenseNoticeType, setLicenseNoticeType] = useState<'success' | 'warning'>('success')
+  const [licenseBusy, setLicenseBusy] = useState(false)
 
   useEffect(() => {
     const stored = JSON.parse(localStorage.getItem(ACCESSIBILITY_KEY) || '{}') as Partial<AccessibilitySettings>
@@ -73,6 +89,7 @@ export function SettingsClient() {
       setLicenseKey(prefs['license.key'] || '')
       setLicenseStatus((prefs['license.status'] as typeof licenseStatus) || 'trial')
     })
+    getLicenseManagementState().then(setLicenseState)
   }, [])
 
   function saveAccessibility(patch: Partial<AccessibilitySettings>) {
@@ -118,6 +135,46 @@ export function SettingsClient() {
     setLicenseKey('')
     setLicenseStatus('none')
     logAuditEntry('revoke', 'license', 'online2day')
+  }
+
+  async function addSeat() {
+    if (!newUserEmail.trim()) {
+      setLicenseNotice('Enter an email address before adding a seat.')
+      setLicenseNoticeType('warning')
+      return
+    }
+    setLicenseBusy(true)
+    const result = await addLicensedUser({ email: newUserEmail, fullName: newUserName, role: newUserRole })
+    if (result.state) setLicenseState(result.state)
+    setLicenseNotice(result.error || `Licensed seat added for ${newUserEmail.trim().toLowerCase()}.`)
+    setLicenseNoticeType(result.error ? 'warning' : 'success')
+    if (result.success && !result.error) {
+      setNewUserEmail('')
+      setNewUserName('')
+      setNewUserRole('member')
+      logAuditEntry('create', 'licensed_user', newUserEmail.trim().toLowerCase(), `role=${newUserRole}`)
+    }
+    setLicenseBusy(false)
+  }
+
+  async function changeSeatRole(email: string, role: LicensedUserRole) {
+    setLicenseBusy(true)
+    const result = await updateLicensedUserRole(email, role)
+    if (result.state) setLicenseState(result.state)
+    setLicenseNotice(result.error || `${email} is now a ${role}.`)
+    setLicenseNoticeType(result.error ? 'warning' : 'success')
+    if (result.success) logAuditEntry('update', 'licensed_user', email, `role=${role}`)
+    setLicenseBusy(false)
+  }
+
+  async function removeSeat(email: string) {
+    setLicenseBusy(true)
+    const result = await removeLicensedUser(email)
+    if (result.state) setLicenseState(result.state)
+    setLicenseNotice(result.error || `${email} was removed from the license.`)
+    setLicenseNoticeType(result.error ? 'warning' : 'success')
+    if (result.success) logAuditEntry('delete', 'licensed_user', email)
+    setLicenseBusy(false)
   }
 
   return (
@@ -189,7 +246,7 @@ export function SettingsClient() {
           <section className={styles.settingsSection}>
             <header className={styles.settingsSectionHeader}>
               <h2>License management</h2>
-              <p>Manage the plan state used by this browser session.</p>
+              <p>Manage the plan state, protected admins and licensed users who can access the system.</p>
             </header>
             <div className={styles.settingsSectionBody}>
               <div className={styles.licenseCard}>
@@ -200,6 +257,26 @@ export function SettingsClient() {
                 </div>
                 {licenseStatus === 'active' ? <span className={styles.gdprBadge}><Check size={13} />Verified</span> : null}
               </div>
+              <div className={styles.licenseMetrics}>
+                <div>
+                  <span>Licensed seats</span>
+                  <strong>{licenseState.activeSeatCount}/{licenseState.seatLimit}</strong>
+                </div>
+                <div>
+                  <span>Admins</span>
+                  <strong>{licenseState.users.filter((user) => user.role === 'admin').length}</strong>
+                </div>
+                <div>
+                  <span>Protected</span>
+                  <strong>{licenseState.adminEmails.length}</strong>
+                </div>
+              </div>
+              {licenseState.warning || licenseNotice ? (
+                <div className={licenseState.warning || licenseNoticeType === 'warning' ? styles.licenseWarning : styles.licenseNotice}>
+                  {licenseState.warning || licenseNoticeType === 'warning' ? <AlertTriangle size={15} /> : <Check size={15} />}
+                  <span>{licenseNotice || licenseState.warning}</span>
+                </div>
+              ) : null}
               <div className={styles.formRow}>
                 <label>License key</label>
                 <input className={styles.formInput} value={licenseKey} onChange={(event) => setLicenseKey(event.target.value)} placeholder="O2D-PRO-XXXX-XXXX" />
@@ -208,6 +285,75 @@ export function SettingsClient() {
                 <button className={styles.btnPrimary} onClick={activateLicense}>Activate license</button>
                 <button className={styles.btnSecondary} onClick={revokeLicense}>Remove</button>
                 <Link className={styles.btnSecondary} href="/pricing">View plans</Link>
+              </div>
+
+              <div className={styles.licenseAdminPanel}>
+                <div className={styles.licensePanelHeader}>
+                  <div>
+                    <h3>Licensed users</h3>
+                    <p>Admin accounts can add, remove and assign seats. Oliver and info@online2day.com stay protected.</p>
+                  </div>
+                  <span><ShieldCheck size={14} />Admin controlled</span>
+                </div>
+
+                <div className={styles.licenseAddGrid}>
+                  <div className={styles.formRow}>
+                    <label>Email</label>
+                    <div className={styles.inputWithIcon}><Mail size={15} /><input value={newUserEmail} onChange={(event) => setNewUserEmail(event.target.value)} placeholder="name@company.com" /></div>
+                  </div>
+                  <div className={styles.formRow}>
+                    <label>Name</label>
+                    <input className={styles.formInput} value={newUserName} onChange={(event) => setNewUserName(event.target.value)} placeholder="Optional display name" />
+                  </div>
+                  <div className={styles.formRow}>
+                    <label>Role</label>
+                    <select className={styles.formSelect} value={newUserRole} onChange={(event) => setNewUserRole(event.target.value as LicensedUserRole)}>
+                      <option value="member">Member</option>
+                      <option value="viewer">Viewer</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <button className={styles.btnPrimary} onClick={addSeat} disabled={licenseBusy || !licenseState.canManage}><UserPlus size={15} />Add user</button>
+                </div>
+
+                <div className={styles.licenseUserTable}>
+                  <div className={styles.licenseUserHeader}>
+                    <span>User</span>
+                    <span>Role</span>
+                    <span>Status</span>
+                    <span>Actions</span>
+                  </div>
+                  {licenseState.users.map((user) => (
+                    <div key={user.email} className={styles.licenseUserRow}>
+                      <div className={styles.licenseUserIdentity}>
+                        <div className={user.role === 'admin' ? styles.licenseAdminAvatar : styles.licenseMemberAvatar}>
+                          {user.role === 'admin' ? <ShieldCheck size={16} /> : <Users size={16} />}
+                        </div>
+                        <div>
+                          <strong>{user.fullName || user.email}</strong>
+                          <span>{user.email}</span>
+                        </div>
+                      </div>
+                      <select
+                        className={styles.licenseRoleSelect}
+                        value={user.role}
+                        disabled={user.isProtected || licenseBusy}
+                        onChange={(event) => void changeSeatRole(user.email, event.target.value as LicensedUserRole)}
+                      >
+                        <option value="member">Member</option>
+                        <option value="viewer">Viewer</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <div className={styles.licenseStatusStack}>
+                        <span className={user.status === 'active' ? styles.licenseStatusActive : styles.licenseStatusMuted}>{user.status}</span>
+                        {user.isProtected ? <em>Protected admin</em> : <em>{user.seatType} seat</em>}
+                      </div>
+                      <button className={styles.btnSecondary} onClick={() => void removeSeat(user.email)} disabled={user.isProtected || licenseBusy}>
+                        <Trash2 size={14} />Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </section>

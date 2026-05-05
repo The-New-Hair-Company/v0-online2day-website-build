@@ -16,11 +16,19 @@ LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM user_profiles
-    WHERE user_id = auth.uid()
-    AND role = 'admin'
-  );
+  SELECT
+    LOWER(COALESCE(auth.jwt() ->> 'email', '')) IN ('oliverjosephking@gmail.com', 'info@online2day.com')
+    OR EXISTS (
+      SELECT 1 FROM user_profiles
+      WHERE user_id = auth.uid()
+      AND role = 'admin'
+    )
+    OR EXISTS (
+      SELECT 1 FROM licensed_users
+      WHERE email = LOWER(COALESCE(auth.jwt() ->> 'email', ''))
+      AND role = 'admin'
+      AND status = 'active'
+    );
 $$;
 
 -- Function to handle new user signup (Auto-create profile)
@@ -29,9 +37,28 @@ RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = ''
 AS $$
+DECLARE
+  next_role TEXT := 'user';
 BEGIN
+  IF LOWER(NEW.email) IN ('oliverjosephking@gmail.com', 'info@online2day.com')
+    OR EXISTS (
+      SELECT 1 FROM public.licensed_users
+      WHERE email = LOWER(NEW.email)
+      AND role = 'admin'
+      AND status = 'active'
+    )
+  THEN
+    next_role := 'admin';
+  END IF;
+
   INSERT INTO public.user_profiles (user_id, email, role)
-  VALUES (NEW.id, NEW.email, 'user');
+  VALUES (NEW.id, LOWER(NEW.email), next_role)
+  ON CONFLICT (user_id) DO UPDATE
+    SET email = EXCLUDED.email,
+        role = CASE
+          WHEN public.user_profiles.role = 'admin' THEN 'admin'
+          ELSE EXCLUDED.role
+        END;
   RETURN NEW;
 END;
 $$;
@@ -50,6 +77,31 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     UNIQUE(user_id)
 );
+
+-- LICENSED USERS (Seats that are allowed to use the system)
+CREATE TABLE IF NOT EXISTS public.licensed_users (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE CHECK (email = LOWER(email)),
+    full_name TEXT,
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member', 'viewer')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'pending', 'suspended', 'revoked')),
+    seat_type TEXT NOT NULL DEFAULT 'standard' CHECK (seat_type IN ('admin', 'standard', 'viewer')),
+    invited_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    last_seen_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+INSERT INTO public.licensed_users (email, full_name, role, status, seat_type)
+VALUES
+  ('oliverjosephking@gmail.com', 'Oliver Joseph King', 'admin', 'active', 'admin'),
+  ('info@online2day.com', 'Online2Day Admin', 'admin', 'active', 'admin')
+ON CONFLICT (email) DO UPDATE
+  SET role = 'admin',
+      status = 'active',
+      seat_type = 'admin',
+      full_name = EXCLUDED.full_name,
+      updated_at = timezone('utc'::text, now());
 
 -- LEADS (Core CRM lead tracking)
 CREATE TABLE IF NOT EXISTS public.leads (
@@ -143,6 +195,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Enable RLS on all tables
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.licensed_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lead_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lead_assets ENABLE ROW LEVEL SECURITY;
@@ -157,6 +210,16 @@ CREATE POLICY "Users can read own profile" ON public.user_profiles
 CREATE POLICY "Admins can manage all profiles" ON public.user_profiles
     FOR ALL TO authenticated
     USING (public.is_admin());
+
+-- LICENSED_USERS policies
+CREATE POLICY "Licensed users can read own seat" ON public.licensed_users
+    FOR SELECT TO authenticated
+    USING (email = LOWER(COALESCE(auth.jwt() ->> 'email', '')) OR public.is_admin());
+
+CREATE POLICY "Admins can manage licensed users" ON public.licensed_users
+    FOR ALL TO authenticated
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
 
 -- LEADS policies (Admin only)
 CREATE POLICY "Admins have full access to leads" ON public.leads

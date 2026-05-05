@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { canUseSystem } from '@/app/actions/dashboard'
 import Link from 'next/link'
 import { MessageSquare, LogOut, Blocks } from 'lucide-react'
 
@@ -13,6 +14,11 @@ export default async function UserDashboardLayout({
   // Check if user is logged in
   const { data, error } = await supabase.auth.getUser()
   if (error || !data?.user) {
+    redirect('/auth/login')
+  }
+
+  const licensed = await canUseSystem()
+  if (!licensed) {
     redirect('/auth/login')
   }
 

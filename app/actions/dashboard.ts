@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { isFoundingAdminEmail, normalizeEmail } from '@/lib/license'
 import type {
   Lead, LeadStage, IconName, PipelineStage, LeadSourcePerformance,
   OwnerPerformance, Metric, TaskItem, ActivityItem, Recommendation
@@ -678,9 +679,48 @@ export async function isAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
+  const email = normalizeEmail(user.email)
+  if (isFoundingAdminEmail(email)) {
+    await supabase
+      .from('user_profiles')
+      .upsert({ user_id: user.id, email, role: 'admin' }, { onConflict: 'user_id' })
+    return true
+  }
+
   const { data: profile } = await supabase
     .from('user_profiles').select('role').eq('user_id', user.id).single()
-  return profile?.role === 'admin'
+  if (profile?.role === 'admin') return true
+
+  const { data: licensedUser } = await supabase
+    .from('licensed_users')
+    .select('role, status')
+    .eq('email', email)
+    .single()
+
+  return licensedUser?.role === 'admin' && licensedUser?.status === 'active'
+}
+
+export async function canUseSystem() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return false
+  const email = normalizeEmail(user.email)
+  if (isFoundingAdminEmail(email)) return true
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('user_id', user.id)
+    .single()
+  if (profile?.role === 'admin') return true
+
+  const { data: licensedUser } = await supabase
+    .from('licensed_users')
+    .select('status')
+    .eq('email', email)
+    .single()
+
+  return licensedUser?.status === 'active' || licensedUser?.status === 'pending'
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────

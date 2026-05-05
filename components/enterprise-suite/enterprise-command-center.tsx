@@ -24,7 +24,6 @@ import {
   LayoutDashboard,
   Mail,
   MessageSquareText,
-  Mic,
   MonitorUp,
   PhoneCall,
   Play,
@@ -42,6 +41,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
+import { LocalVideoRoom } from './local-video-room'
 import styles from './enterprise-suite.module.css'
 import {
   getEnabledFeatures,
@@ -165,8 +165,6 @@ export function EnterpriseCommandCenter() {
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [tasks, setTasks] = useState<TaskItem[]>([])
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([])
-  const [roomLink, setRoomLink] = useState('')
-  const [callStatus, setCallStatus] = useState('No live room yet')
   const [notes, setNotes] = useState('Decision:\n\nRisk:\n\nNext step:\n')
   const [workspaceStatus, setWorkspaceStatus] = useState('Review complete: 50 functional enterprise enhancements identified.')
   const [timerActive, setTimerActive] = useState(false)
@@ -278,22 +276,20 @@ END:VCALENDAR`, 'text/calendar')
     }
     if (change.id === 'video-room') {
       const link = `${window.location.origin}/dashboard/enterprise?room=o2d-${Date.now()}`
-      setRoomLink(link)
-      setCallStatus('Video room ready')
       await copyText(link, 'Internal video room link created and copied.')
       return
     }
     if (change.id === 'camera-check') {
       if (!navigator.mediaDevices?.getUserMedia) {
-        setCallStatus('Browser media check is not supported here')
+        setWorkspaceStatus('Browser media check is not supported here.')
         return
       }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         stream.getTracks().forEach((track) => track.stop())
-        setCallStatus('Camera and microphone are available')
+        setWorkspaceStatus('Camera and microphone are available.')
       } catch {
-        setCallStatus('Camera or microphone permission was blocked')
+        setWorkspaceStatus('Camera or microphone permission was blocked.')
       }
       return
     }
@@ -313,7 +309,7 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'participant-queue') {
-      setCallStatus('Participants queued: Sales, Delivery, Creative')
+      setWorkspaceStatus('Participants queued: Sales, Delivery, Creative.')
       return
     }
     if (change.id === 'post-call-summary') {
@@ -441,21 +437,7 @@ END:VCALENDAR`, 'text/calendar')
             {timerActive ? <div className={styles.timerBadge}><Clock size={14} /> Prep/SLA timer running</div> : null}
           </article>
 
-          <article className={styles.panel}>
-            <header><Video size={18} /><strong>Internal Video Call</strong><button onClick={() => void runChange(enterpriseChanges[7])}><Radio size={14} />Room</button></header>
-            <div className={styles.callStage}>
-              <div className={styles.callAvatar}><Camera size={24} /></div>
-              <div>
-                <strong>{callStatus}</strong>
-                <span>{roomLink || 'Generate a room link for internal calls, reviews and client prep.'}</span>
-              </div>
-            </div>
-            <div className={styles.callActions}>
-              <button onClick={() => void runChange(enterpriseChanges[8])}><Camera size={14} />Check</button>
-              <button onClick={() => setCallStatus('Microphone muted')}><Mic size={14} />Mute</button>
-              <button onClick={() => void runChange(enterpriseChanges[9])}><MonitorUp size={14} />Share prep</button>
-            </div>
-          </article>
+          <LocalVideoRoom />
 
           <article className={styles.panel}>
             <header><MessageSquareText size={18} /><strong>Shared Notes</strong><button onClick={() => void copyText(notes, 'Notes copied.')}><Copy size={14} />Copy</button></header>
