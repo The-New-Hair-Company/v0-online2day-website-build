@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Check, Crown } from 'lucide-react'
+import { ArrowLeft, Check, Crown, Zap } from 'lucide-react'
 import styles from '@/components/leads/LeadsDashboard.module.css'
 
 const plans = [
@@ -42,6 +42,19 @@ export function PricingClient() {
         </div>
       </section>
 
+      <section className={styles.trialBanner}>
+        <div className={styles.trialBannerInner}>
+          <div className={styles.trialBannerText}>
+            <span className={styles.trialBadge}><Zap size={13} />14-day free trial</span>
+            <h2 className={styles.trialHeading}>Try Online2Day free — no credit card needed</h2>
+            <p className={styles.trialSub}>Get full access to your chosen plan for 14 days. Your data is completely isolated and GDPR-ready from day one.</p>
+          </div>
+          <Link href="/auth/trial-signup" className={styles.trialCTA}>
+            Start free trial
+          </Link>
+        </div>
+      </section>
+
       <section className={styles.pricingGrid} aria-label="Pricing plans">
         {plans.map((plan) => (
           <article key={plan.name} className={`${styles.pricingCard} ${plan.popular ? styles.pricingCardPro : ''}`}>
@@ -59,9 +72,12 @@ export function PricingClient() {
                 </div>
               ))}
             </div>
-            <Link className={`${styles.pricingCTA} ${plan.popular ? styles.pricingCTASolid : styles.pricingCTAOutline}`} href="/dashboard/settings">
+            <Link
+              className={`${styles.pricingCTA} ${plan.popular ? styles.pricingCTASolid : styles.pricingCTAOutline}`}
+              href={`/auth/trial-signup?plan=${plan.name}`}
+            >
               {plan.popular ? <Crown size={16} /> : null}
-              Choose {plan.name}
+              Start {plan.name} trial
             </Link>
           </article>
         ))}

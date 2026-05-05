@@ -51,6 +51,9 @@ import {
   toggleEnterpriseTask,
   getEnterpriseEvents,
   addEnterpriseEvent,
+  deleteEnterpriseEvent,
+  getLeadsForExport,
+  scanDataQuality,
 } from '@/lib/actions/enterprise-actions'
 import { logAuditEntry, getAuditLog } from '@/lib/actions/audit-actions'
 
@@ -172,6 +175,15 @@ export function EnterpriseCommandCenter() {
   const [healthScore, setHealthScore] = useState(82)
   const [riskScore, setRiskScore] = useState(24)
   const [roi, setRoi] = useState(0)
+  const [roiOpen, setRoiOpen] = useState(false)
+  const [roiInputs, setRoiInputs] = useState({ leads: 40, convRate: 12, dealSize: 2800, hrsSaved: 5 })
+  const [timerSeconds, setTimerSeconds] = useState(0)
+  const [eventFormOpen, setEventFormOpen] = useState(false)
+  const [newEventTitle, setNewEventTitle] = useState('')
+  const [newEventDate, setNewEventDate] = useState('')
+  const [newEventTime, setNewEventTime] = useState('')
+  const [newEventType, setNewEventType] = useState('Meeting')
+  const [scanResults, setScanResults] = useState<null | { total: number; missingEmail: number; missingPhone: number; missingCompany: number; missingSource: number; missingOwner: number; missingFollowUp: number }>(null)
 
   useEffect(() => {
     getEnabledFeatures().then(setEnabled)
@@ -191,6 +203,46 @@ export function EnterpriseCommandCenter() {
       )
     )
   }, [])
+
+  useEffect(() => {
+    if (!timerActive || timerSeconds <= 0) return
+    const id = setInterval(() => {
+      setTimerSeconds((s) => {
+        if (s <= 1) {
+          setTimerActive(false)
+          setWorkspaceStatus('Timer complete — your meeting starts now.')
+          return 0
+        }
+        return s - 1
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [timerActive, timerSeconds])
+
+  function calcRoi(inputs: typeof roiInputs) {
+    const annualLeads = inputs.leads * 12
+    const revenue = annualLeads * (inputs.convRate / 100) * inputs.dealSize
+    const timeValue = inputs.hrsSaved * 52 * 50
+    return Math.round(revenue + timeValue)
+  }
+
+  async function handleAddEvent() {
+    if (!newEventTitle.trim()) return
+    const timeStr = newEventDate && newEventTime
+      ? `${newEventDate}T${newEventTime}`
+      : newEventTime || newEventDate || new Date().toISOString()
+    addEventOptimistic(newEventTitle.trim(), timeStr, newEventType)
+    setNewEventTitle('')
+    setNewEventDate('')
+    setNewEventTime('')
+    setEventFormOpen(false)
+    setWorkspaceStatus(`Event "${newEventTitle.trim()}" added to the calendar.`)
+  }
+
+  function handleDeleteEvent(id: string) {
+    setEvents((current) => current.filter((e) => e.id !== id))
+    deleteEnterpriseEvent(id)
+  }
 
   function record(action: string, detail: string) {
     const entry: AuditEntry = { id: `${Date.now()}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), action, detail }
@@ -233,7 +285,8 @@ export function EnterpriseCommandCenter() {
     markEnabled(change)
 
     if (change.id === 'internal-calendar') {
-      setWorkspaceStatus('Internal calendar board is active with today\'s review schedule.')
+      setEventFormOpen(true)
+      setWorkspaceStatus('Internal calendar board open — add an event below.')
       return
     }
     if (change.id === 'discovery-event') {
@@ -260,6 +313,7 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'reminder-timer') {
+      setTimerSeconds(15 * 60)
       setTimerActive(true)
       setWorkspaceStatus('15 minute preparation timer started.')
       return
@@ -341,8 +395,15 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'csv-export') {
-      downloadFile('enterprise-workspace.csv', 'type,title,status\nhealth,Deal health,Active\ncalendar,Internal events,Active\nvideo,Internal room,Ready\n', 'text/csv')
-      setWorkspaceStatus('Workspace CSV exported.')
+      const rows = await getLeadsForExport()
+      const headers = 'name,email,phone,company,website,status,source,notes,follow_up_date,last_contacted_at,created_at'
+      const lines = rows.map((r) =>
+        [r.name, r.email, r.phone, r.company, r.website, r.status, r.source, r.notes, r.follow_up_date, r.last_contacted_at, r.created_at]
+          .map((v) => `"${(v ?? '').toString().replace(/"/g, '""')}"`)
+          .join(',')
+      )
+      downloadFile('enterprise-workspace.csv', [headers, ...lines].join('\n'), 'text/csv')
+      setWorkspaceStatus(`Workspace CSV exported — ${rows.length} lead${rows.length !== 1 ? 's' : ''} included.`)
       return
     }
     if (change.id === 'incident-banner') {
@@ -360,8 +421,8 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'roi-calculator') {
-      setRoi(22500)
-      setWorkspaceStatus('ROI estimate calculated from lead value and conversion lift.')
+      setRoiOpen(true)
+      setWorkspaceStatus('ROI calculator opened — adjust inputs to model your value.')
       return
     }
     if (change.id === 'pricing-fit') {
@@ -376,6 +437,13 @@ END:VCALENDAR`, 'text/calendar')
     if (change.id === 'churn-risk') {
       setRiskScore(18)
       addTaskOptimistic('Churn mitigation: schedule value review and send usage proof')
+      return
+    }
+
+    if (change.id === 'data-quality') {
+      const results = await scanDataQuality()
+      setScanResults(results)
+      setWorkspaceStatus(`Data quality scan complete: ${results.total} leads — ${results.missingEmail} missing email, ${results.missingPhone} missing phone, ${results.missingSource} missing source.`)
       return
     }
 
@@ -424,17 +492,46 @@ END:VCALENDAR`, 'text/calendar')
 
         <section className={styles.workspaceGrid}>
           <article className={styles.panel}>
-            <header><CalendarDays size={18} /><strong>Internal Calendar</strong><button onClick={() => void runChange(enterpriseChanges[1])}><Plus size={14} />Event</button></header>
+            <header>
+              <CalendarDays size={18} />
+              <strong>Internal Calendar</strong>
+              <button onClick={() => setEventFormOpen((o) => !o)}><Plus size={14} />{eventFormOpen ? 'Cancel' : 'Event'}</button>
+            </header>
+            {eventFormOpen ? (
+              <div className={styles.eventForm}>
+                <input
+                  placeholder="Event title"
+                  value={newEventTitle}
+                  onChange={(e) => setNewEventTitle(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && void handleAddEvent()}
+                />
+                <div className={styles.eventFormRow}>
+                  <input type="date" value={newEventDate} onChange={(e) => setNewEventDate(e.target.value)} />
+                  <input type="time" value={newEventTime} onChange={(e) => setNewEventTime(e.target.value)} />
+                </div>
+                <select value={newEventType} onChange={(e) => setNewEventType(e.target.value)}>
+                  {['Meeting', 'Discovery', 'Standup', 'Review', 'Demo', 'Availability'].map((t) => <option key={t}>{t}</option>)}
+                </select>
+                <button className={styles.primaryButton} onClick={() => void handleAddEvent()}>Add event</button>
+              </div>
+            ) : null}
             <div className={styles.eventList}>
               {events.map((event) => (
                 <div key={event.id} className={styles.eventItem}>
                   <span>{event.time}</span>
                   <strong>{event.title}</strong>
                   <em>{event.owner ? `${event.owner} - ` : ''}{event.type}</em>
+                  <button className={styles.deleteBtn} onClick={() => handleDeleteEvent(event.id)} aria-label="Delete event">✕</button>
                 </div>
               ))}
             </div>
-            {timerActive ? <div className={styles.timerBadge}><Clock size={14} /> Prep/SLA timer running</div> : null}
+            {timerActive ? (
+              <div className={styles.timerBadge}>
+                <Clock size={14} />
+                {String(Math.floor(timerSeconds / 60)).padStart(2, '0')}:{String(timerSeconds % 60).padStart(2, '0')} remaining
+                <button onClick={() => { setTimerActive(false); setTimerSeconds(0) }}>Cancel</button>
+              </div>
+            ) : null}
           </article>
 
           <LocalVideoRoom />
@@ -444,6 +541,49 @@ END:VCALENDAR`, 'text/calendar')
             <textarea value={notes} onChange={(event) => setNotes(event.target.value)} aria-label="Enterprise command notes" />
           </article>
         </section>
+
+        {roiOpen ? (
+          <section className={styles.panel}>
+            <header>
+              <TrendingUp size={18} />
+              <strong>ROI Calculator</strong>
+              <button onClick={() => setRoiOpen(false)}>✕ Close</button>
+            </header>
+            <div className={styles.roiForm}>
+              {([
+                { label: 'Leads per month', key: 'leads' as const },
+                { label: 'Conversion rate %', key: 'convRate' as const },
+                { label: 'Avg deal size (£)', key: 'dealSize' as const },
+                { label: 'Hours saved / week', key: 'hrsSaved' as const },
+              ] as const).map(({ label, key }) => (
+                <label key={key}>
+                  <span>{label}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={roiInputs[key]}
+                    onChange={(e) => setRoiInputs((prev) => ({ ...prev, [key]: Number(e.target.value) }))}
+                  />
+                </label>
+              ))}
+              <div className={styles.roiResult}>
+                <span>Annual ROI estimate</span>
+                <strong>£{calcRoi(roiInputs).toLocaleString()}</strong>
+              </div>
+              <button
+                className={styles.primaryButton}
+                onClick={() => {
+                  const result = calcRoi(roiInputs)
+                  setRoi(result)
+                  setWorkspaceStatus(`ROI estimate: £${result.toLocaleString()} — applied to metrics.`)
+                  record('ROI calculated', `£${result.toLocaleString()}`)
+                }}
+              >
+                Apply to metrics
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         <section className={styles.controlBar}>
           <div className={styles.searchBox}><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search 50 enterprise changes..." /></div>
@@ -504,6 +644,20 @@ END:VCALENDAR`, 'text/calendar')
             </div>
           </article>
         </section>
+        {scanResults ? (
+          <section className={styles.panel}>
+            <header><Search size={18} /><strong>Data Quality Scan</strong><button onClick={() => setScanResults(null)}>✕ Dismiss</button></header>
+            <div className={styles.scanGrid}>
+              <div className={styles.scanStat}><strong>{scanResults.total}</strong><span>Total leads</span></div>
+              <div className={styles.scanStat + (scanResults.missingEmail > 0 ? ` ${styles.scanWarn}` : '')}><strong>{scanResults.missingEmail}</strong><span>Missing email</span></div>
+              <div className={styles.scanStat + (scanResults.missingPhone > 0 ? ` ${styles.scanWarn}` : '')}><strong>{scanResults.missingPhone}</strong><span>Missing phone</span></div>
+              <div className={styles.scanStat + (scanResults.missingCompany > 0 ? ` ${styles.scanWarn}` : '')}><strong>{scanResults.missingCompany}</strong><span>Missing company</span></div>
+              <div className={styles.scanStat + (scanResults.missingSource > 0 ? ` ${styles.scanWarn}` : '')}><strong>{scanResults.missingSource}</strong><span>Missing source</span></div>
+              <div className={styles.scanStat + (scanResults.missingOwner > 0 ? ` ${styles.scanWarn}` : '')}><strong>{scanResults.missingOwner}</strong><span>No owner</span></div>
+              <div className={styles.scanStat + (scanResults.missingFollowUp > 0 ? ` ${styles.scanWarn}` : '')}><strong>{scanResults.missingFollowUp}</strong><span>No follow-up date</span></div>
+            </div>
+          </section>
+        ) : null}
       </main>
     </div>
   )

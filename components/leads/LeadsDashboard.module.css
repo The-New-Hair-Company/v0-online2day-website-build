@@ -3069,6 +3069,102 @@
   color: #72aeff;
 }
 
+.trialBanner {
+  max-width: 920px;
+  margin: 0 auto 12px;
+  padding: 0 24px;
+}
+
+.trialBannerInner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  background: linear-gradient(135deg, rgba(37,99,235,0.18) 0%, rgba(6,182,212,0.1) 100%);
+  border: 1px solid rgba(59,130,246,0.32);
+  border-radius: 14px;
+  padding: 24px 28px;
+}
+
+.trialBannerText {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trialBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(59,130,246,0.18);
+  border: 1px solid rgba(59,130,246,0.4);
+  color: #72aeff;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.trialHeading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: #f5f8ff;
+}
+
+.trialSub {
+  margin: 0;
+  font-size: 13px;
+  color: #8090a5;
+  max-width: 520px;
+  line-height: 1.5;
+}
+
+.trialCTA {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 22px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #3e7fff, #1862ff);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(24,98,255,0.3);
+  white-space: nowrap;
+}
+
+:global(html[data-theme='light']) .trialBannerInner {
+  background: linear-gradient(135deg, rgba(37,99,235,0.08) 0%, rgba(6,182,212,0.05) 100%);
+  border-color: rgba(37,99,235,0.25);
+}
+
+:global(html[data-theme='light']) .trialHeading {
+  color: #111827;
+}
+
+:global(html[data-theme='light']) .trialSub {
+  color: #526070;
+}
+
+@media (max-width: 680px) {
+  .trialBannerInner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .trialCTA {
+    width: 100%;
+  }
+}
+
 .pricingGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

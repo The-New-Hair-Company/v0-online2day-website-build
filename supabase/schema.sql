@@ -285,7 +285,76 @@ END $$;
 
 
 -- ==========================================
--- 7. MIGRATION HISTORY (for reference)
+-- 7. TRIAL ACCOUNTS (14-day free trial signups)
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS public.trial_accounts (
+    id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id     UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    email       TEXT NOT NULL UNIQUE,
+    first_name  TEXT NOT NULL,
+    last_name   TEXT NOT NULL,
+    company_name TEXT NOT NULL,
+    job_title   TEXT,
+    phone       TEXT,
+    plan        TEXT NOT NULL DEFAULT 'Pro',
+    trial_start TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()) NOT NULL,
+    trial_end   TIMESTAMP WITH TIME ZONE DEFAULT (timezone('utc', now()) + INTERVAL '14 days') NOT NULL,
+    created_at  TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()) NOT NULL
+);
+
+ALTER TABLE public.trial_accounts ENABLE ROW LEVEL SECURITY;
+
+-- Admins can view and manage all trial accounts
+CREATE POLICY "Admins can manage trial accounts" ON public.trial_accounts
+    FOR ALL TO authenticated
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
+
+-- Trial users can read their own record
+CREATE POLICY "Users can read own trial account" ON public.trial_accounts
+    FOR SELECT TO authenticated
+    USING (user_id = auth.uid());
+
+
+-- ==========================================
+-- 8. GDPR DATA ISOLATION — MEMBER RLS POLICIES
+-- ==========================================
+-- Trial and member users can ONLY see leads assigned to their own user ID.
+-- Existing admin policies are preserved and OR'd in by Postgres.
+-- Admins continue to see all data; members see nothing that isn't theirs.
+-- This guarantees that new trial accounts start with a completely empty CRM.
+
+-- LEADS: members access only leads assigned to themselves
+CREATE POLICY "Members access own leads" ON public.leads
+    FOR ALL TO authenticated
+    USING (assigned_to = auth.uid())
+    WITH CHECK (assigned_to = auth.uid());
+
+-- LEAD_EVENTS: members access events for their own leads only
+CREATE POLICY "Members access own lead events" ON public.lead_events
+    FOR ALL TO authenticated
+    USING (
+        lead_id IN (SELECT id FROM public.leads WHERE assigned_to = auth.uid())
+    );
+
+-- LEAD_ASSETS: members access assets for their own leads only
+CREATE POLICY "Members access own lead assets" ON public.lead_assets
+    FOR ALL TO authenticated
+    USING (
+        lead_id IN (SELECT id FROM public.leads WHERE assigned_to = auth.uid())
+    );
+
+-- LEAD_AGREEMENTS: members access agreements for their own leads only
+CREATE POLICY "Members access own lead agreements" ON public.lead_agreements
+    FOR ALL TO authenticated
+    USING (
+        lead_id IN (SELECT id FROM public.leads WHERE assigned_to = auth.uid())
+    );
+
+
+-- ==========================================
+-- 9. MIGRATION HISTORY (for reference)
 -- ==========================================
 -- 20260428163148 — init_crm_tables
 -- 20260428173323 — add_admin_roles_and_restrict_crm
@@ -298,3 +367,5 @@ END $$;
 -- 20260429165607 — fix_lead_assets_columns_for_crm
 --                   (adds: lead_assets.name, lead_assets.url, lead_assets.slug,
 --                          lead_assets.metadata, lead_events.metadata)
+-- 20260505000000 — add_trial_accounts_and_member_rls
+--                   (adds: trial_accounts table, member data-isolation RLS policies)

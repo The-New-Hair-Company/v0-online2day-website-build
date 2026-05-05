@@ -85,3 +85,45 @@ export async function getEnabledFeatures(): Promise<string[]> {
 export async function setEnabledFeatures(ids: string[]) {
   return setEnterpriseStateValue('enabled_features', ids)
 }
+
+// ─── LEADS EXPORT ─────────────────────────────────────────────────────────────
+
+export async function getLeadsForExport() {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('leads')
+    .select('name, email, phone, company, website, status, source, notes, follow_up_date, last_contacted_at, created_at')
+    .order('created_at', { ascending: false })
+  return (data || []) as Array<{
+    name: string
+    email: string | null
+    phone: string | null
+    company: string | null
+    website: string | null
+    status: string
+    source: string | null
+    notes: string | null
+    follow_up_date: string | null
+    last_contacted_at: string | null
+    created_at: string
+  }>
+}
+
+// ─── DATA QUALITY SCAN ────────────────────────────────────────────────────────
+
+export async function scanDataQuality() {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('leads')
+    .select('email, phone, company, source, assigned_to, follow_up_date')
+  const leads = data || []
+  return {
+    total: leads.length,
+    missingEmail: leads.filter((l) => !l.email).length,
+    missingPhone: leads.filter((l) => !l.phone).length,
+    missingCompany: leads.filter((l) => !l.company).length,
+    missingSource: leads.filter((l) => !l.source).length,
+    missingOwner: leads.filter((l) => !l.assigned_to).length,
+    missingFollowUp: leads.filter((l) => !l.follow_up_date).length,
+  }
+}
