@@ -69,6 +69,7 @@ export type Lead = {
   nextAction: string
   email?: string
   phone?: string
+  website?: string
   notes?: string
   selected?: boolean
 }

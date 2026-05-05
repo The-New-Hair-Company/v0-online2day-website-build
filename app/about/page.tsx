@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
-import { Users, Target, Heart, Zap, Code2, Shield } from 'lucide-react'
+import { Target, Heart, Zap, Code2, Shield } from 'lucide-react'
+import { TeamSection } from '@/components/about/TeamSection'
 
 export default function AboutPage() {
   return (
@@ -44,15 +45,7 @@ export default function AboutPage() {
                 </p>
               </Card>
 
-              <Card className="p-8 bg-card border-border text-center">
-                <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
-                  <Users className="h-8 w-8 text-primary" />
-                </div>
-                <h3 className="text-xl font-bold mb-3">Our Team</h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  Experienced developers, designers, and strategists working together to exceed expectations.
-                </p>
-              </Card>
+              <TeamSection />
             </div>
 
             <Card className="p-12 bg-gradient-to-br from-card to-card/50 border-primary/20 mb-20">

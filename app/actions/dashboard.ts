@@ -101,6 +101,7 @@ export async function getLead(id: string): Promise<Lead | null> {
     email: row.email || undefined,
     phone: row.phone || undefined,
     notes: row.notes || undefined,
+    website: row.website || undefined,
   }
 }
 
@@ -660,17 +661,38 @@ export type LeadEventRow = {
   title: string | null
   created_at: string
   metadata: Record<string, unknown> | null
+  created_by: string | null
+  creator_name: string | null
 }
 
 export async function getLeadEvents(leadId: string): Promise<LeadEventRow[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('lead_events')
-    .select('id, type, note, title, created_at, metadata')
+    .select('id, type, note, created_at, metadata, created_by')
     .eq('lead_id', leadId)
     .order('created_at', { ascending: false })
-    .limit(20)
-  return (data || []) as LeadEventRow[]
+    .limit(100)
+
+  if (!data || data.length === 0) return []
+
+  const creatorIds = [...new Set(data.map(e => e.created_by).filter(Boolean))] as string[]
+  const namesMap: Record<string, string> = {}
+  if (creatorIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('user_id, email, full_name')
+      .in('user_id', creatorIds)
+    profiles?.forEach((p: { user_id: string; email: string; full_name?: string }) => {
+      namesMap[p.user_id] = p.full_name || p.email?.split('@')[0] || 'Team member'
+    })
+  }
+
+  return data.map(e => ({
+    ...e,
+    title: null,
+    creator_name: e.created_by ? (namesMap[e.created_by] || 'Team member') : null,
+  })) as LeadEventRow[]
 }
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────

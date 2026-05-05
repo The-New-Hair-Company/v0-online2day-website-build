@@ -268,3 +268,81 @@ export async function addLeadNote(leadId: string, note: string) {
   revalidatePath(`/dashboard/leads/${leadId}`)
   return { success: true }
 }
+
+export async function updateLeadFields(leadId: string, fields: {
+  name?: string
+  email?: string
+  phone?: string
+  company?: string
+  website?: string
+  status?: string
+  source?: string
+  notes?: string
+}) {
+  const supabase = await createClient()
+
+  const { error } = await supabase
+    .from('leads')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('id', leadId)
+
+  if (error) return { error: error.message }
+
+  await logLeadEvent(leadId, 'Lead Updated', `Updated: ${Object.keys(fields).join(', ')}`)
+  revalidatePath('/dashboard/leads')
+  revalidatePath(`/dashboard/leads/${leadId}`)
+  return { success: true }
+}
+
+export async function scheduleLeadAction(
+  leadId: string,
+  leadName: string,
+  actionType: 'Callback Scheduled' | 'Follow-up Scheduled',
+  scheduledAt: string,
+  note?: string,
+) {
+  const supabase = await createClient()
+  const { data: authData } = await supabase.auth.getUser()
+
+  const { error } = await supabase.from('lead_events').insert({
+    lead_id: leadId,
+    type: actionType,
+    note: note?.trim() || null,
+    metadata: { scheduled_at: scheduledAt },
+    created_by: authData.user?.id ?? null,
+  })
+
+  if (error) return { error: error.message }
+
+  await supabase
+    .from('leads')
+    .update({ follow_up_date: scheduledAt, updated_at: new Date().toISOString() })
+    .eq('id', leadId)
+
+  const label = actionType === 'Callback Scheduled' ? 'Callback' : 'Follow-up'
+  await supabase.from('enterprise_events').insert({
+    title: `${label}: ${leadName}`,
+    event_time: scheduledAt,
+    event_type: label,
+  }).then(() => {}) // non-fatal
+
+  revalidatePath(`/dashboard/leads/${leadId}`)
+  revalidatePath('/dashboard/enterprise')
+  return { success: true }
+}
+
+export async function setDoNotContact(leadId: string) {
+  const supabase = await createClient()
+  const { data: authData } = await supabase.auth.getUser()
+
+  const { error } = await supabase.from('lead_events').insert({
+    lead_id: leadId,
+    type: 'Do Not Contact',
+    note: 'Lead marked as Do Not Contact — no further outreach.',
+    created_by: authData.user?.id ?? null,
+  })
+
+  if (error) return { error: error.message }
+  revalidatePath(`/dashboard/leads/${leadId}`)
+  return { success: true }
+}
