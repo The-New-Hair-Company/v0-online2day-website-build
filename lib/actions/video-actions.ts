@@ -7,6 +7,7 @@ import { logLeadEvent } from './lead-actions'
 type EditorProjectPayload = {
   title: string
   leadId: string
+  sourceAssetId?: string
   duration: number
   format: string
   scenes: Array<Record<string, unknown>>
@@ -14,6 +15,7 @@ type EditorProjectPayload = {
   brand: Record<string, unknown>
   cta: Record<string, unknown>
   email: Record<string, unknown>
+  recording?: Record<string, unknown> | null
   settings: Record<string, unknown>
 }
 
@@ -58,7 +60,14 @@ export async function uploadLeadVideo(leadId: string, formData: FormData) {
       name: videoName || file.name,
       type: 'video',
       url: signedUrlData?.signedUrl || '',
+      storage_path: filePath,
       slug,
+      metadata: {
+        uploadedVideo: true,
+        fileName: file.name,
+        contentType: file.type,
+        size: file.size,
+      },
     })
     .select()
     .single()
@@ -111,23 +120,38 @@ export async function saveVideoEditorProject(payload: EditorProjectPayload) {
     brand: payload.brand,
     cta: payload.cta,
     email: payload.email,
+    recording: payload.recording || null,
     settings: payload.settings,
     createdBy: user.user?.email || 'unknown',
   }
 
-  const { data: asset, error } = await supabase
-    .from('lead_assets')
-    .insert({
-      lead_id: payload.leadId,
-      name: payload.title,
-      type: 'video',
-      url: '',
-      storage_path: '',
-      slug,
-      metadata: projectMetadata,
-    } as any)
-    .select()
-    .single()
+  const assetMutation = payload.sourceAssetId
+    ? supabase
+        .from('lead_assets')
+        .update({
+          name: payload.title,
+          metadata: projectMetadata,
+        } as any)
+        .eq('id', payload.sourceAssetId)
+        .eq('lead_id', payload.leadId)
+        .eq('type', 'video')
+        .select()
+        .single()
+    : supabase
+        .from('lead_assets')
+        .insert({
+          lead_id: payload.leadId,
+          name: payload.title,
+          type: 'video',
+          url: '',
+          storage_path: '',
+          slug,
+          metadata: projectMetadata,
+        } as any)
+        .select()
+        .single()
+
+  const { data: asset, error } = await assetMutation
 
   if (error) {
     console.error('Editor project save error:', error)
@@ -135,14 +159,16 @@ export async function saveVideoEditorProject(payload: EditorProjectPayload) {
   }
 
   await logLeadEvent(payload.leadId, 'Video Editor Project Saved', `Video project "${payload.title}" saved by ${user.user?.email || 'unknown'}`, {
-    slug,
+    slug: asset.slug || slug,
     assetId: asset.id,
     duration: payload.duration,
     format: payload.format,
+    sourceAssetId: payload.sourceAssetId || null,
   })
 
   revalidatePath('/dashboard/videos')
+  revalidatePath('/dashboard/videos/editor')
   revalidatePath('/dashboard/emails')
   revalidatePath(`/dashboard/leads/${payload.leadId}`)
-  return { success: true, asset, slug }
+  return { success: true, asset, slug: asset.slug || slug }
 }

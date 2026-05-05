@@ -107,12 +107,18 @@ export function Footer() {
             <p className="text-sm text-muted-foreground">
               © {new Date().getFullYear()} online2day. All rights reserved.
             </p>
-            <div className="flex gap-6">
+            <div className="flex flex-wrap justify-center gap-6">
               <Link href="/privacy" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Privacy Policy
               </Link>
               <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                Terms of Service
+                Terms & Conditions
+              </Link>
+              <Link href="/complaints" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Complaints Charter
+              </Link>
+              <Link href="/cookies" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Cookie Policy
               </Link>
             </div>
           </div>

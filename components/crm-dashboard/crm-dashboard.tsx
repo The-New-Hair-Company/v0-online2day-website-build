@@ -159,6 +159,7 @@ const NAV_ITEMS: Array<{ label: string; href: string; section?: DashboardSection
   { label: 'Enterprise', href: '/dashboard/enterprise', icon: Columns3, group: 'MAIN' },
   { label: 'Site Requests', href: '/dashboard/site-requests', section: 'site-requests', icon: Inbox, group: 'REQUESTS' },
   { label: 'Integrations', href: '/dashboard/integrations', section: 'integrations', icon: Settings2, group: 'TOOLS' },
+  { label: 'Settings', href: '/dashboard/settings', icon: Settings2, group: 'TOOLS' },
 ]
 
 const PAGE_META: Record<DashboardSection, { title: string; description: string; searchPlaceholder: string; createLabel: string; createItems: MenuItem[] }> = {

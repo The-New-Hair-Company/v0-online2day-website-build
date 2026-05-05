@@ -130,13 +130,19 @@ export async function getLeadRecords(): Promise<LeadRecord[]> {
 
 export async function getVideos(): Promise<VideoRecord[]> {
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('videos')
-    .select('*, lead:lead_id(name, company, status)')
-    .order('created_at', { ascending: false })
-  if (error || !data) return []
+  const [{ data, error }, { data: assets, error: assetError }] = await Promise.all([
+    supabase
+      .from('videos')
+      .select('*, lead:lead_id(name, company, status)')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('lead_assets')
+      .select('*, lead:lead_id(name, company, status)')
+      .eq('type', 'video')
+      .order('created_at', { ascending: false }),
+  ])
 
-  return (data as any[]).map((row): VideoRecord => ({
+  const tableVideos = error || !data ? [] : (data as any[]).map((row): VideoRecord => ({
     id: row.id,
     title: row.title || 'Untitled Video',
     company: row.lead?.company || 'Prospect',
@@ -151,6 +157,29 @@ export async function getVideos(): Promise<VideoRecord[]> {
     replies: row.reply_count || 0,
     nextAction: row.next_action || 'Follow up',
   }))
+
+  const libraryVideos = assetError || !assets ? [] : (assets as any[]).map((row): VideoRecord => {
+    const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+    const duration = Number(metadata.duration || metadata.recording?.duration || 0)
+    const cta = typeof metadata.cta === 'object' && metadata.cta ? metadata.cta.label : undefined
+    return {
+      id: row.id,
+      title: row.name || 'Recorded video',
+      company: row.lead?.company || 'Prospect',
+      duration: duration ? formatDuration(duration) : '00:00',
+      funnelStage: row.lead?.status || 'Prospecting',
+      owner: metadata.createdBy || 'Online2Day',
+      channel: row.url ? 'Hosted page' : 'Editor project',
+      cta: cta || 'Watch Video',
+      status: row.url ? 'Ready' : 'Draft',
+      watchRate: row.view_count || 0,
+      lastViewed: fmtDate(row.created_at),
+      replies: 0,
+      nextAction: row.url ? 'Share video' : 'Finish edits',
+    }
+  })
+
+  return [...libraryVideos, ...tableVideos]
 }
 
 // ─── EMAILS ──────────────────────────────────────────────────────────────────

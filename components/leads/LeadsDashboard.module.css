@@ -147,6 +147,9 @@
 
 .navItem svg {
   color: #9ca6b8;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
 }
 
 .navItem:hover {

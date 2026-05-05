@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
-import styles from './LeadsDashboard.module.css'
 import { DashboardSidebar } from './DashboardSidebar'
+import styles from './LeadsDashboard.module.css'
 import { Icon, Avatar, Score, StageBadge, ProgressBar, initialsForOwner } from './DashboardComponents'
 import type { IconName, Lead, LeadStage, Metric, OwnerPerformance, PipelineStage, LeadSourcePerformance, TaskItem, Recommendation, ActivityItem, LeadContact } from './leads-types'
 import { createLeadFromObject, logActivityEvent } from '@/lib/actions/lead-actions'
@@ -1590,4 +1590,3 @@ function ContactInputModal({ type, lead, current, onSave, onClose }: {
     </div>
   )
 }
-

@@ -455,6 +455,70 @@
   gap: 18px;
 }
 
+.recordedVideoFrame {
+  inset: 28px;
+  align-content: stretch;
+  gap: 0;
+}
+
+.recordedVideo {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  object-fit: cover;
+  background: #000;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.12);
+}
+
+.recordingBadge,
+.recordedMeta {
+  position: absolute;
+  left: 16px;
+  z-index: 3;
+  border-radius: 999px;
+  background: rgba(2, 6, 13, 0.76);
+  color: #fff;
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.14);
+}
+
+.recordingBadge {
+  top: 16px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.recordingBadge span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 rgba(239, 68, 68, 0.45);
+  animation: recordPulse 1100ms ease-in-out infinite;
+}
+
+.recordedMeta {
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 7px 10px;
+}
+
+.recordedMeta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #eaf2ff;
+}
+
 .logoPill,
 .sceneType,
 .captionBar,
@@ -653,6 +717,71 @@
 .emailPanel label {
   display: grid;
   gap: 7px;
+}
+
+.recordingPanel {
+  border: 1px solid rgba(116, 147, 196, 0.16);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.025);
+  overflow: hidden;
+}
+
+.recordingPanelToggle {
+  width: 100%;
+  min-height: 42px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  justify-content: flex-start !important;
+  color: #dbe6f7 !important;
+}
+
+.recordingPanelToggle span {
+  flex: 1;
+  text-align: left;
+}
+
+.recordingPanel[data-open='true'] .recordingPanelToggle svg:last-child {
+  transform: rotate(90deg);
+}
+
+.recordingControls {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.recordingStatus {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid rgba(116, 147, 196, 0.10);
+  padding-top: 10px;
+}
+
+.recordingStatus strong {
+  font-size: 24px;
+}
+
+.recordingStatus span,
+.recordingError {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.recordingError {
+  margin: 0;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.08);
+  color: #fecaca;
+  padding: 8px 9px;
+}
+
+.recordingActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .inspector label span,
@@ -879,8 +1008,18 @@
   }
 }
 
+@keyframes recordPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+}
+
 :global(html[data-motion='reduced']) .canvasGuided .videoFrame,
-:global(html[data-motion='reduced']) .guideCursor {
+:global(html[data-motion='reduced']) .guideCursor,
+:global(html[data-motion='reduced']) .recordingBadge span {
   animation: none !important;
 }
 

@@ -19,6 +19,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
   // Fallback: slug might be a lead ID (legacy)
   let lead: any = asset?.lead
   let videoUrl: string | null = asset?.url || null
+  let videoStoragePath: string | null = asset?.storage_path || null
   let videoName: string = asset?.name || ''
   let editorProject: any = asset?.metadata && typeof asset.metadata === 'object' && 'editorProject' in asset.metadata ? asset.metadata : null
 
@@ -43,9 +44,17 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
 
     if (latestAssets?.[0]) {
       videoUrl = latestAssets[0].url
+      videoStoragePath = latestAssets[0].storage_path
       videoName = latestAssets[0].name
       editorProject = latestAssets[0].metadata && typeof latestAssets[0].metadata === 'object' && 'editorProject' in latestAssets[0].metadata ? latestAssets[0].metadata : null
     }
+  }
+
+  if (videoStoragePath) {
+    const { data: signedUrlData } = await supabase.storage
+      .from('lead-videos')
+      .createSignedUrl(videoStoragePath, 60 * 60 * 24 * 7)
+    videoUrl = signedUrlData?.signedUrl || videoUrl
   }
 
   return (

@@ -12,6 +12,7 @@ import {
   Check,
   ChevronRight,
   Clock,
+  CircleStop,
   Copy,
   Crop,
   Download,
@@ -52,7 +53,7 @@ import {
 } from 'lucide-react'
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import { sendEnterpriseEmail } from '@/lib/actions/email-actions'
-import { saveVideoEditorProject } from '@/lib/actions/video-actions'
+import { saveVideoEditorProject, uploadLeadVideo } from '@/lib/actions/video-actions'
 import styles from './video-editor.module.css'
 import type { EmailComposerLead, EmailComposerVideo } from '@/components/crm-dashboard/types'
 
@@ -71,6 +72,15 @@ type TimelineItem = {
   label: string
   track: 'video' | 'audio' | 'text' | 'cta'
   start: number
+  duration: number
+}
+
+type RecordedClip = {
+  blob: Blob
+  url: string
+  name: string
+  type: string
+  size: number
   duration: number
 }
 
@@ -134,6 +144,13 @@ const brandVariants = [
 
 const totalFeatureCount = featureGroups.reduce((sum, group) => sum + group.items.length, 0)
 
+function formatSeconds(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds))
+  const minutes = Math.floor(safeSeconds / 60)
+  const remaining = safeSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(remaining).padStart(2, '0')}`
+}
+
 export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[]; videos: EmailComposerVideo[] }) {
   const router = useRouter()
   const [projectTitle, setProjectTitle] = useState('Personalised website growth video')
@@ -167,18 +184,32 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
   const [activeTrackLocked, setActiveTrackLocked] = useState(false)
   const [versionCount, setVersionCount] = useState(1)
   const [assetCount, setAssetCount] = useState(videos.length)
+  const [libraryVideos, setLibraryVideos] = useState(videos)
   const [thumbnailMode, setThumbnailMode] = useState('Smart poster frame')
   const [ctaLabel, setCtaLabel] = useState('Book a call')
   const [safeChecklist, setSafeChecklist] = useState(false)
   const [logoPlacement, setLogoPlacement] = useState<'top-left' | 'top-right' | 'bottom-left'>('top-left')
+  const [recordingState, setRecordingState] = useState<'idle' | 'preparing' | 'recording' | 'recorded'>('idle')
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const [recordingPanelOpen, setRecordingPanelOpen] = useState(false)
+  const [recordingError, setRecordingError] = useState('')
+  const [recordedClip, setRecordedClip] = useState<RecordedClip | null>(null)
+  const [recordedAssetId, setRecordedAssetId] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const statusTimerRef = useRef<number | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const mediaChunksRef = useRef<Blob[]>([])
+  const livePreviewRef = useRef<HTMLVideoElement>(null)
+  const recordingIntervalRef = useRef<number | null>(null)
+  const recordingStartRef = useRef<number>(0)
+  const recordingCancelledRef = useRef(false)
 
   const selectedLead = leads.find((lead) => lead.id === leadId)
   const selectedScene = scenes.find((scene) => scene.id === selectedSceneId) || scenes[0]
-  const leadVideos = useMemo(() => videos.filter((video) => video.leadId === leadId), [leadId, videos])
-  const availableVideos = leadVideos.length ? leadVideos : videos
-  const attachedVideo = videos.find((video) => video.id === savedAssetId)
+  const leadVideos = useMemo(() => libraryVideos.filter((video) => video.leadId === leadId), [leadId, libraryVideos])
+  const availableVideos = leadVideos.length ? leadVideos : libraryVideos
+  const attachedVideo = libraryVideos.find((video) => video.id === savedAssetId)
   const totalDuration = scenes.reduce((sum, scene) => sum + scene.duration, 0)
   const canvasAspectRatio = useMemo(() => {
     const [width, height] = format.split(':').map(Number)
@@ -232,6 +263,229 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     }
   }, [])
 
+  useEffect(() => {
+    setLibraryVideos(videos)
+    setAssetCount(videos.length)
+  }, [videos])
+
+  useEffect(() => {
+    const mode = new URLSearchParams(window.location.search).get('mode')
+    if (mode === 'record') {
+      setSelectedTool('Record')
+      setRecordingPanelOpen(true)
+      runEditorCommand('Recording mode ready. Start recording when your camera and microphone are ready.')
+    }
+    if (mode === 'upload') {
+      setSelectedTool('Upload')
+      runEditorCommand('Upload mode ready. Use Import media to stage a file on the timeline.')
+    }
+    if (mode === 'template') {
+      runEditorCommand('Template mode ready. Choose scenes and brand settings, then save to the library.')
+    }
+    if (mode === 'ai-intro') {
+      setSelectedTool('AI polish')
+      runEditorCommand('AI intro mode ready. Use AI polish to tailor the opening scene.')
+    }
+  }, [])
+
+  useEffect(() => {
+    const video = livePreviewRef.current
+    if (video && mediaStreamRef.current && recordingState !== 'recorded') {
+      video.srcObject = mediaStreamRef.current
+      void video.play().catch(() => undefined)
+    }
+  }, [recordingState])
+
+  useEffect(() => {
+    return () => {
+      clearRecordingTimer()
+      stopMediaStream()
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (recordedClip?.url) URL.revokeObjectURL(recordedClip.url)
+    }
+  }, [recordedClip?.url])
+
+  function clearRecordingTimer() {
+    if (recordingIntervalRef.current) {
+      window.clearInterval(recordingIntervalRef.current)
+      recordingIntervalRef.current = null
+    }
+  }
+
+  function stopMediaStream() {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+    mediaStreamRef.current = null
+    if (livePreviewRef.current) livePreviewRef.current.srcObject = null
+  }
+
+  function getPreferredRecordingMimeType() {
+    if (typeof MediaRecorder === 'undefined') return ''
+    const options = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+      'video/mp4',
+    ]
+    return options.find((type) => MediaRecorder.isTypeSupported(type)) || ''
+  }
+
+  async function startRecording() {
+    if (!leadId) {
+      setRecordingError('Choose a lead before recording so the clip can be saved to the library.')
+      setRecordingPanelOpen(true)
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setRecordingError('This browser does not support in-page video recording.')
+      setRecordingPanelOpen(true)
+      return
+    }
+
+    setRecordingError('')
+    setRecordingState('preparing')
+    setRecordingPanelOpen(true)
+    recordingCancelledRef.current = false
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        audio: true,
+      })
+      const mimeType = getPreferredRecordingMimeType()
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      mediaChunksRef.current = []
+      mediaStreamRef.current = stream
+      mediaRecorderRef.current = recorder
+      recordingStartRef.current = Date.now()
+      setRecordingSeconds(0)
+      setRecordedAssetId('')
+
+      if (livePreviewRef.current) {
+        livePreviewRef.current.srcObject = stream
+        void livePreviewRef.current.play().catch(() => undefined)
+      }
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) mediaChunksRef.current.push(event.data)
+      }
+
+      recorder.onstop = () => {
+        clearRecordingTimer()
+        stopMediaStream()
+        mediaRecorderRef.current = null
+
+        if (recordingCancelledRef.current) {
+          setRecordingState('idle')
+          setRecordingSeconds(0)
+          return
+        }
+
+        const duration = Math.max(1, Math.round((Date.now() - recordingStartRef.current) / 1000))
+        const type = mediaChunksRef.current[0]?.type || mimeType || 'video/webm'
+        const blob = new Blob(mediaChunksRef.current, { type })
+        if (!blob.size) {
+          setRecordingState('idle')
+          setRecordingError('Recording stopped before any video data was captured. Please try again.')
+          return
+        }
+
+        const extension = type.includes('mp4') ? 'mp4' : 'webm'
+        const name = `${projectTitle || 'Online2Day video'} - ${selectedLead?.company || 'lead'} recording.${extension}`
+        const url = URL.createObjectURL(blob)
+        setRecordedClip((current) => {
+          if (current?.url) URL.revokeObjectURL(current.url)
+          return { blob, url, name, type, size: blob.size, duration }
+        })
+        setRecordingSeconds(duration)
+        setRecordingState('recorded')
+        setThumbnailMode('Recorded camera clip')
+        setAssetCount((current) => current + 1)
+        addTimelineClip('video', 'Recorded camera clip', duration)
+        addTimelineClip('audio', 'Recorded microphone audio', duration)
+        updateScene({ note: 'Recorded camera clip is now visible on the canvas and ready for trimming, captions and email handoff.' })
+        runEditorCommand('Recording captured and placed on the canvas and timeline.')
+      }
+
+      recorder.start(1000)
+      setRecordingState('recording')
+      recordingIntervalRef.current = window.setInterval(() => {
+        setRecordingSeconds(Math.max(0, Math.floor((Date.now() - recordingStartRef.current) / 1000)))
+      }, 500)
+      runEditorCommand('Recording started. Stop when the clip is ready.')
+    } catch (error) {
+      clearRecordingTimer()
+      stopMediaStream()
+      setRecordingState('idle')
+      setRecordingError(error instanceof Error ? error.message : 'Camera or microphone permission was blocked.')
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop()
+      return
+    }
+    stopMediaStream()
+    clearRecordingTimer()
+    setRecordingState('idle')
+  }
+
+  function discardRecording() {
+    recordingCancelledRef.current = true
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop()
+    }
+    setRecordedClip((current) => {
+      if (current?.url) URL.revokeObjectURL(current.url)
+      return null
+    })
+    stopMediaStream()
+    clearRecordingTimer()
+    setRecordingState('idle')
+    setRecordingSeconds(0)
+    setRecordedAssetId('')
+    setSavedAssetId('')
+    setRecordingError('')
+    runEditorCommand('Recording cleared from the editor.')
+  }
+
+  async function uploadRecordingToLibrary() {
+    if (!recordedClip) return { assetId: recordedAssetId, slug: '', error: '' }
+    if (recordedAssetId) return { assetId: recordedAssetId, slug: attachedVideo?.slug || '', error: '' }
+    if (!leadId) return { assetId: '', slug: '', error: 'Choose a lead before saving the recording.' }
+
+    setSaveStatus('Uploading recorded clip to the video library...')
+    const formData = new FormData()
+    const file = new File([recordedClip.blob], recordedClip.name, { type: recordedClip.type || 'video/webm' })
+    formData.append('video', file)
+    formData.append('name', projectTitle || recordedClip.name)
+
+    const result = await uploadLeadVideo(leadId, formData)
+    if ('error' in result && result.error) {
+      const error = String(result.error)
+      setSaveStatus(error)
+      return { assetId: '', slug: '', error }
+    }
+
+    const asset = result.asset as any
+    const nextVideo: EmailComposerVideo = {
+      id: asset.id,
+      leadId: asset.lead_id || leadId,
+      name: asset.name || projectTitle || recordedClip.name,
+      slug: asset.slug || '',
+      createdAt: asset.created_at || new Date().toISOString(),
+    }
+    setLibraryVideos((current) => [nextVideo, ...current.filter((video) => video.id !== nextVideo.id)])
+    setSavedAssetId(nextVideo.id)
+    setRecordedAssetId(nextVideo.id)
+    setSaveStatus(`Recorded clip saved. Video link: /v/${nextVideo.slug}`)
+    return { assetId: nextVideo.id, slug: nextVideo.slug, error: '' }
+  }
+
   function updateScene(patch: Partial<Scene>) {
     setScenes((current) => current.map((scene) => scene.id === selectedScene.id ? { ...scene, ...patch } : scene))
   }
@@ -262,10 +516,11 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     setSelectedSceneId(scenes.find((scene) => scene.id !== selectedScene.id)?.id || scenes[0].id)
   }
 
-  function buildProjectPayload() {
+  function buildProjectPayload(sourceAssetId = recordedAssetId) {
     return {
       title: projectTitle,
       leadId,
+      sourceAssetId,
       duration: totalDuration,
       format,
       scenes,
@@ -273,6 +528,12 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
       brand: { primary: brandColor, accent: accentColor, watermark, logoPlacement },
       cta: { label: ctaLabel, destination: 'https://online2day.com/contact' },
       email: { subject: emailSubject, body: emailBody },
+      recording: recordedClip ? {
+        name: recordedClip.name,
+        type: recordedClip.type,
+        size: recordedClip.size,
+        duration: recordedClip.duration,
+      } : null,
       settings: {
         captions: captionMode,
         approvalRequired: approvalMode,
@@ -292,33 +553,65 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     }
   }
 
-  async function persistProject(statusMessage = 'Saving project...') {
+  async function persistProject(statusMessage = 'Saving project...', sourceAssetIdOverride = recordedAssetId) {
     if (statusTimerRef.current) {
       window.clearTimeout(statusTimerRef.current)
       statusTimerRef.current = null
     }
     setSaveStatus(statusMessage)
-    const result = await saveVideoEditorProject(buildProjectPayload())
+    const result = await saveVideoEditorProject(buildProjectPayload(sourceAssetIdOverride))
     if ('error' in result && result.error) {
       const error = String(result.error)
       setSaveStatus(error)
       return { assetId: '', error }
     }
-    setSavedAssetId(result.asset?.id || '')
-    setAssetCount((current) => Math.max(current, videos.length) + 1)
+    const asset = result.asset as any
+    setSavedAssetId(asset?.id || '')
+    if (sourceAssetIdOverride && asset?.id) {
+      setLibraryVideos((current) => current.map((video) => video.id === asset.id ? {
+        ...video,
+        name: asset.name || video.name,
+        slug: asset.slug || video.slug,
+      } : video))
+    } else {
+      setAssetCount((current) => Math.max(current, libraryVideos.length) + 1)
+    }
     setVersionCount((current) => current + 1)
     setSaveStatus(`Saved. Video link: /v/${result.slug}`)
-    return { assetId: result.asset?.id || '', slug: result.slug, error: '' }
+    return { assetId: asset?.id || '', slug: result.slug, error: '' }
   }
 
   async function handleSave() {
-    await persistProject()
+    let sourceAssetId = recordedAssetId
+    if (recordedClip && !sourceAssetId) {
+      const upload = await uploadRecordingToLibrary()
+      if (upload.error || !upload.assetId) return
+      sourceAssetId = upload.assetId
+    }
+    await persistProject(recordedClip ? 'Saving recorded video edits...' : 'Saving project...', sourceAssetId)
   }
 
   async function handleSend() {
     setSendStatus('Sending email...')
-    let assetId = savedAssetId
-    if (!assetId) {
+    let assetId = savedAssetId || recordedAssetId
+
+    if (recordedClip) {
+      let sourceAssetId = recordedAssetId
+      if (!sourceAssetId) {
+        const upload = await uploadRecordingToLibrary()
+        if (upload.error || !upload.assetId) {
+          setSendStatus(upload.error || 'Save the recording before sending the email.')
+          return
+        }
+        sourceAssetId = upload.assetId
+      }
+      const result = await persistProject('Saving recorded video before email...', sourceAssetId)
+      if (result.error || !result.assetId) {
+        setSendStatus(result.error || 'Save the video before sending the email.')
+        return
+      }
+      assetId = result.assetId
+    } else if (!assetId) {
       const result = await persistProject('Saving video before email...')
       if (result.error || !result.assetId) {
         setSendStatus(result.error || 'Save the video before sending the email.')
@@ -349,6 +642,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     setLeadId(nextLeadId)
     setEmailTo(lead?.email || '')
     setSavedAssetId('')
+    setRecordedAssetId('')
     setEmailSubject(lead?.company ? `A focused video for ${lead.company}` : 'A short personalised video from Online2Day')
     setSendStatus('Lead changed. Choose a database video for this lead or save a fresh editor asset before sending.')
   }
@@ -519,10 +813,12 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
       return
     }
     if (label === 'Record') {
-      addTimelineClip('video', 'Camera recording placeholder', 8)
-      addTimelineClip('audio', 'Microphone voiceover', 8)
-      updateScene({ note: 'Record a short camera intro and voiceover for this lead-specific walkthrough.' })
-      runEditorCommand('Recording tracks staged for camera and microphone capture.')
+      setRecordingPanelOpen(true)
+      if (recordingState === 'recording') {
+        runEditorCommand('Recording is already running. Stop it when the clip is ready.')
+        return
+      }
+      await startRecording()
       return
     }
     if (label === 'Text') {
@@ -913,19 +1209,40 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
               <div className={canvasClassName} style={{ ['--scene-color' as string]: selectedScene.color, ['--brand-color' as string]: brandColor, ['--accent-color' as string]: accentColor, aspectRatio: canvasAspectRatio }}>
                 {showSafeZone ? <div className={styles.safeZone} /> : null}
                 {guidePlaying ? <div className={styles.guideCursor}><MousePointer2 size={16} /><span>{selectedGuide.focus}</span></div> : null}
-                <div className={styles.videoFrame}>
-                  {watermark ? <div className={styles.logoPill} data-placement={logoPlacement}>Online2Day</div> : null}
-                  <div className={styles.sceneType}>{selectedScene.layout}</div>
-                  <h2>{selectedScene.headline}</h2>
-                  <p>{selectedScene.note}</p>
-                  <div className={styles.annotationRow}>
-                    <span><Sparkles size={14} /> Personalised for {selectedLead?.company || 'selected lead'}</span>
-                    <span><Clock size={14} /> {selectedScene.duration}s</span>
+                {recordingState === 'recording' || recordingState === 'preparing' ? (
+                  <div className={`${styles.videoFrame} ${styles.recordedVideoFrame}`}>
+                    <video ref={livePreviewRef} className={styles.recordedVideo} muted playsInline autoPlay />
+                    <div className={styles.recordingBadge}>
+                      <span />
+                      {recordingState === 'preparing' ? 'Preparing camera' : `Recording ${formatSeconds(recordingSeconds)}`}
+                    </div>
                   </div>
-                  {captionMode ? <div className={styles.captionBar}>Captions: enterprise-grade delivery, accessibility and conversion tracking.</div> : null}
-                  {transcriptEnabled ? <div className={styles.transcriptBadge}><Subtitles size={14} /> Transcript notes attached</div> : null}
-                  <button className={styles.ctaButton} onClick={() => router.push('/contact')}>{ctaLabel} <ChevronRight size={15} /></button>
-                </div>
+                ) : recordedClip ? (
+                  <div className={`${styles.videoFrame} ${styles.recordedVideoFrame}`}>
+                    <video className={styles.recordedVideo} src={recordedClip.url} controls playsInline preload="metadata" />
+                    {watermark ? <div className={styles.logoPill} data-placement={logoPlacement}>Online2Day</div> : null}
+                    <div className={styles.recordedMeta}>
+                      <span><Video size={14} /> Recorded clip</span>
+                      <span><Clock size={14} /> {formatSeconds(recordedClip.duration)}</span>
+                      <span><FileVideo size={14} /> {(recordedClip.size / 1024 / 1024).toFixed(1)} MB</span>
+                    </div>
+                    {captionMode ? <div className={styles.captionBar}>Captions: enterprise-grade delivery, accessibility and conversion tracking.</div> : null}
+                  </div>
+                ) : (
+                  <div className={styles.videoFrame}>
+                    {watermark ? <div className={styles.logoPill} data-placement={logoPlacement}>Online2Day</div> : null}
+                    <div className={styles.sceneType}>{selectedScene.layout}</div>
+                    <h2>{selectedScene.headline}</h2>
+                    <p>{selectedScene.note}</p>
+                    <div className={styles.annotationRow}>
+                      <span><Sparkles size={14} /> Personalised for {selectedLead?.company || 'selected lead'}</span>
+                      <span><Clock size={14} /> {selectedScene.duration}s</span>
+                    </div>
+                    {captionMode ? <div className={styles.captionBar}>Captions: enterprise-grade delivery, accessibility and conversion tracking.</div> : null}
+                    {transcriptEnabled ? <div className={styles.transcriptBadge}><Subtitles size={14} /> Transcript notes attached</div> : null}
+                    <button className={styles.ctaButton} onClick={() => router.push('/contact')}>{ctaLabel} <ChevronRight size={15} /></button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -942,6 +1259,43 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
 
           <aside className={styles.inspector}>
             <div className={styles.panelHeader}><PanelRight size={17} /><strong>Inspector</strong></div>
+            <section className={styles.recordingPanel} data-open={recordingPanelOpen || recordedClip ? 'true' : 'false'}>
+              <button type="button" className={styles.recordingPanelToggle} onClick={() => setRecordingPanelOpen((current) => !current)}>
+                <Video size={15} />
+                <span>{recordedClip ? 'Recorded clip ready' : recordingState === 'recording' ? 'Recording in progress' : 'Camera recording'}</span>
+                <ChevronRight size={14} />
+              </button>
+              {recordingPanelOpen || recordedClip ? (
+                <div className={styles.recordingControls}>
+                  <div className={styles.recordingStatus}>
+                    <strong>{recordingState === 'recording' ? formatSeconds(recordingSeconds) : recordedClip ? formatSeconds(recordedClip.duration) : '00:00'}</strong>
+                    <span>{recordedClip ? recordedClip.name : recordingState === 'recording' ? 'Camera and microphone are recording' : 'Record directly into this editor'}</span>
+                  </div>
+                  {recordingError ? <p className={styles.recordingError}>{recordingError}</p> : null}
+                  <div className={styles.recordingActions}>
+                    {recordingState === 'recording' || recordingState === 'preparing' ? (
+                      <button type="button" className={styles.primaryButton} onClick={stopRecording}>
+                        <CircleStop size={15} />Stop
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => void startRecording()}>
+                        <Video size={15} />Start
+                      </button>
+                    )}
+                    {recordedClip ? (
+                      <>
+                        <button type="button" onClick={() => void uploadRecordingToLibrary()}>
+                          <Upload size={15} />Save clip
+                        </button>
+                        <button type="button" onClick={discardRecording}>
+                          <RotateCcw size={15} />Record again
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </section>
             <label><span>Lead</span><select value={leadId} onChange={(event) => handleLeadChange(event.target.value)}>{leads.map((lead) => <option key={lead.id} value={lead.id}>{lead.name} - {lead.company}</option>)}</select></label>
             <label><span>Scene name</span><input value={selectedScene.name} onChange={(event) => updateScene({ name: event.target.value })} /></label>
             <label><span>Headline</span><textarea value={selectedScene.headline} onChange={(event) => updateScene({ headline: event.target.value })} rows={3} /></label>
