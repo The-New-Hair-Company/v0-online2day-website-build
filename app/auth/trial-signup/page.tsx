@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Mail, Phone, Shield } from 'lucide-react'
@@ -11,7 +11,8 @@ import { isBusinessEmail } from '@/lib/utils'
 const SUPPORT_PHONE = '+44 (0) 800 XXX XXXX'
 const SUPPORT_EMAIL = 'info@online2day.com'
 
-export default function TrialSignupPage() {
+// useSearchParams() must live inside a Suspense boundary for static prerendering
+function TrialSignupContent() {
   const searchParams = useSearchParams()
   const plan = searchParams.get('plan') || 'Pro'
 
@@ -320,6 +321,14 @@ export default function TrialSignupPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function TrialSignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <TrialSignupContent />
+    </Suspense>
   )
 }
 
