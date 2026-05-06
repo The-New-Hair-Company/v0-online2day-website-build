@@ -236,6 +236,15 @@ Integrations page should include historical uptime and last-check evidence:
 - Run scheduled checks for Supabase, Resend, HubSpot
 - Surface degradation alerts into notifications feed
 
+### 14. Security + performance hardening follow-ups (new)
+The following should be completed on the backend/infra side to complement the latest app-level hardening:
+
+- Add a real rate-limit layer for API endpoints (`/api/track/view`, `/api/download-agreements`) using Edge middleware, Redis, or Vercel KV-based token buckets.
+- Introduce CSP with nonces/hashes and remove inline script dependencies over time (current layout still relies on inline bootstrap script).
+- Add server-side request logging + alerting for repeated invalid UUID requests and failed auth attempts.
+- Move agreement export generation to a queued background job for large exports (avoid synchronous request-time rendering under heavy load).
+- Add E2E security tests for XSS regression in export templates and for safe external link opening behavior.
+
 ---
 
 ## Project Structure (key paths)

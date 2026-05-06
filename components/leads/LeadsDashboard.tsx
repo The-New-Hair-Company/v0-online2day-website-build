@@ -286,17 +286,17 @@ export default function LeadsDashboard({
       const email = contact?.email
       if (!email) { setContactInputType('email'); setActiveModal('contactInput'); return }
       gdprLog('contact_attempt', 'lead_email', selectedLead.id)
-      window.open(`mailto:${email}`)
+      window.open(`mailto:${email}`, '_self')
     } else if (type === 'phone') {
       const phone = contact?.phone
       if (!phone) { setContactInputType('phone'); setActiveModal('contactInput'); return }
       gdprLog('contact_attempt', 'lead_phone', selectedLead.id)
-      window.open(`tel:${phone}`)
+      window.open(`tel:${phone}`, '_self')
     } else {
       const li = contact?.linkedin
       if (!li) { setContactInputType('linkedin'); setActiveModal('contactInput'); return }
       gdprLog('contact_attempt', 'lead_linkedin', selectedLead.id)
-      window.open(li.startsWith('http') ? li : `https://linkedin.com/in/${li}`, '_blank')
+      window.open(li.startsWith('http') ? li : `https://linkedin.com/in/${li}`, '_blank', 'noopener,noreferrer')
     }
   }
 
@@ -480,7 +480,7 @@ export default function LeadsDashboard({
           onLinkedin={() => handleContactAction('linkedin')}
           onWebsite={() => {
             if (!selectedLead.website) return showNotice('Website unavailable', 'No website URL is stored for this lead yet.')
-            window.open(selectedLead.website, '_blank')
+            window.open(selectedLead.website, '_blank', 'noopener,noreferrer')
           }}
           onCreateVideo={() => router.push(`/dashboard/videos/editor?lead=${selectedLead.id}`)}
           onBookCall={() => router.push('/contact')}

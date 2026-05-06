@@ -1,6 +1,19 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const MAX_IDS = 100
+
+function escapeHtml(value: unknown) {
+  const input = String(value ?? '')
+  return input
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 /**
  * GET /api/download-agreements?ids=uuid1,uuid2
  * Generates a plain-text/HTML "agreement summary" for the selected leads
@@ -22,7 +35,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'No IDs provided' }, { status: 400 })
   }
 
-  const ids = idsParam.split(',').filter(Boolean)
+  const ids = idsParam
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => UUID_RE.test(id))
+    .slice(0, MAX_IDS)
+  if (ids.length === 0) {
+    return NextResponse.json({ error: 'No valid IDs provided' }, { status: 400 })
+  }
 
   const { data: leads, error } = await supabase
     .from('leads')
@@ -75,16 +95,16 @@ export async function GET(request: NextRequest) {
     const events = (lead as any).lead_events || []
     return `
     <div class="lead">
-      <div class="lead-name">${lead.name}</div>
-      ${lead.company ? `<div class="lead-company">${lead.company}</div>` : ''}
-      <span class="badge">${lead.status || 'New'}</span>
+      <div class="lead-name">${escapeHtml(lead.name)}</div>
+      ${lead.company ? `<div class="lead-company">${escapeHtml(lead.company)}</div>` : ''}
+      <span class="badge">${escapeHtml(lead.status || 'New')}</span>
 
       <div class="section">
         <div class="section-title">Contact Details</div>
-        ${lead.email ? `<div class="field"><span class="field-label">Email</span><span class="field-value">${lead.email}</span></div>` : ''}
-        ${lead.phone ? `<div class="field"><span class="field-label">Phone</span><span class="field-value">${lead.phone}</span></div>` : ''}
-        ${lead.website ? `<div class="field"><span class="field-label">Website</span><span class="field-value">${lead.website}</span></div>` : ''}
-        ${lead.source ? `<div class="field"><span class="field-label">Source</span><span class="field-value">${lead.source}</span></div>` : ''}
+        ${lead.email ? `<div class="field"><span class="field-label">Email</span><span class="field-value">${escapeHtml(lead.email)}</span></div>` : ''}
+        ${lead.phone ? `<div class="field"><span class="field-label">Phone</span><span class="field-value">${escapeHtml(lead.phone)}</span></div>` : ''}
+        ${lead.website ? `<div class="field"><span class="field-label">Website</span><span class="field-value">${escapeHtml(lead.website)}</span></div>` : ''}
+        ${lead.source ? `<div class="field"><span class="field-label">Source</span><span class="field-value">${escapeHtml(lead.source)}</span></div>` : ''}
         <div class="field"><span class="field-label">Added</span><span class="field-value">${new Date(lead.created_at).toLocaleDateString('en-GB')}</span></div>
         ${lead.follow_up_date ? `<div class="field"><span class="field-label">Follow-up</span><span class="field-value">${new Date(lead.follow_up_date).toLocaleDateString('en-GB')}</span></div>` : ''}
       </div>
@@ -92,7 +112,7 @@ export async function GET(request: NextRequest) {
       ${lead.notes ? `
       <div class="section">
         <div class="section-title">Notes</div>
-        <div class="notes">${lead.notes}</div>
+        <div class="notes">${escapeHtml(lead.notes)}</div>
       </div>` : ''}
 
       ${events.length > 0 ? `
@@ -101,9 +121,9 @@ export async function GET(request: NextRequest) {
         <div class="events">
           ${events.map((e: any) => `
           <div class="event">
-            <div class="event-type">${e.type}</div>
+            <div class="event-type">${escapeHtml(e.type)}</div>
             <div class="event-date">${new Date(e.created_at).toLocaleString('en-GB')}</div>
-            ${e.note ? `<div class="event-note">${e.note}</div>` : ''}
+            ${e.note ? `<div class="event-note">${escapeHtml(e.note)}</div>` : ''}
           </div>`).join('')}
         </div>
       </div>` : ''}
@@ -121,6 +141,7 @@ export async function GET(request: NextRequest) {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Disposition': `attachment; filename="online2day-agreements-${Date.now()}.html"`,
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
     },
   })
 }

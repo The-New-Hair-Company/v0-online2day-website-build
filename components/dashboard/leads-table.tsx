@@ -87,7 +87,7 @@ export default function LeadsTable({ leads }: { leads: Lead[] }) {
     if (selectedIds.size === 0) return
     setDownloadingPdf(true)
     const ids = Array.from(selectedIds).join(',')
-    window.open(`/api/download-agreements?ids=${ids}`, '_blank')
+    window.open(`/api/download-agreements?ids=${encodeURIComponent(ids)}`, '_blank', 'noopener,noreferrer')
     setDownloadingPdf(false)
   }
 
