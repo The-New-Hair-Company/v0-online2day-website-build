@@ -2,28 +2,159 @@ import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit, getClientIp } from '@/lib/security/rate-limit'
 import { recordSecurityEvent } from '@/lib/security/security-events'
+import { getEnterpriseStateValue, setEnterpriseStateValue } from '@/lib/actions/enterprise-actions'
+import { renderAgreementSummaryHtml } from '@/lib/security/agreement-export'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MAX_IDS = 100
 
-function escapeHtml(value: unknown) {
-  const input = String(value ?? '')
-  return input
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+type ExportJobState = 'queued' | 'processing' | 'completed' | 'failed'
+type LegacyExportJob = {
+  id: string
+  userId: string
+  ids: string[]
+  status: ExportJobState
+  createdAt: string
+  updatedAt: string
+  completedAt: string | null
+  error: string | null
 }
 
-/**
- * GET /api/download-agreements?ids=uuid1,uuid2
- * Generates a plain-text/HTML "agreement summary" for the selected leads
- * and returns it as a downloadable file.
- * 
- * For a full PDF, install @react-pdf/renderer and swap the body below.
- */
-export async function GET(request: NextRequest) {
+function parseIds(idsParam: string | null) {
+  if (!idsParam) return []
+  return idsParam
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => UUID_RE.test(id))
+    .slice(0, MAX_IDS)
+}
+
+function buildJobId() {
+  return `export-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+async function createLegacyJob(job: LegacyExportJob) {
+  const key = 'agreement_export_jobs_fallback'
+  const current = await getEnterpriseStateValue(key)
+  const list = Array.isArray(current) ? current : []
+  const next = [job, ...list].slice(0, 200)
+  await setEnterpriseStateValue(key, next)
+}
+
+async function getLegacyJob(jobId: string, userId: string): Promise<LegacyExportJob | null> {
+  const key = 'agreement_export_jobs_fallback'
+  const current = await getEnterpriseStateValue(key)
+  if (!Array.isArray(current)) return null
+  const match = current.find((row) => {
+    if (!row || typeof row !== 'object') return false
+    const candidate = row as Record<string, unknown>
+    return candidate.id === jobId && candidate.userId === userId
+  })
+  return (match as LegacyExportJob) || null
+}
+
+async function updateLegacyJob(jobId: string, userId: string, patch: Partial<LegacyExportJob>) {
+  const key = 'agreement_export_jobs_fallback'
+  const current = await getEnterpriseStateValue(key)
+  const list = Array.isArray(current) ? current : []
+  const next = list.map((row) => {
+    if (!row || typeof row !== 'object') return row
+    const item = row as LegacyExportJob
+    if (item.id !== jobId || item.userId !== userId) return row
+    return { ...item, ...patch, updatedAt: new Date().toISOString() }
+  })
+  await setEnterpriseStateValue(key, next)
+}
+
+async function setLegacyResult(jobId: string, html: string) {
+  await setEnterpriseStateValue(`agreement_export_result:${jobId}`, html)
+}
+
+async function getLegacyResult(jobId: string): Promise<string | null> {
+  const value = await getEnterpriseStateValue(`agreement_export_result:${jobId}`)
+  return typeof value === 'string' ? value : null
+}
+
+async function renderAgreementHtml(ids: string[]) {
+  const supabase = await createClient()
+  const { data: leads, error } = await supabase
+    .from('leads')
+    .select('*, lead_events(*)')
+    .in('id', ids)
+    .order('created_at', { ascending: false })
+
+  if (error || !leads) {
+    throw new Error('Failed to fetch leads')
+  }
+
+  return renderAgreementSummaryHtml(leads as any[])
+}
+
+async function resolveQueuedExport(jobId: string, userId: string): Promise<{ status: ExportJobState; error?: string }> {
+  const supabase = await createClient()
+  const { data: jobData, error: jobError } = await supabase
+    .from('agreement_export_jobs')
+    .select('id, user_id, ids, status')
+    .eq('id', jobId)
+    .eq('user_id', userId)
+    .single()
+
+  if (!jobError && jobData) {
+    const currentStatus = String(jobData.status || 'queued') as ExportJobState
+    if (currentStatus === 'completed') return { status: 'completed' }
+    if (currentStatus === 'failed') return { status: 'failed', error: 'Export failed. Please retry.' }
+
+    await supabase
+      .from('agreement_export_jobs')
+      .update({ status: 'processing', updated_at: new Date().toISOString() } as any)
+      .eq('id', jobId)
+      .eq('user_id', userId)
+
+    try {
+      const ids = Array.isArray(jobData.ids) ? jobData.ids.filter((id) => typeof id === 'string') : []
+      const html = await renderAgreementHtml(ids as string[])
+      await setEnterpriseStateValue(`agreement_export_result:${jobId}`, html)
+      await supabase
+        .from('agreement_export_jobs')
+        .update({ status: 'completed', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() } as any)
+        .eq('id', jobId)
+        .eq('user_id', userId)
+      return { status: 'completed' }
+    } catch (error) {
+      await supabase
+        .from('agreement_export_jobs')
+        .update({ status: 'failed', error: error instanceof Error ? error.message : 'Unknown error', updated_at: new Date().toISOString() } as any)
+        .eq('id', jobId)
+        .eq('user_id', userId)
+      return { status: 'failed', error: error instanceof Error ? error.message : 'Failed to build export' }
+    }
+  }
+
+  const legacy = await getLegacyJob(jobId, userId)
+  if (!legacy) return { status: 'failed', error: 'Job not found.' }
+  if (legacy.status === 'completed') return { status: 'completed' }
+  if (legacy.status === 'failed') return { status: 'failed', error: legacy.error || 'Export failed.' }
+
+  await updateLegacyJob(jobId, userId, { status: 'processing' })
+  try {
+    const html = await renderAgreementHtml(legacy.ids)
+    await setLegacyResult(jobId, html)
+    await updateLegacyJob(jobId, userId, {
+      status: 'completed',
+      completedAt: new Date().toISOString(),
+      error: null,
+    })
+    return { status: 'completed' }
+  } catch (error) {
+    await updateLegacyJob(jobId, userId, {
+      status: 'failed',
+      error: error instanceof Error ? error.message : 'Failed to build export',
+    })
+    return { status: 'failed', error: error instanceof Error ? error.message : 'Failed to build export' }
+  }
+}
+
+export async function POST(request: NextRequest) {
   const ip = getClientIp(request)
   const rate = enforceRateLimit({
     key: `download-agreements:${ip}`,
@@ -36,120 +167,95 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = await createClient()
-
-  // Auth check
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     await recordSecurityEvent({ type: 'failed_auth', route: '/api/download-agreements', ip, detail: 'Unauthorized request' })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const idsParam = request.nextUrl.searchParams.get('ids')
-  if (!idsParam) {
-    return NextResponse.json({ error: 'No IDs provided' }, { status: 400 })
-  }
-
-  const ids = idsParam
-    .split(',')
-    .map((id) => id.trim())
-    .filter((id) => UUID_RE.test(id))
-    .slice(0, MAX_IDS)
-  if (ids.length === 0) {
-    await recordSecurityEvent({ type: 'invalid_uuid', route: '/api/download-agreements', ip, detail: `ids=${idsParam}` })
+  const payload = await request.json().catch(() => ({}))
+  const ids = parseIds(Array.isArray(payload?.ids) ? payload.ids.join(',') : null)
+  if (!ids.length) {
+    await recordSecurityEvent({ type: 'invalid_uuid', route: '/api/download-agreements', ip, detail: 'Invalid ids payload' })
     return NextResponse.json({ error: 'No valid IDs provided' }, { status: 400 })
   }
 
-  const { data: leads, error } = await supabase
-    .from('leads')
-    .select('*, lead_events(*)')
-    .in('id', ids)
-    .order('created_at', { ascending: false })
+  const jobId = buildJobId()
+  const nowIso = new Date().toISOString()
+  const insertResult = await supabase.from('agreement_export_jobs').insert({
+    id: jobId,
+    user_id: user.id,
+    ids,
+    status: 'queued',
+    created_at: nowIso,
+    updated_at: nowIso,
+  } as any)
 
-  if (error || !leads) {
-    return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 })
+  if (insertResult.error) {
+    await createLegacyJob({
+      id: jobId,
+      userId: user.id,
+      ids,
+      status: 'queued',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      completedAt: null,
+      error: null,
+    })
   }
 
-  // Generate HTML document (renders as PDF when saved/printed)
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Online2Day — Lead Agreements</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Georgia, serif; color: #111; background: #fff; padding: 40px; }
-    .header { border-bottom: 3px solid #7c3aed; padding-bottom: 20px; margin-bottom: 30px; }
-    .header h1 { font-size: 28px; color: #7c3aed; }
-    .header p { color: #666; font-size: 14px; margin-top: 4px; }
-    .lead { page-break-after: always; padding: 30px 0; border-bottom: 1px solid #e5e7eb; }
-    .lead:last-child { page-break-after: auto; border-bottom: none; }
-    .lead-name { font-size: 22px; font-weight: bold; color: #1a1a2e; }
-    .lead-company { font-size: 14px; color: #7c3aed; margin-top: 2px; }
-    .badge { display: inline-block; padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: bold; background: #f3f4f6; color: #374151; margin-top: 8px; }
-    .section { margin-top: 20px; }
-    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #9ca3af; font-weight: bold; margin-bottom: 8px; }
-    .field { display: flex; gap: 8px; font-size: 14px; margin-bottom: 6px; }
-    .field-label { color: #6b7280; min-width: 100px; }
-    .field-value { color: #111; font-weight: 500; }
-    .notes { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; font-size: 14px; color: #374151; margin-top: 8px; line-height: 1.6; }
-    .events { margin-top: 8px; }
-    .event { border-left: 3px solid #7c3aed; padding-left: 12px; margin-bottom: 10px; }
-    .event-type { font-weight: bold; font-size: 13px; color: #1a1a2e; }
-    .event-date { font-size: 11px; color: #9ca3af; }
-    .event-note { font-size: 13px; color: #4b5563; margin-top: 2px; }
-    .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 20px; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>Online2Day</h1>
-    <p>Lead Agreement Summary — Generated ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-  </div>
+  return NextResponse.json(
+    { success: true, jobId, status: 'queued' },
+    {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'X-RateLimit-Remaining': String(rate.remaining),
+      },
+    },
+  )
+}
 
-  ${leads.map((lead) => {
-    const events = (lead as any).lead_events || []
-    return `
-    <div class="lead">
-      <div class="lead-name">${escapeHtml(lead.name)}</div>
-      ${lead.company ? `<div class="lead-company">${escapeHtml(lead.company)}</div>` : ''}
-      <span class="badge">${escapeHtml(lead.status || 'New')}</span>
+export async function GET(request: NextRequest) {
+  const ip = getClientIp(request)
+  const rate = enforceRateLimit({
+    key: `download-agreements:${ip}`,
+    limit: 30,
+    windowMs: 60_000,
+  })
+  if (!rate.ok) {
+    await recordSecurityEvent({ type: 'rate_limit', route: '/api/download-agreements', ip, detail: 'Rate limit exceeded' })
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
 
-      <div class="section">
-        <div class="section-title">Contact Details</div>
-        ${lead.email ? `<div class="field"><span class="field-label">Email</span><span class="field-value">${escapeHtml(lead.email)}</span></div>` : ''}
-        ${lead.phone ? `<div class="field"><span class="field-label">Phone</span><span class="field-value">${escapeHtml(lead.phone)}</span></div>` : ''}
-        ${lead.website ? `<div class="field"><span class="field-label">Website</span><span class="field-value">${escapeHtml(lead.website)}</span></div>` : ''}
-        ${lead.source ? `<div class="field"><span class="field-label">Source</span><span class="field-value">${escapeHtml(lead.source)}</span></div>` : ''}
-        <div class="field"><span class="field-label">Added</span><span class="field-value">${new Date(lead.created_at).toLocaleDateString('en-GB')}</span></div>
-        ${lead.follow_up_date ? `<div class="field"><span class="field-label">Follow-up</span><span class="field-value">${new Date(lead.follow_up_date).toLocaleDateString('en-GB')}</span></div>` : ''}
-      </div>
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    await recordSecurityEvent({ type: 'failed_auth', route: '/api/download-agreements', ip, detail: 'Unauthorized request' })
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
-      ${lead.notes ? `
-      <div class="section">
-        <div class="section-title">Notes</div>
-        <div class="notes">${escapeHtml(lead.notes)}</div>
-      </div>` : ''}
+  const jobId = request.nextUrl.searchParams.get('jobId')
+  if (!jobId) {
+    return NextResponse.json({ error: 'jobId is required.' }, { status: 400 })
+  }
 
-      ${events.length > 0 ? `
-      <div class="section">
-        <div class="section-title">Activity Timeline (${events.length} events)</div>
-        <div class="events">
-          ${events.map((e: any) => `
-          <div class="event">
-            <div class="event-type">${escapeHtml(e.type)}</div>
-            <div class="event-date">${new Date(e.created_at).toLocaleString('en-GB')}</div>
-            ${e.note ? `<div class="event-note">${escapeHtml(e.note)}</div>` : ''}
-          </div>`).join('')}
-        </div>
-      </div>` : ''}
-    </div>`
-  }).join('')}
+  const resolution = await resolveQueuedExport(jobId, user.id)
+  if (resolution.status === 'failed') {
+    return NextResponse.json({ error: resolution.error || 'Export failed', status: 'failed' }, { status: 500 })
+  }
+  if (resolution.status !== 'completed') {
+    return NextResponse.json({ status: resolution.status }, { status: 202 })
+  }
 
-  <div class="footer">
-    Online2Day CRM · Confidential · ${new Date().getFullYear()}
-  </div>
-</body>
-</html>`
+  const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
+  const html = await getLegacyResult(jobId)
+  if (!html) {
+    return NextResponse.json({ error: 'Export output is not available yet.', status: 'processing' }, { status: 202 })
+  }
+
+  if (!shouldDownload) {
+    return NextResponse.json({ status: 'completed', downloadUrl: `/api/download-agreements?jobId=${encodeURIComponent(jobId)}&download=1` })
+  }
 
   return new NextResponse(html, {
     status: 200,

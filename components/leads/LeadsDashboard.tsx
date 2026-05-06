@@ -12,6 +12,7 @@ import { createLeadFromObject, logActivityEvent } from '@/lib/actions/lead-actio
 import { createTask, completeTask } from '@/lib/actions/task-actions'
 import { logAuditEntry } from '@/lib/actions/audit-actions'
 import { importContactsFromRows } from '@/lib/actions/import-actions'
+import { openExternalSafely } from '@/lib/security/external-links'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -296,7 +297,7 @@ export default function LeadsDashboard({
       const li = contact?.linkedin
       if (!li) { setContactInputType('linkedin'); setActiveModal('contactInput'); return }
       gdprLog('contact_attempt', 'lead_linkedin', selectedLead.id)
-      window.open(li.startsWith('http') ? li : `https://linkedin.com/in/${li}`, '_blank', 'noopener,noreferrer')
+      openExternalSafely(li.startsWith('http') ? li : `https://linkedin.com/in/${li}`)
     }
   }
 
@@ -480,7 +481,7 @@ export default function LeadsDashboard({
           onLinkedin={() => handleContactAction('linkedin')}
           onWebsite={() => {
             if (!selectedLead.website) return showNotice('Website unavailable', 'No website URL is stored for this lead yet.')
-            window.open(selectedLead.website, '_blank', 'noopener,noreferrer')
+            openExternalSafely(selectedLead.website)
           }}
           onCreateVideo={() => router.push(`/dashboard/videos/editor?lead=${selectedLead.id}`)}
           onBookCall={() => router.push('/contact')}

@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getEnterpriseStateValue, setEnterpriseStateValue } from '@/lib/actions/enterprise-actions'
 
 type SecurityEventInput = {
-  type: 'invalid_uuid' | 'failed_auth' | 'rate_limit'
+  type: 'invalid_uuid' | 'failed_auth' | 'rate_limit' | 'csp_violation'
   route: string
   ip: string
   detail?: string
@@ -82,4 +82,41 @@ export async function recordSecurityEvent(input: SecurityEventInput) {
       created_at: nowIso,
     } as any)
   }
+}
+
+export async function getSecurityEvents(limit = 60) {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('security_events')
+    .select('event_type, route, ip, detail, created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (!error && data) {
+    return data.map((row: any) => ({
+      type: String(row.event_type || 'unknown'),
+      route: String(row.route || 'unknown'),
+      ip: String(row.ip || 'unknown'),
+      detail: row.detail ? String(row.detail) : '',
+      createdAt: String(row.created_at || new Date().toISOString()),
+    }))
+  }
+
+  const fallback = await getEnterpriseStateValue('security_events_fallback')
+  if (!Array.isArray(fallback)) return []
+  return fallback.slice(0, limit).map((row: any) => ({
+    type: String(row?.eventType || 'unknown'),
+    route: String(row?.route || 'unknown'),
+    ip: String(row?.ip || 'unknown'),
+    detail: row?.detail ? String(row.detail) : '',
+    createdAt: String(row?.createdAt || new Date().toISOString()),
+  }))
+}
+
+export async function clearSecurityEvents() {
+  const supabase = await createClient()
+  await supabase.from('security_events').delete().neq('created_at', '')
+  await setEnterpriseStateValue('security_events_fallback', [])
+  await setEnterpriseStateValue('security_event_counters', [])
+  return { success: true }
 }

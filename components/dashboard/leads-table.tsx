@@ -45,6 +45,7 @@ export default function LeadsTable({ leads }: { leads: Lead[] }) {
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const [downloadStatus, setDownloadStatus] = useState('')
 
   const toggleColumn = (key: string) => {
     setVisibleColumns((prev) =>
@@ -86,9 +87,45 @@ export default function LeadsTable({ leads }: { leads: Lead[] }) {
   const handleDownloadAgreements = async () => {
     if (selectedIds.size === 0) return
     setDownloadingPdf(true)
-    const ids = Array.from(selectedIds).join(',')
-    window.open(`/api/download-agreements?ids=${encodeURIComponent(ids)}`, '_blank', 'noopener,noreferrer')
-    setDownloadingPdf(false)
+    setDownloadStatus('Preparing export queue...')
+    try {
+      const ids = Array.from(selectedIds)
+      const queueRes = await fetch('/api/download-agreements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      const queueJson = await queueRes.json()
+      if (!queueRes.ok || !queueJson?.jobId) {
+        setDownloadStatus(queueJson?.error || 'Unable to queue export job.')
+        setDownloadingPdf(false)
+        return
+      }
+
+      const jobId = String(queueJson.jobId)
+      setDownloadStatus('Export queued. Generating document...')
+      for (let attempt = 0; attempt < 25; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 800))
+        const statusRes = await fetch(`/api/download-agreements?jobId=${encodeURIComponent(jobId)}`)
+        const statusJson = await statusRes.json()
+        if (statusJson?.status === 'completed' && statusJson?.downloadUrl) {
+          window.open(statusJson.downloadUrl, '_blank', 'noopener,noreferrer')
+          setDownloadStatus('Export downloaded successfully.')
+          setDownloadingPdf(false)
+          return
+        }
+        if (statusJson?.error || statusJson?.status === 'failed') {
+          setDownloadStatus(statusJson?.error || 'Export failed.')
+          setDownloadingPdf(false)
+          return
+        }
+      }
+      setDownloadStatus('Export is taking longer than expected. Please retry in a moment.')
+    } catch {
+      setDownloadStatus('Export request failed. Please retry.')
+    } finally {
+      setDownloadingPdf(false)
+    }
   }
 
   return (
@@ -170,6 +207,7 @@ export default function LeadsTable({ leads }: { leads: Lead[] }) {
           {selectedIds.size > 0 && ` · ${selectedIds.size} selected`}
         </span>
       </div>
+      {downloadStatus ? <p className="text-xs text-muted-foreground mb-3">{downloadStatus}</p> : null}
 
       {/* Table */}
       <div className="bg-card rounded-xl shadow-sm border border-border overflow-x-auto">

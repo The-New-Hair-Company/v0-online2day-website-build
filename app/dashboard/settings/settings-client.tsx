@@ -7,6 +7,8 @@ import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import styles from '@/components/leads/LeadsDashboard.module.css'
 import { getAuditLog, logAuditEntry } from '@/lib/actions/audit-actions'
 import { addLicensedUser, getAdminPrefs, getLicenseManagementState, removeLicensedUser, setAdminPrefs, updateLicensedUserRole } from '@/lib/actions/settings-actions'
+import { clearAsyncFailureQueue, getAsyncFailureQueue } from '@/lib/actions/reliability-actions'
+import { clearSecurityEvents, getSecurityEvents } from '@/lib/security/security-events'
 
 const THEME_SUPABASE_KEYS = ['theme', 'textSize', 'textScale', 'contrast', 'motion', 'font', 'lineHeight'] as const
 import type { LicenseManagementState, LicensedUserRole } from '@/lib/license'
@@ -110,6 +112,21 @@ export function SettingsClient() {
     actor_email: string | null
     created_at: string
   }>>([])
+  const [asyncFailures, setAsyncFailures] = useState<Array<{
+    action: string
+    userId: string | null
+    errorCode: string
+    errorMessage: string
+    recoverable: boolean
+    createdAt: string
+  }>>([])
+  const [securityEvents, setSecurityEvents] = useState<Array<{
+    type: string
+    route: string
+    ip: string
+    detail: string
+    createdAt: string
+  }>>([])
 
   useEffect(() => {
     // Apply localStorage instantly (no flicker on repeated visits)
@@ -183,6 +200,8 @@ export function SettingsClient() {
       }))
       setAuditItems(normalised)
     })
+    getAsyncFailureQueue(20).then(setAsyncFailures)
+    getSecurityEvents(20).then(setSecurityEvents)
   }, [])
 
   const setupCompletion = [
@@ -403,6 +422,88 @@ export function SettingsClient() {
                       <span>{item.resource.replace(/_/g, ' ')}</span>
                       <span>{item.actor_email || 'System'}</span>
                       <span>{new Date(item.created_at).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.licenseCard} style={{ alignItems: 'flex-start' }}>
+                <div className={styles.licenseInfo}>
+                  <strong>Async failure queue</strong>
+                  <span>Recoverable background failures from email, video, and integrations.</span>
+                </div>
+                <div className={styles.licenseActions} style={{ marginTop: 8 }}>
+                  <button className={styles.btnSecondary} onClick={async () => setAsyncFailures(await getAsyncFailureQueue(20))}>
+                    Refresh queue
+                  </button>
+                  <button className={styles.btnSecondary} onClick={async () => {
+                    await clearAsyncFailureQueue()
+                    setAsyncFailures([])
+                    setSetupNotice('Async failure queue cleared.')
+                  }}>
+                    Clear queue
+                  </button>
+                </div>
+                <div className={styles.licenseUserTable} style={{ width: '100%', marginTop: 10 }}>
+                  <div className={styles.licenseUserHeader} style={{ gridTemplateColumns: '1.2fr 0.8fr 1fr 1fr' }}>
+                    <span>Action</span>
+                    <span>Code</span>
+                    <span>Recoverable</span>
+                    <span>Time</span>
+                  </div>
+                  {asyncFailures.length === 0 ? (
+                    <div className={styles.licenseUserRow} style={{ gridTemplateColumns: '1fr' }}>
+                      <span style={{ color: '#9db0c8' }}>No queued failures.</span>
+                    </div>
+                  ) : asyncFailures.map((item, index) => (
+                    <div key={`${item.action}-${item.createdAt}-${index}`} className={styles.licenseUserRow} style={{ gridTemplateColumns: '1.2fr 0.8fr 1fr 1fr' }}>
+                      <div>
+                        <strong>{item.action.replace(/_/g, ' ')}</strong>
+                        <div style={{ color: '#9db0c8', fontSize: 12, marginTop: 2 }}>{item.errorMessage}</div>
+                      </div>
+                      <span>{item.errorCode}</span>
+                      <span>{item.recoverable ? 'Yes' : 'No'}</span>
+                      <span>{new Date(item.createdAt).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.licenseCard} style={{ alignItems: 'flex-start' }}>
+                <div className={styles.licenseInfo}>
+                  <strong>Security events</strong>
+                  <span>Invalid UUID, auth failures, rate-limit, and CSP violation telemetry.</span>
+                </div>
+                <div className={styles.licenseActions} style={{ marginTop: 8 }}>
+                  <button className={styles.btnSecondary} onClick={async () => setSecurityEvents(await getSecurityEvents(20))}>
+                    Refresh events
+                  </button>
+                  <button className={styles.btnSecondary} onClick={async () => {
+                    await clearSecurityEvents()
+                    setSecurityEvents([])
+                    setSetupNotice('Security events cleared.')
+                  }}>
+                    Clear events
+                  </button>
+                </div>
+                <div className={styles.licenseUserTable} style={{ width: '100%', marginTop: 10 }}>
+                  <div className={styles.licenseUserHeader} style={{ gridTemplateColumns: '1fr 1fr 1fr 1.1fr' }}>
+                    <span>Type</span>
+                    <span>Route</span>
+                    <span>IP</span>
+                    <span>Time</span>
+                  </div>
+                  {securityEvents.length === 0 ? (
+                    <div className={styles.licenseUserRow} style={{ gridTemplateColumns: '1fr' }}>
+                      <span style={{ color: '#9db0c8' }}>No security events.</span>
+                    </div>
+                  ) : securityEvents.map((item, index) => (
+                    <div key={`${item.type}-${item.createdAt}-${index}`} className={styles.licenseUserRow} style={{ gridTemplateColumns: '1fr 1fr 1fr 1.1fr' }}>
+                      <div>
+                        <strong>{item.type.replace(/_/g, ' ')}</strong>
+                        {item.detail ? <div style={{ color: '#9db0c8', fontSize: 12, marginTop: 2 }}>{item.detail}</div> : null}
+                      </div>
+                      <span>{item.route}</span>
+                      <span>{item.ip}</span>
+                      <span>{new Date(item.createdAt).toLocaleString()}</span>
                     </div>
                   ))}
                 </div>

@@ -20,6 +20,7 @@ const nextConfig = {
       "script-src 'self' https://va.vercel-scripts.com",
       "connect-src 'self' https://*.supabase.co https://api.resend.com https://api.hubapi.com https://vitals.vercel-insights.com",
       "form-action 'self'",
+      'report-uri /api/security/csp-report',
       'upgrade-insecure-requests',
     ].join('; ')
 
@@ -32,6 +33,7 @@ const nextConfig = {
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Reporting-Endpoints', value: 'csp-endpoint="/api/security/csp-report"' },
           { key: 'Content-Security-Policy-Report-Only', value: cspReportOnly },
         ],
       },

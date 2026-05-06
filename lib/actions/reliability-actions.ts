@@ -88,3 +88,43 @@ export async function withRetry<T>(
   })
   throw (lastError instanceof Error ? lastError : new Error(String(lastError || `Action ${action} failed`)))
 }
+
+export async function getAsyncFailureQueue(limit = 40) {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('async_action_failures')
+    .select('action, user_id, payload_hash, error_code, error_message, recoverable, created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (!error && data) {
+    return data.map((row: any) => ({
+      action: String(row.action || 'unknown_action'),
+      userId: row.user_id ? String(row.user_id) : null,
+      payloadHash: String(row.payload_hash || ''),
+      errorCode: String(row.error_code || 'ACTION_ERROR'),
+      errorMessage: String(row.error_message || 'Unknown failure'),
+      recoverable: Boolean(row.recoverable),
+      createdAt: String(row.created_at || new Date().toISOString()),
+    }))
+  }
+
+  const legacy = await getEnterpriseStateValue('failed_jobs_queue')
+  if (!Array.isArray(legacy)) return []
+  return legacy.slice(0, limit).map((row: any) => ({
+    action: String(row?.action || 'unknown_action'),
+    userId: row?.userId ? String(row.userId) : null,
+    payloadHash: String(row?.payloadHash || ''),
+    errorCode: String(row?.errorCode || 'ACTION_ERROR'),
+    errorMessage: String(row?.errorMessage || 'Unknown failure'),
+    recoverable: Boolean(row?.recoverable),
+    createdAt: String(row?.createdAt || new Date().toISOString()),
+  }))
+}
+
+export async function clearAsyncFailureQueue() {
+  const supabase = await createClient()
+  await supabase.from('async_action_failures').delete().neq('created_at', '')
+  await setEnterpriseStateValue('failed_jobs_queue', [])
+  return { success: true }
+}

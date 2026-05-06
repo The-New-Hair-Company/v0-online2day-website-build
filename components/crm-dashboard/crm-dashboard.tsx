@@ -47,6 +47,7 @@ import {
 import styles from './dashboard.module.css'
 import { sendEnterpriseEmail } from '@/lib/actions/email-actions'
 import { sendConversationReply } from '@/lib/actions/message-actions'
+import { openExternalSafely } from '@/lib/security/external-links'
 import type {
   CrmSetupConfig,
   ConversationRecord,
@@ -890,7 +891,7 @@ function VideosSection({ initialVideos = [], metrics = [], setupConfig }: { init
               const next = window.prompt('Update CTA destination URL', ctaUrl)
               if (next && next.trim()) setCtaUrl(next.trim())
             }}>{ctaUrl} <ChevronDown size={14} /></button>
-            <button className={styles.button} onClick={() => window.open(ctaUrl, '_blank', 'noopener,noreferrer')}><ExternalLink size={15} /> Preview CTA</button>
+            <button className={styles.button} onClick={() => openExternalSafely(ctaUrl)}><ExternalLink size={15} /> Preview CTA</button>
           </div>
         </div>
       </div>
