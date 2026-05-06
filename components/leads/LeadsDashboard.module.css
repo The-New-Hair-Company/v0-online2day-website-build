@@ -477,6 +477,25 @@
   background: rgba(47, 107, 255, 0.1);
 }
 
+.utilityButton:focus-visible,
+.filterButton:focus-visible,
+.rowsButton:focus-visible,
+.primaryButton:focus-visible,
+.commandActions button:focus-visible,
+.contactActions button:focus-visible,
+.iconButton:focus-visible,
+.createMenu button:focus-visible,
+.stageMenu button:focus-visible,
+.pagination button:focus-visible,
+.railPanel header button:focus-visible,
+.btnPrimary:focus-visible,
+.btnSecondary:focus-visible,
+.modalClose:focus-visible,
+.leadsTable tbody tr:focus-visible {
+  outline: 2px solid #5a97ff;
+  outline-offset: 2px;
+}
+
 .primaryButton {
   border-radius: 10px;
   min-height: 40px;
@@ -989,6 +1008,10 @@
   background: rgba(47, 107, 255, 0.055);
 }
 
+.leadsTable tbody tr:focus-visible {
+  background: rgba(47, 107, 255, 0.1);
+}
+
 .selectedRow {
   background: linear-gradient(90deg, rgba(47, 107, 255, 0.18), rgba(47, 107, 255, 0.045));
   box-shadow: inset 2px 0 0 #2f6bff;
@@ -1171,6 +1194,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.pagination button:disabled,
+.btnPrimary:disabled,
+.btnSecondary:disabled,
+.commandActions button:disabled,
+.contactActions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .pageActive {
@@ -2408,6 +2440,48 @@
 
 .detailBreadcrumb span {
   color: #4d5a6e;
+}
+
+.detailQuickNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.detailQuickNav a {
+  border: 1px solid var(--line);
+  color: #cdd8ea;
+  background: rgba(10, 15, 24, 0.86);
+  border-radius: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.detailQuickNav a:hover {
+  border-color: rgba(98, 160, 255, 0.42);
+  background: rgba(47, 107, 255, 0.1);
+}
+
+.detailQuickNav a:focus-visible {
+  outline: 2px solid #5a97ff;
+  outline-offset: 2px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .detailGrid {

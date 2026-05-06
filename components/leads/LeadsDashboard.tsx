@@ -117,6 +117,7 @@ export default function LeadsDashboard({
   const [activeTab, setActiveTab] = useState('All leads')
   const [selectedId, setSelectedId] = useState(initialLeads[0]?.id || '')
   const [selectedStage, setSelectedStage] = useState<'All stages' | LeadStage>('All stages')
+  const [sortBy, setSortBy] = useState<'lastActivity' | 'score' | 'value'>('lastActivity')
   const [filterStatus, setFilterStatus] = useState<string[]>([])
   const [filterOwner, setFilterOwner] = useState<string[]>([])
   const [filterSource, setFilterSource] = useState<string[]>([])
@@ -144,6 +145,7 @@ export default function LeadsDashboard({
   // Settings from localStorage
   const [theme, setThemeState] = useState('dark')
   const [textSize, setTextSizeState] = useState('md')
+  const globalSearchRef = useRef<HTMLInputElement>(null)
 
   // Column visibility
   const [hiddenCols, setHiddenCols] = useState<Set<ColumnId>>(new Set())
@@ -162,6 +164,17 @@ export default function LeadsDashboard({
       const saved = JSON.parse(localStorage.getItem(COLS_KEY) || '[]') as ColumnId[]
       if (saved.length) setHiddenCols(new Set(saved))
     } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => {
+    function onHotkey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        globalSearchRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onHotkey)
+    return () => window.removeEventListener('keydown', onHotkey)
   }, [])
 
   function toggleColumn(id: ColumnId) {
@@ -202,7 +215,7 @@ export default function LeadsDashboard({
 
   const filteredLeads = useMemo(() => {
     const q = (globalQuery || query).trim().toLowerCase()
-    return initialLeads.filter((lead) => {
+    const filtered = initialLeads.filter((lead) => {
       const matchesQuery = q
         ? `${lead.contactName} ${lead.role} ${lead.company} ${lead.stage} ${lead.owner} ${lead.source}`.toLowerCase().includes(q)
         : true
@@ -219,7 +232,13 @@ export default function LeadsDashboard({
       const matchesScore = lead.score >= filterScoreMin && lead.score <= filterScoreMax
       return matchesQuery && matchesStage && matchesTab && matchesStatus && matchesOwner && matchesSource && matchesScore
     })
-  }, [query, globalQuery, selectedStage, activeTab, filterStatus, filterOwner, filterSource, filterScoreMin, filterScoreMax, initialLeads])
+    const toValue = (value: string) => Number(value.replace(/[^\d.-]/g, '')) || 0
+    return [...filtered].sort((a, b) => {
+      if (sortBy === 'score') return b.score - a.score
+      if (sortBy === 'value') return toValue(b.value) - toValue(a.value)
+      return toValue(b.lastActivity) - toValue(a.lastActivity)
+    })
+  }, [query, globalQuery, selectedStage, activeTab, filterStatus, filterOwner, filterSource, filterScoreMin, filterScoreMax, sortBy, initialLeads])
 
   const activeFilterCount = filterStatus.length + filterOwner.length + filterSource.length +
     (filterScoreMin > 0 || filterScoreMax < 100 ? 1 : 0)
@@ -297,6 +316,7 @@ export default function LeadsDashboard({
             <label className={styles.globalSearch}>
               <Icon name="search" />
               <input
+                ref={globalSearchRef}
                 value={globalQuery}
                 onChange={e => setGlobalQuery(e.target.value)}
                 placeholder="Search leads, contacts, companies..."
@@ -304,20 +324,21 @@ export default function LeadsDashboard({
               />
               <span>⌘ K</span>
             </label>
-            <button className={styles.utilityButton}>
+            <button type="button" className={styles.utilityButton}>
               <Icon name="calendar" /> May 2025
             </button>
             <button
+              type="button"
               className={cx(styles.utilityButton, activeFilterCount > 0 && styles.filterActive)}
               onClick={() => setActiveModal('filterPanel')}
             >
               <Icon name="filter" /> Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}
             </button>
-            <button className={styles.utilityButton} onClick={() => setActiveModal('export')}>
+            <button type="button" className={styles.utilityButton} onClick={() => setActiveModal('export')}>
               <Icon name="export" /> Export
             </button>
             <div className={styles.createWrap}>
-              <button className={styles.primaryButton} onClick={() => setIsCreateOpen((open) => !open)}>
+              <button type="button" className={styles.primaryButton} onClick={() => setIsCreateOpen((open) => !open)}>
                 <Icon name="plus" /> Create / Add <Icon name="chevron" />
               </button>
               {isCreateOpen ? (
@@ -327,6 +348,7 @@ export default function LeadsDashboard({
                   onUploadContacts={() => { setActiveModal('uploadContacts'); setIsCreateOpen(false) }}
                   onLogActivity={() => { setActiveModal('logActivity'); setIsCreateOpen(false) }}
                   onShowTimer={() => { setShowTimerWidget(true); setActiveModal(null); setIsCreateOpen(false) }}
+                  onCreateVideo={() => { router.push('/dashboard/videos/editor'); setIsCreateOpen(false) }}
                 />
               ) : null}
             </div>
@@ -357,6 +379,7 @@ export default function LeadsDashboard({
                 <div className={styles.tabs}>
                   {tabs.map((tab) => (
                     <button
+                      type="button"
                       key={tab.label}
                       className={cx(styles.tab, activeTab === tab.label && styles.tabActive)}
                       onClick={() => setActiveTab(tab.label)}
@@ -377,6 +400,7 @@ export default function LeadsDashboard({
                   <FilterDropdown label="Source" options={SOURCES} selected={filterSource} onToggle={v => setFilterSource(p => p.includes(v) ? p.filter(x => x !== v) : [...p, v])} />
                   <div className={styles.dropdownWrap}>
                     <button
+                      type="button"
                       className={cx(styles.filterButton, isStageOpen && styles.filterActive)}
                       onClick={(e) => { e.stopPropagation(); setIsStageOpen(open => !open) }}
                     >
@@ -407,7 +431,11 @@ export default function LeadsDashboard({
                         />
                       )}
                     </div>
-                    <button className={styles.filterButton}>Sort: Last activity <Icon name="chevron" /></button>
+                    <button type="button" className={styles.filterButton} onClick={() => {
+                      setSortBy(current => current === 'lastActivity' ? 'score' : current === 'score' ? 'value' : 'lastActivity')
+                    }}>
+                      Sort: {sortBy === 'lastActivity' ? 'Last activity' : sortBy === 'score' ? 'Lead score' : 'Deal value'} <Icon name="chevron" />
+                    </button>
                   </div>
                 </div>
 
@@ -472,6 +500,7 @@ export default function LeadsDashboard({
           />
         )}
         <button
+          type="button"
           className={cx(styles.timerFab, timer.isRunning && styles.timerFabActive)}
           onClick={() => setShowTimerWidget(v => !v)}
           title="Time tracker"
@@ -561,9 +590,9 @@ export default function LeadsDashboard({
 
 // ─── CREATE MENU ─────────────────────────────────────────────────────────────
 
-function CreateMenu({ onAddLead, onCreateTask, onUploadContacts, onLogActivity, onShowTimer }: {
+function CreateMenu({ onAddLead, onCreateTask, onUploadContacts, onLogActivity, onShowTimer, onCreateVideo }: {
   onAddLead: () => void; onCreateTask: () => void; onUploadContacts: () => void
-  onLogActivity: () => void; onShowTimer: () => void
+  onLogActivity: () => void; onShowTimer: () => void; onCreateVideo: () => void
 }) {
   const items = [
     { label: 'Add lead', icon: 'users' as IconName, action: onAddLead },
@@ -571,13 +600,13 @@ function CreateMenu({ onAddLead, onCreateTask, onUploadContacts, onLogActivity, 
     { label: 'Create task', icon: 'task' as IconName, action: onCreateTask },
     { label: 'Log activity', icon: 'clock' as IconName, action: onLogActivity },
     { label: 'Start timer', icon: 'timer' as IconName, action: onShowTimer },
-    { label: 'Create video', icon: 'video' as IconName, action: () => {} },
+    { label: 'Create video', icon: 'video' as IconName, action: onCreateVideo },
   ]
 
   return (
     <div className={styles.createMenu} role="menu">
       {items.map((item) => (
-        <button key={item.label} role="menuitem" onClick={item.action}>
+        <button type="button" key={item.label} role="menuitem" onClick={item.action}>
           <Icon name={item.icon} />
           {item.label}
         </button>
@@ -605,6 +634,7 @@ function FilterDropdown({ label, options, selected, onToggle }: {
   return (
     <div className={styles.dropdownWrap} ref={ref}>
       <button
+        type="button"
         className={cx(styles.filterButton, (open || selected.length > 0) && styles.filterActive)}
         onClick={() => setOpen(v => !v)}
       >
@@ -855,11 +885,11 @@ function Funnel({ pipelineStages }: { pipelineStages: PipelineStage[] }) {
 function StageDropdown({ selectedStage, onSelect }: { selectedStage: 'All stages' | LeadStage; onSelect: (s: 'All stages' | LeadStage) => void }) {
   return (
     <div className={styles.stageMenu} role="listbox">
-      <button className={selectedStage === 'All stages' ? styles.optionActive : ''} onClick={() => onSelect('All stages')}>
+      <button type="button" className={selectedStage === 'All stages' ? styles.optionActive : ''} onClick={() => onSelect('All stages')}>
         <span>All stages</span><Icon name="check" />
       </button>
       {stageOptions.map(s => (
-        <button key={s} className={selectedStage === s ? styles.optionActive : ''} onClick={() => onSelect(s)}>
+        <button type="button" key={s} className={selectedStage === s ? styles.optionActive : ''} onClick={() => onSelect(s)}>
           <span>{s}</span>{selectedStage === s ? <Icon name="check" /> : null}
         </button>
       ))}
@@ -889,7 +919,7 @@ function ColumnsDropdown({ hiddenCols, onToggle, onClose }: {
       {COLUMN_DEFS.map(col => {
         const visible = !hiddenCols.has(col.id)
         return (
-          <button key={col.id} onClick={() => onToggle(col.id)} className={visible ? styles.optionActive : ''}>
+          <button type="button" key={col.id} onClick={() => onToggle(col.id)} className={visible ? styles.optionActive : ''}>
             <span>{col.label}</span>
             {visible ? <Icon name="check" /> : null}
           </button>
@@ -905,6 +935,17 @@ function LeadTable({ leads, selectedId, onSelect, totalCount, onOpen, hiddenCols
   leads: Lead[]; selectedId: string; onSelect: (id: string) => void
   totalCount: number; onOpen: (id: string) => void; hiddenCols: Set<ColumnId>
 }) {
+  const [page, setPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const totalPages = Math.max(1, Math.ceil(leads.length / rowsPerPage))
+  const safePage = Math.min(page, totalPages)
+  const start = (safePage - 1) * rowsPerPage
+  const pageLeads = leads.slice(start, start + rowsPerPage)
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
   const show = (id: ColumnId) => !hiddenCols.has(id)
   return (
     <div className={styles.tableWrap}>
@@ -926,8 +967,20 @@ function LeadTable({ leads, selectedId, onSelect, totalCount, onOpen, hiddenCols
           </tr>
         </thead>
         <tbody>
-          {leads.map(lead => (
-            <tr key={lead.id} className={cx(selectedId === lead.id && styles.selectedRow)} onClick={() => onSelect(lead.id)}>
+          {pageLeads.map(lead => (
+            <tr
+              key={lead.id}
+              className={cx(selectedId === lead.id && styles.selectedRow)}
+              onClick={() => onSelect(lead.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelect(lead.id)
+                }
+              }}
+              tabIndex={0}
+              aria-selected={selectedId === lead.id}
+            >
               <td><input checked={selectedId === lead.id} readOnly type="checkbox" /></td>
               <td className={styles.leadCell}>
                 <Avatar initials={lead.contactName.split(' ').map(n => n[0]).join('')} />
@@ -950,14 +1003,14 @@ function LeadTable({ leads, selectedId, onSelect, totalCount, onOpen, hiddenCols
               {show('value') && <td><strong>{lead.value}</strong></td>}
               {show('nextAction') && (
                 <td>
-                  <button style={{ background: 'none', border: 'none', color: '#3f8cff', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                <button type="button" style={{ background: 'none', border: 'none', color: '#3f8cff', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}
                     onClick={e => { e.stopPropagation(); onOpen(lead.id) }}>
                     {lead.nextAction}
                   </button>
                 </td>
               )}
               <td>
-                <button style={{ background: 'none', border: 'none', cursor: 'pointer' }} onClick={e => { e.stopPropagation(); onOpen(lead.id) }}>
+                <button type="button" aria-label={`Open ${lead.contactName} details`} style={{ background: 'none', border: 'none', cursor: 'pointer' }} onClick={e => { e.stopPropagation(); onOpen(lead.id) }}>
                   <Icon name="external" className={styles.rowMenu} />
                 </button>
               </td>
@@ -966,12 +1019,26 @@ function LeadTable({ leads, selectedId, onSelect, totalCount, onOpen, hiddenCols
         </tbody>
       </table>
       <div className={styles.tableFooter}>
-        <span>Showing 1–{Math.min(leads.length, 10)} of {totalCount} leads</span>
+        <span>Showing {leads.length === 0 ? 0 : start + 1}–{Math.min(start + rowsPerPage, leads.length)} of {totalCount} leads</span>
         <div className={styles.pagination}>
-          <button>‹</button><button className={styles.pageActive}>1</button><button>2</button>
-          <button>3</button><span>…</span><button>›</button>
+          <button type="button" aria-label="Previous page" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>‹</button>
+          <button className={styles.pageActive}>{safePage}</button>
+          <span>of {totalPages}</span>
+          <button type="button" aria-label="Next page" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>›</button>
         </div>
-        <button className={styles.rowsButton}>Rows per page <strong>10</strong><Icon name="chevron" /></button>
+        <label className={styles.rowsButton}>
+          Rows per page
+          <select
+            value={rowsPerPage}
+            onChange={e => { setRowsPerPage(Number(e.target.value)); setPage(1) }}
+            style={{ background: 'transparent', border: 'none', color: 'inherit', fontWeight: 700, marginLeft: 6 }}
+          >
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+          </select>
+          <Icon name="chevron" />
+        </label>
       </div>
     </div>
   )
@@ -1067,7 +1134,7 @@ function RightRail({ tasks, recommendations, recentActivity, section = 'leads', 
               <div key={item.title} className={styles.recommendationItem}>
                 <span className={cx(styles.recIcon, styles[`tone${item.tone}`])}><Icon name={item.icon} /></span>
                 <div><strong>{item.title}</strong><p>{item.detail}</p></div>
-                <button>{item.action}</button>
+          <button type="button">{item.action}</button>
               </div>
             ))}
           </div>
@@ -1106,7 +1173,7 @@ function Panel({
       <header>
         <h3>{title}</h3>
         {badge ? <span className={styles.panelBadge}>{badge}</span> : null}
-        {action ? <button onClick={onAction}>{action} <Icon name="chevron" /></button> : null}
+        {action ? <button type="button" onClick={onAction}>{action} <Icon name="chevron" /></button> : null}
       </header>
       {children}
     </section>
@@ -1127,11 +1194,11 @@ function LeadCommandBar({ lead, onOpen, onEmail, onPhone, onLinkedin, onWebsite,
         <div><h2>{lead.company}</h2><StageBadge stage={lead.stage} /></div>
         <p>{lead.contactName} · {lead.role}</p>
         <div className={styles.contactActions}>
-          <button title="Send email" onClick={onEmail}><Icon name="mail" /></button>
-          <button title="Call" onClick={onPhone}><Icon name="phone" /></button>
-          <button title="LinkedIn" onClick={onLinkedin}><Icon name="linkedin" /></button>
-          <button title="Website" onClick={onWebsite}><Icon name="globe" /></button>
-          <button><Icon name="ellipsis" /></button>
+          <button type="button" title="Send email" aria-label="Send email" onClick={onEmail}><Icon name="mail" /></button>
+          <button type="button" title="Call" aria-label="Call lead" onClick={onPhone}><Icon name="phone" /></button>
+          <button type="button" title="LinkedIn" aria-label="Open LinkedIn" onClick={onLinkedin}><Icon name="linkedin" /></button>
+          <button type="button" title="Website" aria-label="Open website" onClick={onWebsite}><Icon name="globe" /></button>
+          <button type="button" aria-label="More actions"><Icon name="ellipsis" /></button>
         </div>
       </div>
       <div className={styles.commandMeta}><span>Lead score</span><Score value={lead.score} /></div>
@@ -1147,7 +1214,7 @@ function LeadCommandBar({ lead, onOpen, onEmail, onPhone, onLinkedin, onWebsite,
         <button onClick={onEmail}><Icon name="mail" />Send email</button>
         <button onClick={onCreateVideo}><Icon name="video" />Create video</button>
         <button onClick={onBookCall}><Icon name="calendar" />Book call</button>
-        <button className={styles.iconButton}><Icon name="ellipsis" /></button>
+        <button type="button" className={styles.iconButton} aria-label="More lead actions"><Icon name="ellipsis" /></button>
       </div>
     </section>
   )

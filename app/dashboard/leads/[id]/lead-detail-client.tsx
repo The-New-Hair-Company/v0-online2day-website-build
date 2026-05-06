@@ -104,6 +104,15 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
   const emailHistory = leadEvents.filter(e => e.type === 'Email Sent')
   const scheduledActions = leadEvents.filter(e => e.type === 'Callback Scheduled' || e.type === 'Follow-up Scheduled')
   const timeline = leadEvents.filter(e => !['Note Added'].includes(e.type))
+  const liveStatus = emailSent
+    ? 'Email sent and logged.'
+    : uploadStatus === 'uploading'
+      ? 'Video upload in progress.'
+      : uploadStatus === 'done'
+        ? 'Video upload complete.'
+        : uploadStatus === 'error'
+          ? 'Video upload failed. Please try again.'
+          : ''
 
   // ── handlers ──────────────────────────────────────────────────────
 
@@ -202,10 +211,18 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
     <div className={styles.detailShell}>
       <DashboardSidebar active="leads" />
       <main className={styles.detailMain}>
+        <p className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">{liveStatus}</p>
         <nav className={styles.detailBreadcrumb} aria-label="Breadcrumb">
           <Link href="/dashboard/leads">Leads</Link>
           <span>/</span>
           <strong>{lead.company}</strong>
+        </nav>
+        <nav className={styles.detailQuickNav} aria-label="Jump to section">
+          <a href="#lead-overview">Overview</a>
+          <a href="#lead-email">Email</a>
+          <a href="#lead-video">Video</a>
+          <a href="#lead-notes">Notes</a>
+          <a href="#lead-timeline">Timeline</a>
         </nav>
 
         {/* DNC banner */}
@@ -218,17 +235,17 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
         )}
 
         {/* Hero */}
-        <section className={styles.detailCard}>
+        <section id="lead-overview" className={styles.detailCard}>
           <div className={styles.leadHeroCard}>
             <Avatar initials={initials} size="lg" />
             <div className={styles.leadHeroInfo}>
               <h1>{lead.contactName}</h1>
               <p>{lead.role} at {lead.company}</p>
               <div className={styles.leadHeroActions}>
-                <button className={styles.btnPrimary} onClick={() => setEditOpen(v => !v)}>
+                <button type="button" className={styles.btnPrimary} onClick={() => setEditOpen(v => !v)}>
                   <Edit2 size={14} />{editOpen ? 'Cancel editing' : 'Edit lead'}
                 </button>
-                <button className={styles.btnSecondary} onClick={() => setScheduleOpen(v => !v)}>
+                <button type="button" className={styles.btnSecondary} onClick={() => setScheduleOpen(v => !v)}>
                   <Calendar size={14} />Schedule action
                 </button>
                 {lead.phone && (
@@ -238,6 +255,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
                 )}
                 {!isDnc ? (
                   <button
+                    type="button"
                     className={styles.dncBtn}
                     onClick={() => setDncConfirm(true)}
                     title="Mark as Do Not Contact"
@@ -268,10 +286,10 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
               <p>This will be logged permanently on the lead's timeline. No emails or calls should be made after this.</p>
             </div>
             <div className={styles.dncConfirmActions}>
-              <button className={styles.dncConfirmYes} onClick={handleDnc} disabled={isPendingDnc}>
+              <button type="button" className={styles.dncConfirmYes} onClick={handleDnc} disabled={isPendingDnc}>
                 {isPendingDnc ? 'Saving…' : 'Confirm DNC'}
               </button>
-              <button className={styles.btnSecondary} onClick={() => setDncConfirm(false)}>Cancel</button>
+              <button type="button" className={styles.btnSecondary} onClick={() => setDncConfirm(false)}>Cancel</button>
             </div>
           </div>
         )}
@@ -281,7 +299,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
           <section className={styles.detailCard}>
             <header className={styles.detailCardHeader}><Edit2 size={16} /><h2>Edit lead details</h2></header>
             <div className={styles.detailCardBody}>
-              {editError && <p className={styles.fieldError}>{editError}</p>}
+              {editError && <p className={styles.fieldError} role="alert" aria-live="assertive">{editError}</p>}
               <div className={styles.editFormGrid}>
                 <div className={styles.editField}>
                   <label>Full name *</label>
@@ -321,10 +339,10 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
                 </div>
               </div>
               <div className={styles.editFormActions}>
-                <button className={styles.btnPrimary} onClick={handleSaveEdit} disabled={isPendingEdit}>
+                <button type="button" className={styles.btnPrimary} onClick={handleSaveEdit} disabled={isPendingEdit}>
                   {isPendingEdit ? 'Saving…' : 'Save changes'}
                 </button>
-                <button className={styles.btnSecondary} onClick={() => setEditOpen(false)}>Cancel</button>
+                <button type="button" className={styles.btnSecondary} onClick={() => setEditOpen(false)}>Cancel</button>
               </div>
             </div>
           </section>
@@ -335,7 +353,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
           <section className={styles.detailCard}>
             <header className={styles.detailCardHeader}><Calendar size={16} /><h2>Schedule an action</h2></header>
             <div className={styles.detailCardBody}>
-              {scheduleError && <p className={styles.fieldError}>{scheduleError}</p>}
+              {scheduleError && <p className={styles.fieldError} role="alert" aria-live="assertive">{scheduleError}</p>}
               <div className={styles.scheduleFormGrid}>
                 <div className={styles.editField}>
                   <label>Action type</label>
@@ -379,10 +397,10 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
               </div>
               <p className={styles.scheduleHint}>This action will also appear in the Enterprise Calendar.</p>
               <div className={styles.editFormActions}>
-                <button className={styles.btnPrimary} onClick={handleSchedule} disabled={isPendingSchedule}>
+                <button type="button" className={styles.btnPrimary} onClick={handleSchedule} disabled={isPendingSchedule}>
                   <Calendar size={14} />{isPendingSchedule ? 'Saving…' : 'Book action'}
                 </button>
-                <button className={styles.btnSecondary} onClick={() => setScheduleOpen(false)}>Cancel</button>
+                <button type="button" className={styles.btnSecondary} onClick={() => setScheduleOpen(false)}>Cancel</button>
               </div>
             </div>
           </section>
@@ -408,7 +426,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
           {/* LEFT COLUMN */}
           <div>
             {/* Email composer */}
-            <section className={styles.detailCard}>
+            <section id="lead-email" className={styles.detailCard}>
               <header className={styles.detailCardHeader}>
                 <Mail size={16} />
                 <h2>Email composer</h2>
@@ -420,7 +438,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
                   <div className={styles.emailBestPractice}>
                     <Icon name="paperclip" />Personalise the opening lines. All sends are GDPR-logged.
                   </div>
-                  {emailError ? <p className={styles.fieldError}>{emailError}</p> : null}
+                  {emailError ? <p className={styles.fieldError} role="alert" aria-live="assertive">{emailError}</p> : null}
                   <div className={styles.emailFieldRow}>
                     <span className={styles.emailFieldLabel}>To</span>
                     <input
@@ -447,6 +465,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
                   </div>
                   <textarea className={styles.formTextarea} value={body} onChange={e => setBody(e.target.value)} rows={8} disabled={isDnc} />
                   <button
+                    type="button"
                     className={styles.btnPrimary}
                     onClick={handleSendEmail}
                     disabled={isPendingEmail || isDnc}
@@ -480,12 +499,21 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
             )}
 
             {/* Video upload */}
-            <section className={styles.detailCard}>
+            <section id="lead-video" className={styles.detailCard}>
               <header className={styles.detailCardHeader}><Icon name="video" /><h2>Video upload</h2></header>
               <div className={styles.detailCardBody}>
                 <div
                   className={styles.videoUploadZone}
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Upload personalised video"
                   onClick={() => inputRef.current?.click()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      inputRef.current?.click()
+                    }
+                  }}
                   onDragOver={e => e.preventDefault()}
                   onDrop={e => {
                     e.preventDefault()
@@ -495,7 +523,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
                 >
                   <Icon name="upload" size={30} />
                   <h3>{videoFile ? videoFile.name : 'Drop a personalised video here'}</h3>
-                  <p>
+                  <p role="status" aria-live="polite" aria-atomic="true">
                     {uploadStatus === 'uploading' ? 'Uploading…'
                       : uploadStatus === 'done' ? 'Upload complete!'
                       : uploadStatus === 'error' ? 'Upload failed — try again'
@@ -508,7 +536,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
                   }} />
                 </div>
                 {videoFile && uploadStatus === 'idle' && (
-                  <button className={styles.btnPrimary} style={{ marginTop: 12 }} onClick={handleUploadVideo} disabled={isPendingUpload}>
+                  <button type="button" className={styles.btnPrimary} style={{ marginTop: 12 }} onClick={handleUploadVideo} disabled={isPendingUpload}>
                     <Icon name="upload" />Upload to lead
                   </button>
                 )}
@@ -519,7 +547,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
           {/* RIGHT COLUMN */}
           <aside>
             {/* Notes */}
-            <section className={styles.detailCard}>
+            <section id="lead-notes" className={styles.detailCard}>
               <header className={styles.detailCardHeader}><Icon name="paperclip" /><h2>Notes ({notes.length})</h2></header>
               <div className={styles.detailCardBody}>
                 <div className={styles.noteInputRow}>
@@ -530,8 +558,8 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
                     placeholder="Add a note visible to your team…"
                     rows={3}
                   />
-                  {noteError && <p className={styles.fieldError}>{noteError}</p>}
-                  <button className={styles.btnPrimary} onClick={handleAddNote} disabled={isPendingNote}>
+                  {noteError && <p className={styles.fieldError} role="alert" aria-live="assertive">{noteError}</p>}
+                  <button type="button" className={styles.btnPrimary} onClick={handleAddNote} disabled={isPendingNote}>
                     <Plus size={14} />{isPendingNote ? 'Saving…' : 'Add note'}
                   </button>
                 </div>
@@ -552,7 +580,7 @@ export function LeadDetailClient({ lead, leadEvents }: Props) {
             </section>
 
             {/* Activity timeline */}
-            <section className={styles.detailCard}>
+            <section id="lead-timeline" className={styles.detailCard}>
               <header className={styles.detailCardHeader}><Icon name="clock" /><h2>Activity timeline</h2></header>
               <div className={styles.detailCardBody}>
                 <div className={styles.activityTimeline}>
