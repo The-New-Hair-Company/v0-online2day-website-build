@@ -161,9 +161,11 @@ export function ProductPreview() {
 
 export function ProductHero() {
   return (
-    <section className="relative overflow-hidden px-4 pb-32 pt-32 md:pb-44">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklch,var(--primary),transparent_76%),transparent_34%)]" />
-      <ProductPreview />
+    <section className="relative px-4 pb-48 pt-28 md:pb-56">
+      {/* gradient clipped to section, preview allowed to overflow */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklch,var(--primary),transparent_76%),transparent_34%)]" />
+      </div>
       <div className="container relative mx-auto max-w-6xl text-center">
         <EyebrowBadge>Bespoke web development for serious operators</EyebrowBadge>
         <h1 className="mx-auto mt-6 max-w-5xl text-5xl font-black tracking-tight text-balance md:text-7xl">
@@ -174,6 +176,7 @@ export function ProductHero() {
         </p>
         <HeroActions />
       </div>
+      <ProductPreview />
     </section>
   )
 }

@@ -1820,6 +1820,17 @@ function LeadToolbar({
 }
 
 function LeadTable({ leads, selectedId, onSelect }: { leads: LeadRecord[]; selectedId: string; onSelect: (value: string) => void }) {
+  const router = useRouter()
+
+  function handleRowClick(e: MouseEvent<HTMLTableRowElement>, lead: LeadRecord) {
+    // checkbox click → select only, name link handles navigation
+    if ((e.target as HTMLElement).closest('input[type="checkbox"]')) {
+      onSelect(lead.id)
+      return
+    }
+    router.push(`/dashboard/leads/${lead.id}`)
+  }
+
   return (
     <>
       <div className={styles.tableScroll}>
@@ -1841,13 +1852,20 @@ function LeadTable({ leads, selectedId, onSelect }: { leads: LeadRecord[]; selec
           </thead>
           <tbody>
             {leads.map((lead) => (
-              <tr key={lead.id} className={cx(selectedId === lead.id && styles.tableRowSelected)} onClick={() => onSelect(lead.id)}>
-                <td><input type="checkbox" checked={selectedId === lead.id} readOnly /></td>
+              <tr
+                key={lead.id}
+                className={cx(styles.tableRow, selectedId === lead.id && styles.tableRowSelected)}
+                onClick={(e) => handleRowClick(e, lead)}
+                style={{ cursor: 'pointer' }}
+              >
+                <td onClick={(e) => { e.stopPropagation(); onSelect(lead.id) }}>
+                  <input type="checkbox" checked={selectedId === lead.id} readOnly />
+                </td>
                 <td>
                   <div className={styles.identity}>
                     <div className={styles.avatar}>{initials(lead.contactName)}</div>
                     <div>
-                      <strong>{lead.contactName}</strong>
+                      <strong className={styles.leadNameLink}>{lead.contactName}</strong>
                       <div className={styles.subtle}>{lead.role}</div>
                     </div>
                   </div>
@@ -1882,12 +1900,10 @@ function LeadTable({ leads, selectedId, onSelect }: { leads: LeadRecord[]; selec
         </table>
       </div>
       <div className={styles.tableFooter}>
-        Showing 1 to {leads.length} of 248 leads
+        Showing {leads.length > 0 ? 1 : 0}–{leads.length} of {leads.length} leads
         <div className={styles.pagination}>
           <button>{'<'}</button>
           <button>1</button>
-          <button>2</button>
-          <button>3</button>
           <button>{'>'}</button>
         </div>
       </div>

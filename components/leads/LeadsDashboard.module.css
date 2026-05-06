@@ -243,12 +243,25 @@
   margin: 18px -16px -22px;
   min-height: 56px;
   border-top: 1px solid var(--line);
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  background: none;
   color: #a4adbd;
   display: flex;
   gap: 12px;
   align-items: center;
   text-decoration: none;
   padding-left: 28px;
+  cursor: pointer;
+  width: calc(100% + 32px);
+  font-size: inherit;
+  font-family: inherit;
+  transition: color 0.15s;
+}
+
+.signOut:hover {
+  color: #e2e8f0;
 }
 
 .sidebarNotif {
@@ -1984,7 +1997,7 @@
 
 .timerFab {
   position: fixed;
-  bottom: 24px;
+  bottom: 80px;
   right: 24px;
   z-index: 39;
   width: 52px;
@@ -3717,7 +3730,7 @@
 
 .timerFabWrapper {
   position: fixed;
-  bottom: 24px;
+  bottom: 80px;
   right: 24px;
   z-index: 39;
   display: flex;

@@ -10,7 +10,7 @@ export default function ServicesPage() {
     <>
       <Header />
       <main className="min-h-screen pt-24">
-        <section className="py-20 px-4">
+        <section className="pt-8 pb-20 px-4">
           <div className="container mx-auto max-w-6xl">
             <div className="text-center mb-16">
               <h1 className="text-4xl md:text-6xl font-bold mb-6 text-balance">

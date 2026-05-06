@@ -207,16 +207,29 @@
   margin: 18px -14px -20px;
   padding: 18px 22px;
   border-top: 1px solid var(--line);
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  background: none;
   color: var(--muted);
   text-decoration: none;
   display: flex;
   align-items: center;
   gap: 12px;
+  cursor: pointer;
+  width: calc(100% + 28px);
+  font-size: inherit;
+  font-family: inherit;
+  transition: color 0.15s;
+}
+
+.signOut:hover {
+  color: var(--fg);
 }
 
 .main {
   min-width: 0;
-  padding: 40px 48px 160px;
+  padding: 32px 40px 120px;
   max-width: 1720px;
 }
 
@@ -774,9 +787,27 @@
   font-weight: 500;
 }
 
+.tableRow {
+  transition: background 0.1s;
+}
+
+.tableRow:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .tableRowSelected {
   background: rgba(37, 99, 235, 0.12);
   box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.28);
+}
+
+.leadNameLink {
+  color: var(--fg);
+  text-decoration: none;
+  transition: color 0.12s;
+}
+
+.tableRow:hover .leadNameLink {
+  color: #60a5fa;
 }
 
 .identity {
@@ -952,7 +983,7 @@
 .bottomBar {
   position: fixed;
   left: 244px;
-  right: 18px;
+  right: 72px;
   bottom: 16px;
   padding: 12px 16px;
   display: grid;
