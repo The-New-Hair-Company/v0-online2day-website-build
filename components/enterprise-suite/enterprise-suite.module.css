@@ -558,6 +558,20 @@
   color: #111827;
 }
 
+:global(html[data-theme='light']) .flagRow,
+:global(html[data-theme='light']) .sentimentCard,
+:global(html[data-theme='light']) .snippetItem,
+:global(html[data-theme='light']) .permissionRow {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+:global(html[data-theme='light']) .snippetForm input,
+:global(html[data-theme='light']) .snippetForm textarea,
+:global(html[data-theme='light']) .releaseNotesEditor textarea {
+  background: rgba(255, 255, 255, 0.94);
+  color: #111827;
+}
+
 .panel textarea {
   min-height: 206px;
   resize: vertical;
@@ -733,9 +747,195 @@
   font-size: 12px;
 }
 
+.enterpriseOpsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.flagList,
+.snippetList {
+  display: grid;
+  gap: 8px;
+}
+
+.flagRow {
+  border: 1px solid rgba(116, 147, 196, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.flagRow strong {
+  display: block;
+  font-size: 13px;
+}
+
+.flagRow span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.flagRow input,
+.permissionRow input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--blue);
+}
+
+.sentimentGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sentimentCard {
+  min-height: 88px;
+  border-radius: 10px;
+  border: 1px solid rgba(116, 147, 196, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+}
+
+.sentimentCard strong {
+  font-size: 26px;
+}
+
+.sentimentCard span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sentimentPositive {
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.sentimentNeutral {
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.sentimentBlocked {
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.snippetForm {
+  display: grid;
+  gap: 8px;
+}
+
+.snippetForm input,
+.snippetForm textarea,
+.releaseNotesEditor textarea {
+  width: 100%;
+  border: 1px solid rgba(116, 147, 196, 0.24);
+  border-radius: 9px;
+  background: rgba(4, 9, 17, 0.82);
+  color: var(--text);
+  padding: 9px 10px;
+  font: inherit;
+  outline: none;
+}
+
+.snippetForm textarea,
+.releaseNotesEditor textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.snippetItem {
+  border: 1px solid rgba(116, 147, 196, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.snippetItem p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.snippetActions,
+.releaseNoteActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.snippetActions button,
+.releaseNoteActions button {
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.permissionTable {
+  display: grid;
+  gap: 8px;
+}
+
+.permissionHead,
+.permissionRow {
+  display: grid;
+  grid-template-columns: 1.2fr repeat(5, 70px);
+  align-items: center;
+  gap: 8px;
+}
+
+.permissionHead {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.permissionRow {
+  border: 1px solid rgba(116, 147, 196, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 10px;
+}
+
+.permissionRow strong {
+  font-size: 13px;
+}
+
+.releaseNotesEditor {
+  display: grid;
+  gap: 8px;
+}
+
+.emptyState {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 @media (max-width: 1480px) {
   .metricsGrid,
-  .changeGrid {
+  .changeGrid,
+  .enterpriseOpsGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -751,6 +951,10 @@
 
   .scanGrid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .sentimentGrid {
+    grid-template-columns: 1fr;
   }
 
   .categoryTabs,
@@ -774,12 +978,23 @@
 
   .metricsGrid,
   .changeGrid,
-  .videoRoomGrid {
+  .videoRoomGrid,
+  .enterpriseOpsGrid,
+  .sentimentGrid {
     grid-template-columns: 1fr;
   }
 
   .roiForm,
   .scanGrid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .permissionHead {
+    display: none;
+  }
+
+  .permissionRow {
+    grid-template-columns: 1fr;
+    justify-items: start;
   }
 }

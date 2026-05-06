@@ -86,6 +86,103 @@ export async function setEnabledFeatures(ids: string[]) {
   return setEnterpriseStateValue('enabled_features', ids)
 }
 
+export async function getFeatureFlags(): Promise<Record<string, boolean>> {
+  const result = await getEnterpriseStateValue('feature_flags')
+  if (!result || typeof result !== 'object') return {}
+  return Object.entries(result as Record<string, unknown>).reduce<Record<string, boolean>>((acc, [key, value]) => {
+    acc[key] = Boolean(value)
+    return acc
+  }, {})
+}
+
+export async function setFeatureFlags(flags: Record<string, boolean>) {
+  return setEnterpriseStateValue('feature_flags', flags)
+}
+
+export async function getReplySentimentCounts(): Promise<Record<string, number>> {
+  const result = await getEnterpriseStateValue('reply_sentiment_counts')
+  if (!result || typeof result !== 'object') return {}
+  return Object.entries(result as Record<string, unknown>).reduce<Record<string, number>>((acc, [key, value]) => {
+    const parsed = Number(value)
+    acc[key] = Number.isFinite(parsed) ? parsed : 0
+    return acc
+  }, {})
+}
+
+export async function setReplySentimentCounts(counts: Record<string, number>) {
+  return setEnterpriseStateValue('reply_sentiment_counts', counts)
+}
+
+export type EnterpriseSnippet = {
+  id: string
+  title: string
+  content: string
+  createdAt: string
+}
+
+export async function getSharedSnippets(): Promise<EnterpriseSnippet[]> {
+  const result = await getEnterpriseStateValue('shared_snippets')
+  if (!Array.isArray(result)) return []
+  return result
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const row = item as Record<string, unknown>
+      const id = typeof row.id === 'string' ? row.id : ''
+      const title = typeof row.title === 'string' ? row.title : ''
+      const content = typeof row.content === 'string' ? row.content : ''
+      const createdAt = typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString()
+      if (!id || !title || !content) return null
+      return { id, title, content, createdAt }
+    })
+    .filter((item): item is EnterpriseSnippet => Boolean(item))
+}
+
+export async function setSharedSnippets(snippets: EnterpriseSnippet[]) {
+  return setEnterpriseStateValue('shared_snippets', snippets)
+}
+
+export type PermissionMatrixValue = {
+  role: string
+  canManageUsers: boolean
+  canManageBilling: boolean
+  canManageLeads: boolean
+  canManageCampaigns: boolean
+  canViewAudit: boolean
+}
+
+export async function getPermissionMatrix(): Promise<PermissionMatrixValue[]> {
+  const result = await getEnterpriseStateValue('permission_matrix')
+  if (!Array.isArray(result)) return []
+  return result
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const row = item as Record<string, unknown>
+      if (typeof row.role !== 'string') return null
+      return {
+        role: row.role,
+        canManageUsers: Boolean(row.canManageUsers),
+        canManageBilling: Boolean(row.canManageBilling),
+        canManageLeads: Boolean(row.canManageLeads),
+        canManageCampaigns: Boolean(row.canManageCampaigns),
+        canViewAudit: Boolean(row.canViewAudit),
+      }
+    })
+    .filter((item): item is PermissionMatrixValue => Boolean(item))
+}
+
+export async function setPermissionMatrix(matrix: PermissionMatrixValue[]) {
+  return setEnterpriseStateValue('permission_matrix', matrix)
+}
+
+export async function getReleaseNotesDraft(): Promise<string> {
+  const result = await getEnterpriseStateValue('release_notes_draft')
+  return typeof result === 'string' ? result : ''
+}
+
+export async function setReleaseNotesDraft(notes: string) {
+  return setEnterpriseStateValue('release_notes_draft', notes)
+}
+
 // ─── LEADS EXPORT ─────────────────────────────────────────────────────────────
 
 export async function getLeadsForExport() {

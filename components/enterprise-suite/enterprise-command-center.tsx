@@ -41,6 +41,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
+import { useToast } from '@/hooks/use-toast'
 import { LocalVideoRoom } from './local-video-room'
 import styles from './enterprise-suite.module.css'
 import {
@@ -54,6 +55,18 @@ import {
   deleteEnterpriseEvent,
   getLeadsForExport,
   scanDataQuality,
+  getFeatureFlags,
+  setFeatureFlags,
+  getReplySentimentCounts,
+  setReplySentimentCounts,
+  getSharedSnippets,
+  setSharedSnippets,
+  getPermissionMatrix,
+  setPermissionMatrix,
+  getReleaseNotesDraft,
+  setReleaseNotesDraft,
+  type EnterpriseSnippet,
+  type PermissionMatrixValue,
 } from '@/lib/actions/enterprise-actions'
 import { logAuditEntry, getAuditLog } from '@/lib/actions/audit-actions'
 
@@ -95,6 +108,26 @@ type TaskItem = {
   title: string
   isDone: boolean
 }
+
+type FlagConfig = {
+  id: string
+  label: string
+  description: string
+}
+
+const featureFlagConfig: FlagConfig[] = [
+  { id: 'beta_ui', label: 'Beta UI surfaces', description: 'Enable enterprise beta panels and previews.' },
+  { id: 'local_video_calls', label: 'Local video calls', description: 'Allow WebRTC room controls in enterprise workspace.' },
+  { id: 'advanced_scoring', label: 'Advanced lead scoring', description: 'Show weighted score updates in command center.' },
+  { id: 'audit_export', label: 'Audit export', description: 'Allow audit and release note export actions.' },
+]
+
+const defaultPermissionMatrix: PermissionMatrixValue[] = [
+  { role: 'Admin', canManageUsers: true, canManageBilling: true, canManageLeads: true, canManageCampaigns: true, canViewAudit: true },
+  { role: 'Sales', canManageUsers: false, canManageBilling: false, canManageLeads: true, canManageCampaigns: true, canViewAudit: true },
+  { role: 'Delivery', canManageUsers: false, canManageBilling: false, canManageLeads: true, canManageCampaigns: false, canViewAudit: true },
+  { role: 'Viewer', canManageUsers: false, canManageBilling: false, canManageLeads: false, canManageCampaigns: false, canViewAudit: false },
+]
 
 const enterpriseChanges: EnterpriseChange[] = [
   { id: 'internal-calendar', category: 'Calendar & meetings', title: 'Internal calendar board', detail: 'Shared operational calendar for calls, build reviews, launches and renewals.', action: 'Open board', icon: CalendarDays },
@@ -162,6 +195,7 @@ function downloadFile(filename: string, content: string, type: string) {
 }
 
 export function EnterpriseCommandCenter() {
+  const { toast } = useToast()
   const [activeCategory, setActiveCategory] = useState<Category | 'All'>('All')
   const [query, setQuery] = useState('')
   const [enabled, setEnabled] = useState<string[]>([])
@@ -184,6 +218,14 @@ export function EnterpriseCommandCenter() {
   const [newEventTime, setNewEventTime] = useState('')
   const [newEventType, setNewEventType] = useState('Meeting')
   const [scanResults, setScanResults] = useState<null | { total: number; missingEmail: number; missingPhone: number; missingCompany: number; missingSource: number; missingOwner: number; missingFollowUp: number }>(null)
+  const [featureFlags, setFeatureFlagsState] = useState<Record<string, boolean>>({})
+  const [replySentiment, setReplySentiment] = useState<Record<string, number>>({ positive: 0, neutral: 0, blocked: 0 })
+  const [snippets, setSnippets] = useState<EnterpriseSnippet[]>([])
+  const [snippetTitle, setSnippetTitle] = useState('')
+  const [snippetContent, setSnippetContent] = useState('')
+  const [permissionMatrix, setPermissionMatrixState] = useState<PermissionMatrixValue[]>(defaultPermissionMatrix)
+  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false)
+  const [releaseNotes, setReleaseNotes] = useState('')
 
   useEffect(() => {
     getEnabledFeatures().then(setEnabled)
@@ -191,6 +233,17 @@ export function EnterpriseCommandCenter() {
     getEnterpriseEvents().then((evts) =>
       setEvents(evts.map((e) => ({ id: e.id, title: e.title, time: e.time, owner: '', type: e.type })))
     )
+    getFeatureFlags().then(setFeatureFlagsState)
+    getReplySentimentCounts().then((counts) =>
+      setReplySentiment({
+        positive: counts.positive || 0,
+        neutral: counts.neutral || 0,
+        blocked: counts.blocked || 0,
+      })
+    )
+    getSharedSnippets().then(setSnippets)
+    getPermissionMatrix().then((matrix) => setPermissionMatrixState(matrix.length ? matrix : defaultPermissionMatrix))
+    getReleaseNotesDraft().then(setReleaseNotes)
     getAuditLog(18).then((rows) =>
       setAuditLog(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -276,9 +329,102 @@ export function EnterpriseCommandCenter() {
     try {
       await navigator.clipboard?.writeText(text)
       setWorkspaceStatus(success)
+      toast({ title: 'Copied', description: success })
     } catch {
       setWorkspaceStatus(`${success} Copy manually if browser permissions block clipboard access.`)
+      toast({ title: 'Copy blocked', description: 'Clipboard permission was blocked by this browser.', variant: 'destructive' })
     }
+  }
+
+  function toggleFlag(id: string) {
+    setFeatureFlagsState((current) => {
+      const next = { ...current, [id]: !current[id] }
+      setFeatureFlags(next)
+      const enabledState = next[id] ? 'enabled' : 'disabled'
+      logAuditEntry('update', 'enterprise_feature_flag', id, enabledState)
+      toast({ title: `Flag ${enabledState}`, description: `${id} is now ${enabledState}.` })
+      return next
+    })
+  }
+
+  function bumpSentiment(key: 'positive' | 'neutral' | 'blocked') {
+    setReplySentiment((current) => {
+      const next = { ...current, [key]: (current[key] || 0) + 1 }
+      setReplySentimentCounts(next)
+      logAuditEntry('update', 'enterprise_reply_sentiment', key, `count=${next[key]}`)
+      toast({ title: 'Sentiment updated', description: `${key} replies: ${next[key]}` })
+      return next
+    })
+  }
+
+  function resetSentiment() {
+    const cleared = { positive: 0, neutral: 0, blocked: 0 }
+    setReplySentiment(cleared)
+    setReplySentimentCounts(cleared)
+    logAuditEntry('reset', 'enterprise_reply_sentiment', 'all', 'counts reset')
+    toast({ title: 'Sentiment reset', description: 'All reply sentiment counters were reset.' })
+  }
+
+  function addSnippet() {
+    if (!snippetTitle.trim() || !snippetContent.trim()) {
+      toast({ title: 'Missing content', description: 'Add both a title and content before saving a snippet.', variant: 'destructive' })
+      return
+    }
+    const next: EnterpriseSnippet[] = [
+      {
+        id: `snippet-${Date.now()}`,
+        title: snippetTitle.trim(),
+        content: snippetContent.trim(),
+        createdAt: new Date().toISOString(),
+      },
+      ...snippets,
+    ]
+    setSnippets(next)
+    setSharedSnippets(next)
+    setSnippetTitle('')
+    setSnippetContent('')
+    logAuditEntry('create', 'enterprise_snippet', next[0].id, next[0].title)
+    toast({ title: 'Snippet saved', description: `"${next[0].title}" was added to shared snippets.` })
+  }
+
+  function removeSnippet(id: string) {
+    const next = snippets.filter((item) => item.id !== id)
+    setSnippets(next)
+    setSharedSnippets(next)
+    logAuditEntry('delete', 'enterprise_snippet', id)
+    toast({ title: 'Snippet removed', description: 'The snippet was deleted.' })
+  }
+
+  function setPermission(role: string, key: keyof Omit<PermissionMatrixValue, 'role'>, value: boolean) {
+    setPermissionMatrixState((current) => {
+      const next = current.map((row) => row.role === role ? { ...row, [key]: value } : row)
+      setPermissionMatrix(next)
+      logAuditEntry('update', 'enterprise_permission_matrix', role, `${key}=${value}`)
+      toast({ title: 'Permission updated', description: `${role}: ${key} ${value ? 'enabled' : 'disabled'}.` })
+      return next
+    })
+  }
+
+  function buildReleaseNotes() {
+    const enabledSet = new Set(enabled)
+    const lines = [
+      `Release date: ${new Date().toLocaleDateString('en-GB')}`,
+      '',
+      'Enterprise updates:',
+      ...enterpriseChanges
+        .filter((item) => enabledSet.has(item.id))
+        .slice(0, 20)
+        .map((item) => `- ${item.title}: ${item.detail}`),
+      '',
+      `Operational summary: ${tasks.filter((task) => task.isDone).length}/${tasks.length} tasks complete.`,
+      `Calendar events tracked: ${events.length}.`,
+    ]
+    const next = lines.join('\n')
+    setReleaseNotes(next)
+    setReleaseNotesDraft(next)
+    setReleaseNotesOpen(true)
+    logAuditEntry('generate', 'enterprise_release_notes', undefined, `enabled_features=${enabledSet.size}`)
+    toast({ title: 'Release notes generated', description: 'Draft created from enabled features and operations data.' })
   }
 
   async function runChange(change: EnterpriseChange) {
@@ -390,6 +536,14 @@ END:VCALENDAR`, 'text/calendar')
       addTaskOptimistic('Priority matrix: hot leads, build blockers, renewal watch, nurture lane')
       return
     }
+    if (change.id === 'reply-sentiment') {
+      setWorkspaceStatus('Reply sentiment board is ready — classify responses below.')
+      return
+    }
+    if (change.id === 'shared-snippets') {
+      setWorkspaceStatus('Shared snippets library is open — add reusable messaging blocks below.')
+      return
+    }
     if (change.id === 'proposal-mailto') {
       window.location.href = 'mailto:?subject=Online2Day proposal follow-up&body=Hi,%0A%0AI have prepared the proposal follow-up and next steps.%0A%0A'
       return
@@ -409,6 +563,19 @@ END:VCALENDAR`, 'text/calendar')
     if (change.id === 'incident-banner') {
       setIncidentVisible((current) => !current)
       setWorkspaceStatus('Internal incident banner toggled.')
+      return
+    }
+    if (change.id === 'permission-matrix') {
+      setWorkspaceStatus('Permission matrix loaded — permissions can now be edited and saved.')
+      return
+    }
+    if (change.id === 'feature-flags') {
+      setWorkspaceStatus('Feature flag board loaded — toggles persist to enterprise state.')
+      return
+    }
+    if (change.id === 'release-notes') {
+      buildReleaseNotes()
+      setWorkspaceStatus('Release notes drafted from enabled enterprise features.')
       return
     }
     if (change.id === 'integration-health') {
@@ -584,6 +751,111 @@ END:VCALENDAR`, 'text/calendar')
             </div>
           </section>
         ) : null}
+
+        <section className={styles.enterpriseOpsGrid}>
+          <article className={styles.panel}>
+            <header><Flag size={18} /><strong>Feature Flags</strong><button onClick={() => void runChange(enterpriseChanges.find((item) => item.id === 'feature-flags')!)}>Refresh</button></header>
+            <div className={styles.flagList}>
+              {featureFlagConfig.map((flag) => (
+                <label key={flag.id} className={styles.flagRow}>
+                  <div>
+                    <strong>{flag.label}</strong>
+                    <span>{flag.description}</span>
+                  </div>
+                  <input type="checkbox" checked={Boolean(featureFlags[flag.id])} onChange={() => toggleFlag(flag.id)} />
+                </label>
+              ))}
+            </div>
+          </article>
+
+          <article className={styles.panel}>
+            <header><MessageSquareText size={18} /><strong>Reply Sentiment</strong><button onClick={resetSentiment}>Reset</button></header>
+            <div className={styles.sentimentGrid}>
+              {([
+                { id: 'positive', label: 'Positive', className: styles.sentimentPositive },
+                { id: 'neutral', label: 'Neutral', className: styles.sentimentNeutral },
+                { id: 'blocked', label: 'Blocked', className: styles.sentimentBlocked },
+              ] as const).map((item) => (
+                <button key={item.id} className={`${styles.sentimentCard} ${item.className}`} onClick={() => bumpSentiment(item.id)}>
+                  <strong>{replySentiment[item.id] || 0}</strong>
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </article>
+        </section>
+
+        <section className={styles.enterpriseOpsGrid}>
+          <article className={styles.panel}>
+            <header><Sparkles size={18} /><strong>Shared Snippets</strong><button onClick={() => void runChange(enterpriseChanges.find((item) => item.id === 'shared-snippets')!)}>Open</button></header>
+            <div className={styles.snippetForm}>
+              <input placeholder="Snippet title" value={snippetTitle} onChange={(event) => setSnippetTitle(event.target.value)} />
+              <textarea placeholder="Snippet content" value={snippetContent} onChange={(event) => setSnippetContent(event.target.value)} />
+              <button className={styles.primaryButton} onClick={addSnippet}><Plus size={14} />Add snippet</button>
+            </div>
+            <div className={styles.snippetList}>
+              {snippets.map((snippet) => (
+                <article key={snippet.id} className={styles.snippetItem}>
+                  <div>
+                    <strong>{snippet.title}</strong>
+                    <p>{snippet.content}</p>
+                  </div>
+                  <div className={styles.snippetActions}>
+                    <button onClick={() => void copyText(snippet.content, 'Snippet copied.')}>Copy</button>
+                    <button onClick={() => removeSnippet(snippet.id)}>Delete</button>
+                  </div>
+                </article>
+              ))}
+              {!snippets.length ? <p className={styles.emptyState}>No snippets yet. Add your first reusable response.</p> : null}
+            </div>
+          </article>
+
+          <article className={styles.panel}>
+            <header><Users size={18} /><strong>Permission Matrix</strong><button onClick={() => void runChange(enterpriseChanges.find((item) => item.id === 'permission-matrix')!)}>Refresh</button></header>
+            <div className={styles.permissionTable}>
+              <div className={styles.permissionHead}>
+                <span>Role</span>
+                <span>Users</span>
+                <span>Billing</span>
+                <span>Leads</span>
+                <span>Campaigns</span>
+                <span>Audit</span>
+              </div>
+              {permissionMatrix.map((row) => (
+                <div key={row.role} className={styles.permissionRow}>
+                  <strong>{row.role}</strong>
+                  <input type="checkbox" checked={row.canManageUsers} onChange={(event) => setPermission(row.role, 'canManageUsers', event.target.checked)} />
+                  <input type="checkbox" checked={row.canManageBilling} onChange={(event) => setPermission(row.role, 'canManageBilling', event.target.checked)} />
+                  <input type="checkbox" checked={row.canManageLeads} onChange={(event) => setPermission(row.role, 'canManageLeads', event.target.checked)} />
+                  <input type="checkbox" checked={row.canManageCampaigns} onChange={(event) => setPermission(row.role, 'canManageCampaigns', event.target.checked)} />
+                  <input type="checkbox" checked={row.canViewAudit} onChange={(event) => setPermission(row.role, 'canViewAudit', event.target.checked)} />
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
+
+        <section className={styles.panel}>
+          <header><Rocket size={18} /><strong>Release Notes Builder</strong><button onClick={() => { buildReleaseNotes(); setReleaseNotesOpen(true) }}>Generate</button></header>
+          {releaseNotesOpen ? (
+            <div className={styles.releaseNotesEditor}>
+              <textarea
+                value={releaseNotes}
+                onChange={(event) => {
+                  const next = event.target.value
+                  setReleaseNotes(next)
+                  setReleaseNotesDraft(next)
+                }}
+              />
+              <div className={styles.releaseNoteActions}>
+                <button onClick={() => void copyText(releaseNotes, 'Release notes copied.')}>Copy</button>
+                <button onClick={() => downloadFile('release-notes.txt', releaseNotes, 'text/plain')}>Download</button>
+              </div>
+            </div>
+          ) : (
+            <p className={styles.emptyState}>Generate release notes from enabled features and completed tasks.</p>
+          )}
+        </section>
 
         <section className={styles.controlBar}>
           <div className={styles.searchBox}><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search 50 enterprise changes..." /></div>
