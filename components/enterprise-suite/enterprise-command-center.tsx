@@ -65,6 +65,7 @@ import {
   setPermissionMatrix,
   getReleaseNotesDraft,
   setReleaseNotesDraft,
+  addUserNotification,
   type EnterpriseSnippet,
   type PermissionMatrixValue,
 } from '@/lib/actions/enterprise-actions'
@@ -295,6 +296,7 @@ export function EnterpriseCommandCenter() {
   function handleDeleteEvent(id: string) {
     setEvents((current) => current.filter((e) => e.id !== id))
     deleteEnterpriseEvent(id)
+    addUserNotification({ title: 'Event removed', detail: 'A calendar event was deleted from the enterprise board.' })
   }
 
   function record(action: string, detail: string) {
@@ -311,18 +313,21 @@ export function EnterpriseCommandCenter() {
       return next
     })
     record(change.title, change.detail)
+    addUserNotification({ title: change.title, detail: change.detail })
   }
 
   function addTaskOptimistic(title: string) {
     const tempId = `temp-${Date.now()}`
     setTasks((current) => [{ id: tempId, title, isDone: false }, ...current])
     addEnterpriseTask(title)
+    addUserNotification({ title: 'Task created', detail: title })
   }
 
   function addEventOptimistic(title: string, time: string, type: string, owner = '') {
     const tempId = `temp-${Date.now()}`
     setEvents((current) => [{ id: tempId, title, time, owner, type }, ...current])
     addEnterpriseEvent(title, time, type)
+    addUserNotification({ title: 'Event created', detail: title })
   }
 
   async function copyText(text: string, success: string) {

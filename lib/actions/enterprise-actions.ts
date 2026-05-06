@@ -183,6 +183,72 @@ export async function setReleaseNotesDraft(notes: string) {
   return setEnterpriseStateValue('release_notes_draft', notes)
 }
 
+export type UserNotification = {
+  id: string
+  title: string
+  detail: string
+  createdAt: string
+  readAt: string | null
+}
+
+function notificationKey(userId: string) {
+  return `notifications:${userId}`
+}
+
+export async function getUserNotifications(): Promise<UserNotification[]> {
+  const supabase = await createClient()
+  const { data: auth } = await supabase.auth.getUser()
+  const userId = auth.user?.id
+  if (!userId) return []
+  const value = await getEnterpriseStateValue(notificationKey(userId))
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const row = item as Record<string, unknown>
+      if (typeof row.id !== 'string' || typeof row.title !== 'string' || typeof row.detail !== 'string') return null
+      return {
+        id: row.id,
+        title: row.title,
+        detail: row.detail,
+        createdAt: typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString(),
+        readAt: typeof row.readAt === 'string' ? row.readAt : null,
+      }
+    })
+    .filter((item): item is UserNotification => Boolean(item))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+export async function addUserNotification(input: { title: string; detail: string }) {
+  const supabase = await createClient()
+  const { data: auth } = await supabase.auth.getUser()
+  const userId = auth.user?.id
+  if (!userId) return { error: 'Not authenticated' }
+  const current = await getUserNotifications()
+  const next: UserNotification[] = [
+    {
+      id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      title: input.title,
+      detail: input.detail,
+      createdAt: new Date().toISOString(),
+      readAt: null,
+    },
+    ...current,
+  ].slice(0, 80)
+  return setEnterpriseStateValue(notificationKey(userId), next)
+}
+
+export async function markAllNotificationsRead() {
+  const supabase = await createClient()
+  const { data: auth } = await supabase.auth.getUser()
+  const userId = auth.user?.id
+  if (!userId) return { error: 'Not authenticated' }
+  const now = new Date().toISOString()
+  const current = await getUserNotifications()
+  const next = current.map((item) => item.readAt ? item : { ...item, readAt: now })
+  return setEnterpriseStateValue(notificationKey(userId), next)
+}
+
 // ─── LEADS EXPORT ─────────────────────────────────────────────────────────────
 
 export async function getLeadsForExport() {

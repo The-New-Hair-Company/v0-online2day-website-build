@@ -206,6 +206,36 @@ The Messages section reads from `conversations` + `messages` tables. Ensure:
 - `sendConversationReply` in `lib/actions/message-actions.ts` is configured
 - The public chat widget (`/contact` GuidedChat) posts to the same `conversations` table if real-time escalation is needed
 
+### 9. Role-aware access should move from heuristics to DB-backed RBAC
+Current sidebar gating now reads `permission_matrix` and user context, but production-grade access should be explicit per user/team:
+- Add a table such as `team_memberships` or `user_roles` with role enum and tenant/workspace id
+- Enforce route-level authorization from DB roles (not email-name heuristics)
+- Add policy tests to confirm every `/dashboard/*` route has server-side permission checks
+
+### 10. Notifications should be promoted to first-class relational tables
+Notifications currently persist through `enterprise_state` for speed. For scale and auditability:
+- Add `notifications` table (`id`, `user_id`, `title`, `detail`, `created_at`, `read_at`, `source`, `severity`)
+- Add indexes on `(user_id, created_at desc)` and `(user_id, read_at)`
+- Add server action endpoints for pagination, mark-read batch, and retention cleanup
+
+### 11. Reporting pipeline should support scheduled snapshots
+Reports now compute live. For executive reporting and trend integrity:
+- Add `report_snapshots` table with daily/weekly aggregates
+- Add scheduled jobs (Supabase cron/Edge Function) to materialize key KPI snapshots
+- Add export audit rows for every CSV/JSON report download (who exported what, when)
+
+### 12. Add reliability instrumentation around async actions
+For enterprise supportability:
+- Add structured error logging (action name, user id, payload hash, error code)
+- Add retry/backoff wrappers for storage, email, and third-party requests
+- Add dead-letter / failed-job queue table for recoverable async failures
+
+### 13. Add integration health checks with stored history
+Integrations page should include historical uptime and last-check evidence:
+- Add `integration_health_checks` table (`provider`, `status`, `latency_ms`, `checked_at`, `detail`)
+- Run scheduled checks for Supabase, Resend, HubSpot
+- Surface degradation alerts into notifications feed
+
 ---
 
 ## Project Structure (key paths)

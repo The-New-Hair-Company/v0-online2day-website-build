@@ -745,6 +745,103 @@ export async function canUseSystem() {
   return licensedUser?.status === 'active' || licensedUser?.status === 'pending'
 }
 
+export type DashboardAccessProfile = {
+  isAdmin: boolean
+  canUseSystem: boolean
+  modules: {
+    overview: boolean
+    leads: boolean
+    videos: boolean
+    emails: boolean
+    messages: boolean
+    enterprise: boolean
+    reports: boolean
+    siteRequests: boolean
+    integrations: boolean
+    settings: boolean
+  }
+}
+
+type PermissionMatrixRow = {
+  role?: string
+  canManageUsers?: boolean
+  canManageBilling?: boolean
+  canManageLeads?: boolean
+  canManageCampaigns?: boolean
+  canViewAudit?: boolean
+}
+
+function normalizeRoleFromEmail(email?: string | null) {
+  const value = (email || '').toLowerCase()
+  if (value.includes('view')) return 'Viewer'
+  if (value.includes('deliver')) return 'Delivery'
+  return 'Sales'
+}
+
+export async function getDashboardAccessProfile(): Promise<DashboardAccessProfile> {
+  const supabase = await createClient()
+  const [{ data: auth }, admin] = await Promise.all([supabase.auth.getUser(), isAdmin()])
+  const user = auth.user
+  const licensed = user ? await canUseSystem() : false
+  const fallbackModules = {
+    overview: licensed,
+    leads: licensed,
+    videos: licensed,
+    emails: licensed,
+    messages: licensed,
+    enterprise: admin,
+    reports: admin,
+    siteRequests: licensed,
+    integrations: admin,
+    settings: admin,
+  }
+  if (!user || !licensed) {
+    return { isAdmin: admin, canUseSystem: licensed, modules: fallbackModules }
+  }
+
+  if (admin) {
+    return {
+      isAdmin: true,
+      canUseSystem: true,
+      modules: {
+        overview: true,
+        leads: true,
+        videos: true,
+        emails: true,
+        messages: true,
+        enterprise: true,
+        reports: true,
+        siteRequests: true,
+        integrations: true,
+        settings: true,
+      },
+    }
+  }
+
+  const { data: matrixState } = await supabase.from('enterprise_state').select('value').eq('key', 'permission_matrix').single()
+  const matrix = Array.isArray(matrixState?.value) ? (matrixState.value as PermissionMatrixRow[]) : []
+  const role = normalizeRoleFromEmail(user.email)
+  const row = matrix.find((item) => (item.role || '').toLowerCase() === role.toLowerCase())
+  if (!row) return { isAdmin: false, canUseSystem: true, modules: fallbackModules }
+
+  return {
+    isAdmin: false,
+    canUseSystem: true,
+    modules: {
+      overview: true,
+      leads: Boolean(row.canManageLeads),
+      videos: Boolean(row.canManageCampaigns || row.canManageLeads),
+      emails: Boolean(row.canManageCampaigns),
+      messages: Boolean(row.canManageLeads || row.canManageCampaigns),
+      enterprise: Boolean(row.canViewAudit),
+      reports: Boolean(row.canViewAudit),
+      siteRequests: Boolean(row.canManageLeads),
+      integrations: Boolean(row.canManageUsers || row.canManageBilling),
+      settings: Boolean(row.canManageUsers || row.canManageBilling),
+    },
+  }
+}
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 function getStageColor(stage: string): string {

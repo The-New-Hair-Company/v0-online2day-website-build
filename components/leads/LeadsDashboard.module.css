@@ -251,6 +251,116 @@
   padding-left: 28px;
 }
 
+.sidebarNotif {
+  position: relative;
+  margin: 0 12px;
+}
+
+.notifTrigger {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(115, 144, 190, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #c5d0e6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.notifTrigger strong {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(47, 107, 255, 0.2);
+  color: #72aeff;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+}
+
+.notifPanel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin-top: 8px;
+  border: 1px solid rgba(115, 144, 190, 0.2);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(14, 20, 32, 0.97), rgba(8, 14, 23, 0.97));
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  z-index: 20;
+}
+
+.notifPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.notifPanelHeader > div {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.notifPanelHeader button {
+  min-height: 26px;
+  border: 1px solid rgba(115, 144, 190, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #b8c5d9;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.notifState {
+  margin: 0;
+  font-size: 12px;
+  color: #8090a5;
+}
+
+.notifItem {
+  border: 1px solid rgba(115, 144, 190, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.notifItem strong {
+  font-size: 12px;
+  color: #e5edfa;
+}
+
+.notifItem p {
+  margin: 0;
+  color: #8090a5;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.notifItem span {
+  color: #64748b;
+  font-size: 10px;
+}
+
+.notifUnread {
+  border-color: rgba(47, 107, 255, 0.34);
+  background: rgba(47, 107, 255, 0.08);
+}
+
 .main {
   min-width: 0;
   padding: 40px 48px 180px;
