@@ -7,6 +7,8 @@ import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import styles from '@/components/leads/LeadsDashboard.module.css'
 import { logAuditEntry } from '@/lib/actions/audit-actions'
 import { addLicensedUser, getAdminPrefs, getLicenseManagementState, removeLicensedUser, setAdminPrefs, updateLicensedUserRole } from '@/lib/actions/settings-actions'
+
+const THEME_SUPABASE_KEYS = ['theme', 'textSize', 'textScale', 'contrast', 'motion', 'font', 'lineHeight'] as const
 import type { LicenseManagementState, LicensedUserRole } from '@/lib/license'
 
 type ThemeChoice = 'dark' | 'light'
@@ -75,19 +77,54 @@ export function SettingsClient() {
   const [licenseBusy, setLicenseBusy] = useState(false)
 
   useEffect(() => {
+    // Apply localStorage instantly (no flicker on repeated visits)
     const stored = JSON.parse(localStorage.getItem(ACCESSIBILITY_KEY) || '{}') as Partial<AccessibilitySettings>
-    const next = { ...defaultAccessibility, ...stored }
-    setTheme(next.theme)
-    setTextSize(next.textSize)
-    setTextScale(next.textScale || scaleFromTextSize(next.textSize))
-    setContrast(next.contrast)
-    setMotion(next.motion)
-    setFont(next.font)
-    setLineHeight(next.lineHeight)
+    const local = { ...defaultAccessibility, ...stored }
+    setTheme(local.theme)
+    setTextSize(local.textSize)
+    setTextScale(local.textScale || scaleFromTextSize(local.textSize))
+    setContrast(local.contrast)
+    setMotion(local.motion)
+    setFont(local.font)
+    setLineHeight(local.lineHeight)
 
-    getAdminPrefs(['license.key', 'license.status']).then((prefs) => {
+    // Load all prefs from Supabase — theme prefs take precedence (cross-device sync)
+    getAdminPrefs([...THEME_SUPABASE_KEYS, 'license.key', 'license.status']).then((prefs) => {
       setLicenseKey(prefs['license.key'] || '')
       setLicenseStatus((prefs['license.status'] as typeof licenseStatus) || 'trial')
+
+      if (prefs['theme']) {
+        const scale = Number(prefs['textScale']) || scaleFromTextSize((prefs['textSize'] as TextSize) || local.textSize)
+        const synced: AccessibilitySettings = {
+          theme: (prefs['theme'] as ThemeChoice) || local.theme,
+          textSize: (prefs['textSize'] as TextSize) || local.textSize,
+          textScale: scale,
+          contrast: (prefs['contrast'] as AccessibilitySettings['contrast']) || local.contrast,
+          motion: (prefs['motion'] as AccessibilitySettings['motion']) || local.motion,
+          font: (prefs['font'] as AccessibilitySettings['font']) || local.font,
+          lineHeight: (prefs['lineHeight'] as AccessibilitySettings['lineHeight']) || local.lineHeight,
+        }
+        setTheme(synced.theme)
+        setTextSize(synced.textSize)
+        setTextScale(synced.textScale)
+        setContrast(synced.contrast)
+        setMotion(synced.motion)
+        setFont(synced.font)
+        setLineHeight(synced.lineHeight)
+        // Apply to DOM
+        document.documentElement.dataset.theme = synced.theme
+        document.documentElement.dataset.textSize = synced.textSize
+        document.documentElement.dataset.contrast = synced.contrast
+        document.documentElement.dataset.motion = synced.motion
+        document.documentElement.dataset.font = synced.font
+        document.documentElement.dataset.lineHeight = synced.lineHeight
+        document.documentElement.style.setProperty('--accessibility-text-scale', String(synced.textScale / 100))
+        document.documentElement.classList.toggle('dark', synced.theme === 'dark')
+        // Keep localStorage in sync
+        localStorage.setItem(ACCESSIBILITY_KEY, JSON.stringify(synced))
+        localStorage.setItem('crm_theme', synced.theme)
+        localStorage.setItem('crm_textsize', synced.textSize === 'xl' ? 'lg' : synced.textSize)
+      }
     })
     getLicenseManagementState().then(setLicenseState)
   }, [])
@@ -121,6 +158,17 @@ export function SettingsClient() {
     localStorage.setItem('crm_theme', next.theme)
     localStorage.setItem('crm_textsize', next.textSize === 'xl' ? 'lg' : next.textSize)
     logAuditEntry('update', 'site_accessibility_setting', 'global', JSON.stringify(patch))
+
+    // Persist to Supabase for cross-device sync (fire and forget)
+    setAdminPrefs({
+      theme: next.theme,
+      textSize: next.textSize,
+      textScale: String(next.textScale),
+      contrast: next.contrast,
+      motion: next.motion,
+      font: next.font,
+      lineHeight: next.lineHeight,
+    })
   }
 
   async function activateLicense() {

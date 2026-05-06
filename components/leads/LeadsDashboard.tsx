@@ -58,6 +58,22 @@ const SOURCES = ['Website', 'Referral', 'Cold outreach', 'Ads', 'Organic']
 const OWNERS = ['Sarah M.', 'James T.', 'Emily R.', 'Daniel K.', 'Michael B.']
 const STATUSES = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won']
 
+const COLUMN_DEFS = [
+  { id: 'company',      label: 'Company',       required: false },
+  { id: 'score',        label: 'Score',         required: false },
+  { id: 'stage',        label: 'Stage',         required: false },
+  { id: 'owner',        label: 'Owner',         required: false },
+  { id: 'source',       label: 'Source',        required: false },
+  { id: 'lastActivity', label: 'Last activity', required: false },
+  { id: 'engagement',   label: 'Engagement',    required: false },
+  { id: 'value',        label: 'Value',         required: false },
+  { id: 'nextAction',   label: 'Next action',   required: false },
+] as const
+
+type ColumnId = (typeof COLUMN_DEFS)[number]['id']
+const ALL_COLS = new Set<ColumnId>(COLUMN_DEFS.map(c => c.id))
+const COLS_KEY = 'o2d_lead_cols'
+
 const cx = (...classes: Array<string | false | undefined>) => classes.filter(Boolean).join(' ')
 
 const pageMeta = {
@@ -129,6 +145,10 @@ export default function LeadsDashboard({
   const [theme, setThemeState] = useState('dark')
   const [textSize, setTextSizeState] = useState('md')
 
+  // Column visibility
+  const [hiddenCols, setHiddenCols] = useState<Set<ColumnId>>(new Set())
+  const [colsOpen, setColsOpen] = useState(false)
+
   useEffect(() => {
     try {
       const settings = JSON.parse(localStorage.getItem('o2d_accessibility_settings') || '{}')
@@ -138,7 +158,20 @@ export default function LeadsDashboard({
       setThemeState(localStorage.getItem('crm_theme') || 'dark')
       setTextSizeState(localStorage.getItem('crm_textsize') || 'md')
     }
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLS_KEY) || '[]') as ColumnId[]
+      if (saved.length) setHiddenCols(new Set(saved))
+    } catch { /* ignore */ }
   }, [])
+
+  function toggleColumn(id: ColumnId) {
+    setHiddenCols(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      localStorage.setItem(COLS_KEY, JSON.stringify([...next]))
+      return next
+    })
+  }
 
   // Timer tick
   useEffect(() => {
@@ -392,7 +425,21 @@ export default function LeadsDashboard({
                     </button>
                   )}
                   <div className={styles.tableToolsRight}>
-                    <button className={styles.filterButton}><Icon name="columns" /> Columns</button>
+                    <div className={styles.dropdownWrap}>
+                      <button
+                        className={cx(styles.filterButton, (colsOpen || hiddenCols.size > 0) && styles.filterActive)}
+                        onClick={e => { e.stopPropagation(); setColsOpen(v => !v) }}
+                      >
+                        <Icon name="columns" /> Columns {hiddenCols.size > 0 ? `(${COLUMN_DEFS.length - hiddenCols.size}/${COLUMN_DEFS.length})` : ''}
+                      </button>
+                      {colsOpen && (
+                        <ColumnsDropdown
+                          hiddenCols={hiddenCols}
+                          onToggle={toggleColumn}
+                          onClose={() => setColsOpen(false)}
+                        />
+                      )}
+                    </div>
                     <button className={styles.filterButton}>Sort: Last activity <Icon name="chevron" /></button>
                   </div>
                 </div>
@@ -404,6 +451,7 @@ export default function LeadsDashboard({
                     onSelect={setSelectedId}
                     totalCount={initialLeads.length}
                     onOpen={handleOpenLead}
+                    hiddenCols={hiddenCols}
                   />
                 ) : (
                   <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
@@ -835,20 +883,62 @@ function StageDropdown({ selectedStage, onSelect }: { selectedStage: 'All stages
   )
 }
 
+// ─── COLUMNS DROPDOWN ────────────────────────────────────────────────────────
+
+function ColumnsDropdown({ hiddenCols, onToggle, onClose }: {
+  hiddenCols: Set<ColumnId>; onToggle: (id: ColumnId) => void; onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  return (
+    <div ref={ref} className={styles.stageMenu} role="listbox" style={{ width: 200, right: 0, left: 'auto' }}>
+      <div style={{ padding: '8px 12px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.5 }}>
+        Toggle columns
+      </div>
+      {COLUMN_DEFS.map(col => {
+        const visible = !hiddenCols.has(col.id)
+        return (
+          <button key={col.id} onClick={() => onToggle(col.id)} className={visible ? styles.optionActive : ''}>
+            <span>{col.label}</span>
+            {visible ? <Icon name="check" /> : null}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── LEAD TABLE ──────────────────────────────────────────────────────────────
 
-function LeadTable({ leads, selectedId, onSelect, totalCount, onOpen }: {
-  leads: Lead[]; selectedId: string; onSelect: (id: string) => void; totalCount: number; onOpen: (id: string) => void
+function LeadTable({ leads, selectedId, onSelect, totalCount, onOpen, hiddenCols }: {
+  leads: Lead[]; selectedId: string; onSelect: (id: string) => void
+  totalCount: number; onOpen: (id: string) => void; hiddenCols: Set<ColumnId>
 }) {
+  const show = (id: ColumnId) => !hiddenCols.has(id)
   return (
     <div className={styles.tableWrap}>
       <table className={styles.leadsTable}>
         <thead>
           <tr>
             <th><input aria-label="Select all" type="checkbox" /></th>
-            <th>Lead</th><th>Company</th><th>Score</th><th>Stage</th>
-            <th>Owner</th><th>Source</th><th>Last activity</th>
-            <th>Engagement</th><th>Value</th><th>Next action</th><th />
+            <th>Lead</th>
+            {show('company') && <th>Company</th>}
+            {show('score') && <th>Score</th>}
+            {show('stage') && <th>Stage</th>}
+            {show('owner') && <th>Owner</th>}
+            {show('source') && <th>Source</th>}
+            {show('lastActivity') && <th>Last activity</th>}
+            {show('engagement') && <th>Engagement</th>}
+            {show('value') && <th>Value</th>}
+            {show('nextAction') && <th>Next action</th>}
+            <th />
           </tr>
         </thead>
         <tbody>
@@ -859,23 +949,29 @@ function LeadTable({ leads, selectedId, onSelect, totalCount, onOpen }: {
                 <Avatar initials={lead.contactName.split(' ').map(n => n[0]).join('')} />
                 <div><strong>{lead.contactName}</strong><span>{lead.role}</span></div>
               </td>
-              <td className={styles.companyCell}>
-                <div className={cx(styles.companyLogo, styles[lead.logoClass])}>{lead.companyMark}</div>
-                <span>{lead.company}</span>
-              </td>
-              <td><Score value={lead.score} /></td>
-              <td><StageBadge stage={lead.stage} /></td>
-              <td className={styles.ownerCell}><Avatar initials={initialsForOwner(lead.owner)} size="sm" />{lead.owner}</td>
-              <td><Icon name={lead.sourceIcon} className={styles.sourceIcon} /></td>
-              <td>{lead.lastActivity}</td>
-              <td className={styles.engagementCell}><span>{lead.engagement}%</span><ProgressBar value={lead.engagement} /></td>
-              <td><strong>{lead.value}</strong></td>
-              <td>
-                <button style={{ background: 'none', border: 'none', color: '#3f8cff', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}
-                  onClick={e => { e.stopPropagation(); onOpen(lead.id) }}>
-                  {lead.nextAction}
-                </button>
-              </td>
+              {show('company') && (
+                <td className={styles.companyCell}>
+                  <div className={cx(styles.companyLogo, styles[lead.logoClass])}>{lead.companyMark}</div>
+                  <span>{lead.company}</span>
+                </td>
+              )}
+              {show('score') && <td><Score value={lead.score} /></td>}
+              {show('stage') && <td><StageBadge stage={lead.stage} /></td>}
+              {show('owner') && <td className={styles.ownerCell}><Avatar initials={initialsForOwner(lead.owner)} size="sm" />{lead.owner}</td>}
+              {show('source') && <td><Icon name={lead.sourceIcon} className={styles.sourceIcon} /></td>}
+              {show('lastActivity') && <td>{lead.lastActivity}</td>}
+              {show('engagement') && (
+                <td className={styles.engagementCell}><span>{lead.engagement}%</span><ProgressBar value={lead.engagement} /></td>
+              )}
+              {show('value') && <td><strong>{lead.value}</strong></td>}
+              {show('nextAction') && (
+                <td>
+                  <button style={{ background: 'none', border: 'none', color: '#3f8cff', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                    onClick={e => { e.stopPropagation(); onOpen(lead.id) }}>
+                    {lead.nextAction}
+                  </button>
+                </td>
+              )}
               <td>
                 <button style={{ background: 'none', border: 'none', cursor: 'pointer' }} onClick={e => { e.stopPropagation(); onOpen(lead.id) }}>
                   <Icon name="external" className={styles.rowMenu} />

@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Send } from 'lucide-react'
+import { Send, PlayCircle, ExternalLink } from 'lucide-react'
 
 type Message = {
   id: string
@@ -15,11 +15,63 @@ type Message = {
   created_at: string
 }
 
-export function ChatWindow({ 
-  currentUserId, 
+// Detect /v/{slug} URLs (relative or absolute)
+const VIDEO_LINK_RE = /(https?:\/\/[^\s]*\/v\/[a-zA-Z0-9_-]+|\/v\/[a-zA-Z0-9_-]+)/
+
+function parseVideoSlug(content: string): string | null {
+  const match = VIDEO_LINK_RE.exec(content)
+  if (!match) return null
+  const part = match[0]
+  const slugMatch = /\/v\/([a-zA-Z0-9_-]+)/.exec(part)
+  return slugMatch?.[1] ?? null
+}
+
+function MessageContent({ content, isMine }: { content: string; isMine: boolean }) {
+  const slug = parseVideoSlug(content)
+
+  if (slug) {
+    const fullUrl = `/v/${slug}`
+    const textBefore = content.substring(0, (VIDEO_LINK_RE.exec(content)?.index ?? content.length)).trim()
+
+    return (
+      <div className="space-y-2">
+        {textBefore && <p className="text-sm">{textBefore}</p>}
+        <a
+          href={fullUrl}
+          target="_blank"
+          rel="noreferrer"
+          className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+            isMine
+              ? 'bg-white/10 border-white/20 hover:bg-white/20'
+              : 'bg-background border-border hover:bg-muted'
+          }`}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+            isMine ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'
+          }`}>
+            <PlayCircle size={20} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Watch Video</p>
+            <p className={`text-xs truncate ${isMine ? 'text-white/60' : 'text-muted-foreground'}`}>
+              online2day.com{fullUrl}
+            </p>
+          </div>
+          <ExternalLink size={14} className="shrink-0 opacity-50" />
+        </a>
+      </div>
+    )
+  }
+
+  return <span className="text-sm">{content}</span>
+}
+
+export function ChatWindow({
+  currentUserId,
   conversationUserId,
-  isAdmin
-}: { 
+  isAdmin,
+}: {
   currentUserId: string
   conversationUserId: string
   isAdmin: boolean
@@ -48,8 +100,7 @@ export function ChatWindow({
       if (!error && data && isMounted) {
         setMessages(data)
         scrollToBottom()
-        
-        // Mark messages as read
+
         await supabase
           .from('messages')
           .update({ is_read: true })
@@ -66,7 +117,6 @@ export function ChatWindow({
       setIsLoading(false)
     }
 
-    // Subscribe to new messages
     const channel = supabase
       .channel(`chat_${conversationUserId}`)
       .on(
@@ -82,7 +132,7 @@ export function ChatWindow({
             setMessages((prev) => [...prev, payload.new as Message])
             scrollToBottom()
           }
-        }
+        },
       )
       .subscribe()
 
@@ -111,7 +161,7 @@ export function ChatWindow({
 
     if (error) {
       console.error('Error sending message:', error)
-      setNewMessage(tempMessage) // restore if failed
+      setNewMessage(tempMessage)
     }
   }
 
@@ -147,23 +197,21 @@ export function ChatWindow({
             return (
               <div
                 key={msg.id}
-                className={`flex flex-col max-w-[80%] ${
-                  isMine ? 'ml-auto items-end' : 'mr-auto items-start'
-                }`}
+                className={`flex flex-col max-w-[80%] ${isMine ? 'ml-auto items-end' : 'mr-auto items-start'}`}
               >
                 <div
-                  className={`px-4 py-2 rounded-2xl ${
+                  className={`px-4 py-2.5 rounded-2xl ${
                     isMine
                       ? 'bg-primary text-primary-foreground rounded-tr-none'
                       : 'bg-muted text-foreground rounded-tl-none'
                   }`}
                 >
-                  {msg.content}
+                  <MessageContent content={msg.content} isMine={isMine} />
                 </div>
                 <span className="text-[10px] text-muted-foreground mt-1 px-1">
-                  {new Date(msg.created_at).toLocaleTimeString([], { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
+                  {new Date(msg.created_at).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
                   })}
                 </span>
               </div>

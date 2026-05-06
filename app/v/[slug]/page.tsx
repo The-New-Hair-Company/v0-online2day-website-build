@@ -8,7 +8,6 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
   const supabase = await createClient()
   const { slug } = await params
 
-  // Look up by slug in lead_assets first, then fall back to lead ID
   const { data: asset } = await supabase
     .from('lead_assets')
     .select('*, lead:leads(id, name, company, email)')
@@ -16,14 +15,20 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
     .eq('type', 'video')
     .single()
 
-  // Fallback: slug might be a lead ID (legacy)
-  let lead: any = asset?.lead
+  let lead: any = asset?.lead ?? null
   let videoUrl: string | null = asset?.url || null
   let videoStoragePath: string | null = asset?.storage_path || null
   let videoName: string = asset?.name || ''
-  let editorProject: any = asset?.metadata && typeof asset.metadata === 'object' && 'editorProject' in asset.metadata ? asset.metadata : null
+  let editorProject: any =
+    asset?.metadata && typeof asset.metadata === 'object' && 'editorProject' in asset.metadata
+      ? asset.metadata
+      : null
 
-  if (!lead) {
+  // Standalone video (no lead) — metadata.sharedVideo === true
+  const isSharedVideo = asset && !lead
+
+  if (!lead && !isSharedVideo) {
+    // Fallback: slug might be a lead ID (legacy)
     const { data: directLead } = await supabase
       .from('leads')
       .select('id, name, company, email')
@@ -33,7 +38,6 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
     if (!directLead) notFound()
     lead = directLead
 
-    // Get latest video for this lead
     const { data: latestAssets } = await supabase
       .from('lead_assets')
       .select('*')
@@ -46,9 +50,16 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
       videoUrl = latestAssets[0].url
       videoStoragePath = latestAssets[0].storage_path
       videoName = latestAssets[0].name
-      editorProject = latestAssets[0].metadata && typeof latestAssets[0].metadata === 'object' && 'editorProject' in latestAssets[0].metadata ? latestAssets[0].metadata : null
+      editorProject =
+        latestAssets[0].metadata &&
+        typeof latestAssets[0].metadata === 'object' &&
+        'editorProject' in latestAssets[0].metadata
+          ? latestAssets[0].metadata
+          : null
     }
   }
+
+  if (!asset && !lead) notFound()
 
   if (videoStoragePath) {
     const { data: signedUrlData } = await supabase.storage
@@ -57,12 +68,75 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
     videoUrl = signedUrlData?.signedUrl || videoUrl
   }
 
+  // ─── Shared / standalone video (no lead personalisation) ──────────────────
+  if (isSharedVideo) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex flex-col">
+        <div className="border-b border-border px-8 py-4 flex items-center justify-between bg-card/50">
+          <span className="text-muted-foreground text-sm font-medium tracking-wide">Online2Day</span>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-start py-16 px-6">
+          <div className="max-w-4xl w-full">
+            <div className="text-center mb-10">
+              <h1 className="text-3xl md:text-4xl font-bold mb-3">
+                {videoName || 'Video from Online2Day'}
+              </h1>
+              <p className="text-muted-foreground text-base max-w-md mx-auto">
+                This video was shared with you by the Online2Day team.
+              </p>
+            </div>
+
+            <div className="relative bg-black rounded-2xl overflow-hidden shadow-2xl shadow-primary/10 border border-border mb-10">
+              {videoUrl ? (
+                <div className="aspect-video">
+                  <video
+                    src={videoUrl}
+                    controls
+                    className="w-full h-full object-contain"
+                    playsInline
+                    preload="metadata"
+                    autoPlay={false}
+                  />
+                </div>
+              ) : (
+                <div className="aspect-video flex flex-col items-center justify-center bg-[#111] text-white/30">
+                  <p className="text-sm">Video processing — please check back shortly.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Link
+                href="/contact"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-semibold rounded-xl hover:opacity-90 transition-all shadow-lg shadow-primary/20"
+              >
+                <Calendar size={18} />
+                Book a Call with Us
+              </Link>
+              <a
+                href="mailto:hello@online2day.com"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-card border border-border text-foreground font-semibold rounded-xl hover:bg-muted transition-all"
+              >
+                <Mail size={18} />
+                Reply by Email
+              </a>
+            </div>
+
+            <div className="text-center mt-12">
+              <p className="text-muted-foreground/70 text-xs">Online2Day · hello@online2day.com</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── Lead-personalised video ───────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
-      {/* Tracking pixel — fires once on page load */}
       <VideoTracker leadId={lead.id} />
 
-      {/* Subtle top bar */}
       <div className="border-b border-border px-8 py-4 flex items-center justify-between bg-card/50">
         <span className="text-muted-foreground text-sm font-medium tracking-wide">Online2Day</span>
         <span className="text-muted-foreground text-xs">Personalised for {lead.name}</span>
@@ -70,7 +144,6 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
 
       <div className="flex-1 flex flex-col items-center justify-start py-16 px-6">
         <div className="max-w-4xl w-full">
-          {/* Header */}
           <div className="text-center mb-10">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-primary/10 border border-primary/20 rounded-full text-primary text-xs font-semibold uppercase tracking-wider mb-6">
               Personalised Message
@@ -84,7 +157,6 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
             </p>
           </div>
 
-          {/* Video Player */}
           <div className="relative bg-black rounded-2xl overflow-hidden shadow-2xl shadow-primary/10 border border-border mb-10">
             {videoUrl ? (
               <div className="aspect-video">
@@ -127,7 +199,6 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
             )}
           </div>
 
-          {/* CTAs */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
             <Link
               href="/contact"
@@ -145,7 +216,6 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
             </a>
           </div>
 
-          {/* Trust footer */}
           <div className="text-center space-y-1">
             <p className="text-muted-foreground text-sm">This message was created exclusively for {lead.name}.</p>
             <p className="text-muted-foreground/70 text-xs">Online2Day · hello@online2day.com</p>

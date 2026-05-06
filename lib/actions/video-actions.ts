@@ -4,6 +4,125 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { logLeadEvent } from './lead-actions'
 
+// ─── ADMIN STANDALONE VIDEO UPLOAD ───────────────────────────────────────────
+
+export async function uploadAdminVideo(formData: FormData) {
+  const supabase = await createClient()
+  const { data: userData } = await supabase.auth.getUser()
+  if (!userData.user) return { error: 'Not authenticated' }
+
+  const file = formData.get('video') as File
+  const title = ((formData.get('title') as string) || file?.name || 'Untitled Video').trim()
+
+  if (!file || file.size === 0) return { error: 'No video file selected' }
+  if (!['video/mp4', 'video/quicktime', 'video/webm', 'video/mov'].includes(file.type)) {
+    return { error: 'Unsupported file type. Use MP4, MOV or WebM.' }
+  }
+
+  const slug = `shared-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const filePath = `shared/${slug}-${safeName}`
+
+  const { error: uploadError } = await supabase.storage
+    .from('lead-videos')
+    .upload(filePath, file, { contentType: file.type, upsert: false })
+
+  if (uploadError) return { error: uploadError.message }
+
+  const { data: asset, error: assetError } = await supabase
+    .from('lead_assets')
+    .insert({
+      lead_id: null,
+      name: title,
+      type: 'video',
+      url: '',
+      storage_path: filePath,
+      slug,
+      metadata: {
+        uploadedVideo: true,
+        sharedVideo: true,
+        uploadedBy: userData.user.email,
+        fileName: file.name,
+        size: file.size,
+        contentType: file.type,
+      },
+    })
+    .select()
+    .single()
+
+  if (assetError) {
+    await supabase.storage.from('lead-videos').remove([filePath])
+    return { error: assetError.message }
+  }
+
+  revalidatePath('/dashboard/videos')
+  return { success: true, slug, assetId: asset.id }
+}
+
+export async function sendVideoViaChat(conversationUserId: string, videoSlug: string) {
+  const supabase = await createClient()
+  const { data: userData } = await supabase.auth.getUser()
+  if (!userData.user) return { error: 'Not authenticated' }
+
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || ''
+  const videoUrl = `${baseUrl}/v/${videoSlug}`
+  const content = `📹 Here is your video: ${videoUrl}`
+
+  const { error } = await supabase.from('messages').insert({
+    conversation_user_id: conversationUserId,
+    sender_id: userData.user.id,
+    content,
+  })
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function getClientUsers() {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('user_profiles')
+    .select('user_id, full_name, email, role')
+    .order('full_name', { ascending: true })
+  return (data || []).filter(u => u.role !== 'admin')
+}
+
+export async function getVideoSignedUrl(storagePath: string) {
+  const supabase = await createClient()
+  const { data } = await supabase.storage
+    .from('lead-videos')
+    .createSignedUrl(storagePath, 60 * 60 * 24 * 7)
+  return data?.signedUrl ?? null
+}
+
+// ─── AGREEMENT DOWNLOAD ───────────────────────────────────────────────────────
+
+export async function getLeadAgreements(leadId: string) {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('lead_agreements')
+    .select('id, title, storage_path, public_url, created_at')
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: false })
+
+  if (error) return []
+  return (data || []).map(a => ({
+    id: a.id as string,
+    title: a.title as string,
+    storagePath: a.storage_path as string | null,
+    publicUrl: a.public_url as string | null,
+    createdAt: a.created_at as string,
+  }))
+}
+
+export async function getAgreementDownloadUrl(storagePath: string) {
+  const supabase = await createClient()
+  const { data } = await supabase.storage
+    .from('agreements')
+    .createSignedUrl(storagePath, 60 * 60) // 1-hour download link
+  return data?.signedUrl ?? null
+}
+
 type EditorProjectPayload = {
   title: string
   leadId: string
