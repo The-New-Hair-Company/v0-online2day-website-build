@@ -20,6 +20,7 @@ export default function VideoUploadClient({ clientUsers }: Props) {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [slug, setSlug] = useState<string | null>(null)
+  const [assetId, setAssetId] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   const [sendOpen, setSendOpen] = useState(false)
@@ -59,6 +60,7 @@ export default function VideoUploadClient({ clientUsers }: Props) {
 
     if (result.error) { setUploadError(result.error); return }
     if (result.slug) setSlug(result.slug)
+    if (result.assetId) setAssetId(result.assetId)
   }
 
   async function handleCopy() {
@@ -83,6 +85,7 @@ export default function VideoUploadClient({ clientUsers }: Props) {
 
   function reset() {
     setFile(null); setTitle(''); setSlug(null); setUploadError('')
+    setAssetId(null)
     setSelectedUser(''); setSendResult(null); setSendOpen(false)
   }
 
@@ -211,6 +214,15 @@ export default function VideoUploadClient({ clientUsers }: Props) {
                   <ExternalLink size={16} />
                   Preview
                 </a>
+                {assetId ? (
+                  <Link
+                    href={`/dashboard/videos/editor?asset=${assetId}`}
+                    className="flex items-center gap-2 px-4 py-3 border border-border rounded-xl text-sm font-medium hover:bg-muted transition-colors"
+                  >
+                    <Film size={16} />
+                    Open in editor
+                  </Link>
+                ) : null}
               </div>
             </div>
 

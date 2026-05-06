@@ -84,6 +84,48 @@ type RecordedClip = {
   duration: number
 }
 
+type EditorToast = {
+  id: number
+  kind: 'success' | 'error' | 'info'
+  message: string
+}
+
+type LocalDraft = {
+  version: 1
+  savedAt: string
+  payload: {
+    projectTitle: string
+    leadId: string
+    selectedSceneId: string
+    scenes: Scene[]
+    timeline: TimelineItem[]
+    brandColor: string
+    accentColor: string
+    format: string
+    captionMode: boolean
+    watermark: boolean
+    approvalMode: boolean
+    emailTo: string
+    emailSubject: string
+    emailBody: string
+    selectedTool: string
+    activeFeatureKeys: string[]
+    guideStep: number
+    playhead: number
+    showGrid: boolean
+    showSafeZone: boolean
+    largeTextPreview: boolean
+    reducedMotionPreview: boolean
+    transcriptEnabled: boolean
+    snapEnabled: boolean
+    activeTrackLocked: boolean
+    thumbnailMode: string
+    ctaLabel: string
+    safeChecklist: boolean
+    logoPlacement: 'top-left' | 'top-right' | 'bottom-left'
+  }
+}
+
 const featureGroups = [
   { title: 'Canvas', icon: Ratio, items: ['16:9, 9:16, 1:1, 4:5 and custom ratios', 'Safe-zone guides for email thumbnails', 'Snap grid and smart alignment', 'Brand-aware title positioning', 'Responsive preview frames'] },
   { title: 'Media', icon: Image, items: ['Upload video, image and logo assets', 'Database video library attachment', 'Drag-and-drop asset staging', 'Reusable intro and outro blocks', 'Smart thumbnail selection'] },
@@ -143,6 +185,7 @@ const brandVariants = [
 ]
 
 const totalFeatureCount = featureGroups.reduce((sum, group) => sum + group.items.length, 0)
+const LOCAL_DRAFT_KEY = 'o2d_video_editor_local_draft_v1'
 
 function formatSeconds(seconds: number) {
   const safeSeconds = Math.max(0, Math.floor(seconds))
@@ -170,6 +213,13 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
   const [savedAssetId, setSavedAssetId] = useState('')
   const [saveStatus, setSaveStatus] = useState('')
   const [sendStatus, setSendStatus] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [isSending, setIsSending] = useState(false)
+  const [isAutosaving, setIsAutosaving] = useState(false)
+  const [isDirty, setIsDirty] = useState(false)
+  const [lastSavedFingerprint, setLastSavedFingerprint] = useState('')
+  const [toasts, setToasts] = useState<EditorToast[]>([])
+  const [draftPrompt, setDraftPrompt] = useState<{ savedAt: string } | null>(null)
   const [selectedTool, setSelectedTool] = useState('Select')
   const [activeFeatureKeys, setActiveFeatureKeys] = useState<string[]>([])
   const [guidePlaying, setGuidePlaying] = useState(false)
@@ -197,6 +247,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
   const [recordedAssetId, setRecordedAssetId] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const statusTimerRef = useRef<number | null>(null)
+  const toastTimersRef = useRef<number[]>([])
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const mediaChunksRef = useRef<Blob[]>([])
@@ -204,6 +255,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
   const recordingIntervalRef = useRef<number | null>(null)
   const recordingStartRef = useRef<number>(0)
   const recordingCancelledRef = useRef(false)
+  const isBootstrappedRef = useRef(false)
 
   const selectedLead = leads.find((lead) => lead.id === leadId)
   const selectedScene = scenes.find((scene) => scene.id === selectedSceneId) || scenes[0]
@@ -246,6 +298,54 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     guidePlaying ? styles.canvasGuided : '',
   ].filter(Boolean).join(' ')
   const selectedGuide = guideSteps[guideStep]
+  const projectFingerprint = useMemo(() => JSON.stringify({
+    projectTitle,
+    leadId,
+    scenes,
+    timeline,
+    brandColor,
+    accentColor,
+    format,
+    captionMode,
+    watermark,
+    approvalMode,
+    emailTo,
+    emailSubject,
+    emailBody,
+    activeFeatureKeys,
+    ctaLabel,
+    thumbnailMode,
+    logoPlacement,
+    transcriptEnabled,
+    safeChecklist,
+    recordedClip: recordedClip ? {
+      name: recordedClip.name,
+      size: recordedClip.size,
+      duration: recordedClip.duration,
+      type: recordedClip.type,
+    } : null,
+  }), [
+    projectTitle,
+    leadId,
+    scenes,
+    timeline,
+    brandColor,
+    accentColor,
+    format,
+    captionMode,
+    watermark,
+    approvalMode,
+    emailTo,
+    emailSubject,
+    emailBody,
+    activeFeatureKeys,
+    ctaLabel,
+    thumbnailMode,
+    logoPlacement,
+    transcriptEnabled,
+    safeChecklist,
+    recordedClip,
+  ])
 
   useEffect(() => {
     if (!guidePlaying) return
@@ -260,6 +360,8 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
   useEffect(() => {
     return () => {
       if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current)
+      toastTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+      toastTimersRef.current = []
     }
   }, [])
 
@@ -269,7 +371,33 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
   }, [videos])
 
   useEffect(() => {
-    const mode = new URLSearchParams(window.location.search).get('mode')
+    const params = new URLSearchParams(window.location.search)
+    const mode = params.get('mode')
+    const assetParam = params.get('asset')
+    const videoParam = params.get('video')
+    const leadParam = params.get('lead')
+
+    if (leadParam) {
+      const lead = leads.find((item) => item.id === leadParam)
+      if (lead) handleLeadChange(lead.id)
+    }
+
+    if (assetParam || videoParam) {
+      const candidate = assetParam || videoParam || ''
+      const matchedVideo = videos.find((video) => video.id === candidate || video.slug === candidate)
+      if (matchedVideo) {
+        if (matchedVideo.leadId) {
+          const lead = leads.find((item) => item.id === matchedVideo.leadId)
+          if (lead) handleLeadChange(lead.id)
+        }
+        setSavedAssetId(matchedVideo.id)
+        setSendStatus(`Loaded existing video asset: ${matchedVideo.name}. All editor tools are now available for modifications.`)
+      } else if (candidate) {
+        setSavedAssetId(candidate)
+        setSendStatus('Loaded video reference from URL. Save changes to persist a new edited version.')
+      }
+    }
+
     if (mode === 'record') {
       setSelectedTool('Record')
       setRecordingPanelOpen(true)
@@ -286,7 +414,135 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
       setSelectedTool('AI polish')
       runEditorCommand('AI intro mode ready. Use AI polish to tailor the opening scene.')
     }
-  }, [])
+
+    try {
+      const raw = window.localStorage.getItem(LOCAL_DRAFT_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as LocalDraft
+        if (parsed?.version === 1 && parsed.savedAt) {
+          setDraftPrompt({ savedAt: parsed.savedAt })
+        }
+      }
+    } catch {
+      // ignore malformed local draft
+    }
+
+    isBootstrappedRef.current = true
+  }, [leads, videos])
+
+  useEffect(() => {
+    if (!isBootstrappedRef.current) return
+    if (!lastSavedFingerprint) {
+      setLastSavedFingerprint(projectFingerprint)
+      setIsDirty(false)
+      return
+    }
+    setIsDirty(projectFingerprint !== lastSavedFingerprint)
+  }, [projectFingerprint, lastSavedFingerprint])
+
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (!isDirty) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isDirty])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (!isBootstrappedRef.current) return
+      if (!isDirty || isSaving || isSending || isAutosaving) return
+      void (async () => {
+        setIsAutosaving(true)
+        const result = await persistProject('Autosaving editor changes...', recordedAssetId, { silentSuccessToast: true })
+        if (!result.error) {
+          setSaveStatus(`Autosaved ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`)
+        }
+        setIsAutosaving(false)
+      })()
+    }, 45000)
+    return () => window.clearInterval(interval)
+  }, [isAutosaving, isDirty, isSaving, isSending, recordedAssetId, projectFingerprint])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (!isBootstrappedRef.current || !isDirty) return
+      const draft: LocalDraft = {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        payload: {
+          projectTitle,
+          leadId,
+          selectedSceneId,
+          scenes,
+          timeline,
+          brandColor,
+          accentColor,
+          format,
+          captionMode,
+          watermark,
+          approvalMode,
+          emailTo,
+          emailSubject,
+          emailBody,
+          selectedTool,
+          activeFeatureKeys,
+          guideStep,
+          playhead,
+          showGrid,
+          showSafeZone,
+          largeTextPreview,
+          reducedMotionPreview,
+          transcriptEnabled,
+          snapEnabled,
+          activeTrackLocked,
+          thumbnailMode,
+          ctaLabel,
+          safeChecklist,
+          logoPlacement,
+        },
+      }
+      try {
+        window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft))
+      } catch {
+        // ignore localStorage quota issues
+      }
+    }, 10000)
+    return () => window.clearInterval(interval)
+  }, [
+    isDirty,
+    projectTitle,
+    leadId,
+    selectedSceneId,
+    scenes,
+    timeline,
+    brandColor,
+    accentColor,
+    format,
+    captionMode,
+    watermark,
+    approvalMode,
+    emailTo,
+    emailSubject,
+    emailBody,
+    selectedTool,
+    activeFeatureKeys,
+    guideStep,
+    playhead,
+    showGrid,
+    showSafeZone,
+    largeTextPreview,
+    reducedMotionPreview,
+    transcriptEnabled,
+    snapEnabled,
+    activeTrackLocked,
+    thumbnailMode,
+    ctaLabel,
+    safeChecklist,
+    logoPlacement,
+  ])
 
   useEffect(() => {
     const video = livePreviewRef.current
@@ -314,6 +570,16 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
       window.clearInterval(recordingIntervalRef.current)
       recordingIntervalRef.current = null
     }
+  }
+
+  function pushToast(kind: EditorToast['kind'], message: string) {
+    const id = Date.now() + Math.floor(Math.random() * 1000)
+    setToasts((current) => [...current, { id, kind, message }])
+    const timer = window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id))
+      toastTimersRef.current = toastTimersRef.current.filter((value) => value !== timer)
+    }, 3600)
+    toastTimersRef.current.push(timer)
   }
 
   function stopMediaStream() {
@@ -468,6 +734,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     if ('error' in result && result.error) {
       const error = String(result.error)
       setSaveStatus(error)
+      pushToast('error', error)
       return { assetId: '', slug: '', error }
     }
 
@@ -483,6 +750,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     setSavedAssetId(nextVideo.id)
     setRecordedAssetId(nextVideo.id)
     setSaveStatus(`Recorded clip saved. Video link: /v/${nextVideo.slug}`)
+    pushToast('success', 'Recorded clip saved to video library.')
     return { assetId: nextVideo.id, slug: nextVideo.slug, error: '' }
   }
 
@@ -553,7 +821,11 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     }
   }
 
-  async function persistProject(statusMessage = 'Saving project...', sourceAssetIdOverride = recordedAssetId) {
+  async function persistProject(
+    statusMessage = 'Saving project...',
+    sourceAssetIdOverride = recordedAssetId,
+    options?: { silentSuccessToast?: boolean }
+  ) {
     if (statusTimerRef.current) {
       window.clearTimeout(statusTimerRef.current)
       statusTimerRef.current = null
@@ -563,6 +835,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     if ('error' in result && result.error) {
       const error = String(result.error)
       setSaveStatus(error)
+      pushToast('error', error)
       return { assetId: '', error }
     }
     const asset = result.asset as any
@@ -578,63 +851,139 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     }
     setVersionCount((current) => current + 1)
     setSaveStatus(`Saved. Video link: /v/${result.slug}`)
+    setLastSavedFingerprint(projectFingerprint)
+    setIsDirty(false)
+    window.localStorage.removeItem(LOCAL_DRAFT_KEY)
+    if (!options?.silentSuccessToast) pushToast('success', 'Video project saved to library.')
     return { assetId: asset?.id || '', slug: result.slug, error: '' }
   }
 
-  async function handleSave() {
-    let sourceAssetId = recordedAssetId
-    if (recordedClip && !sourceAssetId) {
-      const upload = await uploadRecordingToLibrary()
-      if (upload.error || !upload.assetId) return
-      sourceAssetId = upload.assetId
+  function restoreLocalDraft() {
+    try {
+      const raw = window.localStorage.getItem(LOCAL_DRAFT_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as LocalDraft
+      if (!parsed?.payload) return
+      const p = parsed.payload
+      const restoredScenes = Array.isArray(p.scenes) && p.scenes.length > 0 ? p.scenes : initialScenes
+      const restoredSceneId = restoredScenes.some((scene) => scene.id === p.selectedSceneId)
+        ? p.selectedSceneId
+        : restoredScenes[0].id
+      setProjectTitle(p.projectTitle)
+      setLeadId(p.leadId)
+      setSelectedSceneId(restoredSceneId)
+      setScenes(restoredScenes)
+      setTimeline(Array.isArray(p.timeline) ? p.timeline : initialTimeline)
+      setBrandColor(p.brandColor)
+      setAccentColor(p.accentColor)
+      setFormat(p.format)
+      setCaptionMode(p.captionMode)
+      setWatermark(p.watermark)
+      setApprovalMode(p.approvalMode)
+      setEmailTo(p.emailTo)
+      setEmailSubject(p.emailSubject)
+      setEmailBody(p.emailBody)
+      setSelectedTool(p.selectedTool)
+      setActiveFeatureKeys(p.activeFeatureKeys)
+      setGuideStep(p.guideStep)
+      setPlayhead(p.playhead)
+      setShowGrid(p.showGrid)
+      setShowSafeZone(p.showSafeZone)
+      setLargeTextPreview(p.largeTextPreview)
+      setReducedMotionPreview(p.reducedMotionPreview)
+      setTranscriptEnabled(p.transcriptEnabled)
+      setSnapEnabled(p.snapEnabled)
+      setActiveTrackLocked(p.activeTrackLocked)
+      setThumbnailMode(p.thumbnailMode)
+      setCtaLabel(p.ctaLabel)
+      setSafeChecklist(p.safeChecklist)
+      setLogoPlacement(p.logoPlacement)
+      setDraftPrompt(null)
+      setIsDirty(true)
+      pushToast('success', 'Recovered editor draft from local backup.')
+    } catch {
+      pushToast('error', 'Could not restore local draft.')
     }
-    await persistProject(recordedClip ? 'Saving recorded video edits...' : 'Saving project...', sourceAssetId)
   }
 
-  async function handleSend() {
-    setSendStatus('Sending email...')
-    let assetId = savedAssetId || recordedAssetId
+  function dismissLocalDraft() {
+    window.localStorage.removeItem(LOCAL_DRAFT_KEY)
+    setDraftPrompt(null)
+  }
 
-    if (recordedClip) {
+  async function handleSave() {
+    if (isSaving) return
+    setIsSaving(true)
+    try {
       let sourceAssetId = recordedAssetId
-      if (!sourceAssetId) {
+      if (recordedClip && !sourceAssetId) {
         const upload = await uploadRecordingToLibrary()
         if (upload.error || !upload.assetId) {
-          setSendStatus(upload.error || 'Save the recording before sending the email.')
           return
         }
         sourceAssetId = upload.assetId
       }
-      const result = await persistProject('Saving recorded video before email...', sourceAssetId)
-      if (result.error || !result.assetId) {
-        setSendStatus(result.error || 'Save the video before sending the email.')
-        return
-      }
-      assetId = result.assetId
-    } else if (!assetId) {
-      const result = await persistProject('Saving video before email...')
-      if (result.error || !result.assetId) {
-        setSendStatus(result.error || 'Save the video before sending the email.')
-        return
-      }
-      assetId = result.assetId
+      await persistProject(recordedClip ? 'Saving recorded video edits...' : 'Saving project...', sourceAssetId)
+    } finally {
+      setIsSaving(false)
     }
+  }
 
-    const response = await sendEnterpriseEmail({
-      leadId,
-      to: emailTo,
-      recipientName: selectedLead?.name,
-      subject: emailSubject,
-      body: emailBody,
-      templateName: 'Video editor campaign',
-      videoAssetId: assetId,
-      ctaLabel: 'Watch video',
-    })
-    if ('error' in response && response.error) {
-      setSendStatus(String(response.error))
-      return
+  async function handleSend() {
+    if (isSending) return
+    setIsSending(true)
+    setSendStatus('Sending email...')
+    try {
+      let assetId = savedAssetId || recordedAssetId
+
+      if (recordedClip) {
+        let sourceAssetId = recordedAssetId
+        if (!sourceAssetId) {
+          const upload = await uploadRecordingToLibrary()
+          if (upload.error || !upload.assetId) {
+            setSendStatus(upload.error || 'Save the recording before sending the email.')
+            pushToast('error', upload.error || 'Save the recording before sending the email.')
+            return
+          }
+          sourceAssetId = upload.assetId
+        }
+        const result = await persistProject('Saving recorded video before email...', sourceAssetId)
+        if (result.error || !result.assetId) {
+          setSendStatus(result.error || 'Save the video before sending the email.')
+          pushToast('error', result.error || 'Save the video before sending the email.')
+          return
+        }
+        assetId = result.assetId
+      } else if (!assetId) {
+        const result = await persistProject('Saving video before email...')
+        if (result.error || !result.assetId) {
+          setSendStatus(result.error || 'Save the video before sending the email.')
+          pushToast('error', result.error || 'Save the video before sending the email.')
+          return
+        }
+        assetId = result.assetId
+      }
+
+      const response = await sendEnterpriseEmail({
+        leadId,
+        to: emailTo,
+        recipientName: selectedLead?.name,
+        subject: emailSubject,
+        body: emailBody,
+        templateName: 'Video editor campaign',
+        videoAssetId: assetId,
+        ctaLabel: 'Watch video',
+      })
+      if ('error' in response && response.error) {
+        setSendStatus(String(response.error))
+        pushToast('error', String(response.error))
+        return
+      }
+      setSendStatus('Email sent with the saved video attached and logged.')
+      pushToast('success', 'Email sent with attached video.')
+    } finally {
+      setIsSending(false)
     }
-    setSendStatus('Email sent with the saved video attached and logged.')
   }
 
   function handleLeadChange(nextLeadId: string) {
@@ -1135,6 +1484,15 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     <div className={styles.shell}>
       <DashboardSidebar active="videos" />
       <main className={styles.main}>
+        {toasts.length > 0 ? (
+          <div className={styles.toastStack} role="status" aria-live="polite">
+            {toasts.map((toast) => (
+              <div key={toast.id} className={`${styles.toast} ${toast.kind === 'success' ? styles.toastSuccess : toast.kind === 'error' ? styles.toastError : styles.toastInfo}`}>
+                {toast.message}
+              </div>
+            ))}
+          </div>
+        ) : null}
         <header className={styles.header}>
           <div>
             <Link className={styles.backLink} href="/dashboard/videos"><ArrowLeft size={16} /> Videos</Link>
@@ -1143,10 +1501,24 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
           </div>
           <div className={styles.headerActions}>
             <button onClick={handleImportMedia}><Upload size={16} />Import media</button>
-            <button onClick={handleSave}><Save size={16} />Save to library</button>
-            <button className={styles.primaryButton} onClick={handleSend}><Send size={16} />Send with email</button>
+            <button onClick={handleSave} disabled={isSaving || isSending}><Save size={16} />{isSaving ? 'Saving...' : 'Save to library'}</button>
+            <button className={styles.primaryButton} onClick={handleSend} disabled={isSending || isSaving || !emailTo}><Send size={16} />{isSending ? 'Sending...' : 'Send with email'}</button>
           </div>
         </header>
+        {draftPrompt ? (
+          <div className={styles.draftPrompt}>
+            <strong>Recover local draft?</strong>
+            <span>We found an unsaved editor draft from {new Date(draftPrompt.savedAt).toLocaleString('en-GB')}.</span>
+            <div>
+              <button type="button" onClick={restoreLocalDraft}>Restore draft</button>
+              <button type="button" onClick={dismissLocalDraft}>Dismiss</button>
+            </div>
+          </div>
+        ) : null}
+        <div className={styles.editorMetaRow}>
+          <span>{isDirty ? 'Unsaved changes' : 'All changes saved'}</span>
+          {isAutosaving ? <span>Autosaving...</span> : null}
+        </div>
 
         <section className={styles.statusGrid}>
           {statusCards.map(({ label, value, icon: Icon }) => (
@@ -1278,16 +1650,16 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
                         <CircleStop size={15} />Stop
                       </button>
                     ) : (
-                      <button type="button" onClick={() => void startRecording()}>
+                      <button type="button" onClick={() => void startRecording()} disabled={isSaving || isSending}>
                         <Video size={15} />Start
                       </button>
                     )}
                     {recordedClip ? (
                       <>
-                        <button type="button" onClick={() => void uploadRecordingToLibrary()}>
+                        <button type="button" onClick={() => void uploadRecordingToLibrary()} disabled={isSaving || isSending}>
                           <Upload size={15} />Save clip
                         </button>
-                        <button type="button" onClick={discardRecording}>
+                        <button type="button" onClick={discardRecording} disabled={isSaving || isSending}>
                           <RotateCcw size={15} />Record again
                         </button>
                       </>
@@ -1386,8 +1758,8 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
             </select></label>
             <label><span>Message</span><textarea rows={6} value={emailBody} onChange={(event) => setEmailBody(event.target.value)} /></label>
             <div className={styles.handoffActions}>
-              <button onClick={handleSave}><Save size={15} />Save asset</button>
-              <button className={styles.primaryButton} onClick={handleSend}><Zap size={15} />Save and send</button>
+              <button onClick={handleSave} disabled={isSaving || isSending}><Save size={15} />{isSaving ? 'Saving...' : 'Save asset'}</button>
+              <button className={styles.primaryButton} onClick={handleSend} disabled={isSending || isSaving || !emailTo}><Zap size={15} />{isSending ? 'Sending...' : 'Save and send'}</button>
             </div>
             {saveStatus ? <p className={styles.statusText}>{saveStatus}</p> : null}
             {sendStatus ? <p className={styles.statusText}>{sendStatus}</p> : null}

@@ -60,6 +60,7 @@
   padding: 34px 38px 80px;
   display: grid;
   gap: 18px;
+  position: relative;
 }
 
 .header {
@@ -91,6 +92,59 @@
   max-width: 760px;
 }
 
+.editorMetaRow {
+  margin-top: -8px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.editorMetaRow span {
+  border: 1px solid rgba(116, 147, 196, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #cfe0ff;
+}
+
+.draftPrompt {
+  border: 1px solid rgba(245, 158, 11, 0.36);
+  background: rgba(245, 158, 11, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.draftPrompt strong {
+  font-size: 13px;
+}
+
+.draftPrompt span {
+  font-size: 12px;
+  color: #fef3c7;
+}
+
+.draftPrompt div {
+  display: flex;
+  gap: 8px;
+}
+
+.draftPrompt button {
+  min-height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .headerActions,
 .sceneActions,
 .handoffActions,
@@ -120,6 +174,19 @@
   cursor: pointer;
   font: inherit;
   font-weight: 700;
+}
+
+.headerActions button:disabled,
+.stageToolbar button:disabled,
+.inspector button:disabled,
+.handoffActions button:disabled,
+.timelineTools button:disabled,
+.guideActions button:disabled,
+.toolRail button:disabled,
+.featureButton:disabled,
+.sceneActions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .primaryButton {
@@ -978,6 +1045,44 @@
   color: #b9ccff;
   padding: 9px 10px;
   font-size: 12px;
+}
+
+.toastStack {
+  position: fixed;
+  right: 22px;
+  top: 18px;
+  z-index: 120;
+  display: grid;
+  gap: 8px;
+  max-width: min(420px, 92vw);
+}
+
+.toast {
+  border: 1px solid rgba(116, 147, 196, 0.22);
+  border-radius: 10px;
+  background: rgba(7, 12, 20, 0.92);
+  color: #d9e7ff;
+  padding: 10px 12px;
+  font-size: 12px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
+}
+
+.toastSuccess {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(22, 101, 52, 0.26);
+  color: #dcfce7;
+}
+
+.toastError {
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(153, 27, 27, 0.28);
+  color: #fee2e2;
+}
+
+.toastInfo {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(30, 64, 175, 0.26);
+  color: #dbeafe;
 }
 
 @keyframes guideFocus {

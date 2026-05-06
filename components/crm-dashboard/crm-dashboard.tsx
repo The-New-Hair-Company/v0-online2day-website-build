@@ -693,12 +693,33 @@ function LeadsSection({ initialLeads = [], metrics = [] }: { initialLeads?: Lead
 }
 
 function VideosSection({ initialVideos = [], metrics = [] }: { initialVideos?: VideoRecord[]; metrics?: MetricItem[] }) {
+  const router = useRouter()
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(initialVideos[0]?.id || '')
   const [showStageMenu, setShowStageMenu] = useState(true)
+  const [showStatusMenu, setShowStatusMenu] = useState(false)
+  const [showOwnerMenu, setShowOwnerMenu] = useState(false)
+  const [showChannelMenu, setShowChannelMenu] = useState(false)
   const [stage, setStage] = useState('All stages')
+  const [status, setStatus] = useState('All statuses')
+  const [owner, setOwner] = useState('All owners')
+  const [channel, setChannel] = useState('All channels')
   const [activeTab, setActiveTab] = useState('Library')
+  const [ctaType, setCtaType] = useState('Book call')
+  const [ctaUrl, setCtaUrl] = useState('https://calendly.com/online2day/demo')
   const videoTabs = [{ label: 'Library' }, { label: 'Personalised' }, { label: 'Templates' }, { label: 'Campaigns' }, { label: 'Analytics' }]
+  const statuses = useMemo(() => ['All statuses', ...Array.from(new Set(initialVideos.map((video) => video.status)))], [initialVideos])
+  const owners = useMemo(() => ['All owners', ...Array.from(new Set(initialVideos.map((video) => video.owner)))], [initialVideos])
+  const channels = useMemo(() => ['All channels', ...Array.from(new Set(initialVideos.map((video) => video.channel)))], [initialVideos])
+
+  function clearVideoFilters() {
+    setQuery('')
+    setStage('All stages')
+    setStatus('All statuses')
+    setOwner('All owners')
+    setChannel('All channels')
+  }
+
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     return initialVideos.filter((video) => {
@@ -706,9 +727,12 @@ function VideosSection({ initialVideos = [], metrics = [] }: { initialVideos?: V
         ? `${video.title} ${video.company} ${video.owner} ${video.status}`.toLowerCase().includes(normalized)
         : true
       const matchesStage = stage === 'All stages' || video.funnelStage === stage
-      return matchesQuery && matchesStage
+      const matchesStatus = status === 'All statuses' || video.status === status
+      const matchesOwner = owner === 'All owners' || video.owner === owner
+      const matchesChannel = channel === 'All channels' || video.channel === channel
+      return matchesQuery && matchesStage && matchesStatus && matchesOwner && matchesChannel
     })
-  }, [query, stage, initialVideos])
+  }, [query, stage, status, owner, channel, initialVideos])
   const selectedVideo = initialVideos.find((video) => video.id === selectedId) ?? initialVideos[0] ?? null
 
   if (!selectedVideo) {
@@ -739,10 +763,19 @@ function VideosSection({ initialVideos = [], metrics = [] }: { initialVideos?: V
                   </div>
                 ) : null}
               </div>
-              <button className={styles.chipButton}>Status</button>
-              <button className={styles.chipButton}>Owner</button>
-              <button className={styles.chipButton}>Channel</button>
-              <button className={styles.buttonGhost}>Clear filters</button>
+              <div className={styles.dropdownWrap}>
+                <button className={styles.chipButton} onClick={() => setShowStatusMenu((value) => !value)}>Status <ChevronDown size={14} /></button>
+                {showStatusMenu ? <div className={styles.dropdown}>{statuses.map((item) => <button key={item} className={cx(status === item && styles.dropdownActive)} onClick={() => setStatus(item)}>{item}</button>)}</div> : null}
+              </div>
+              <div className={styles.dropdownWrap}>
+                <button className={styles.chipButton} onClick={() => setShowOwnerMenu((value) => !value)}>Owner <ChevronDown size={14} /></button>
+                {showOwnerMenu ? <div className={styles.dropdown}>{owners.map((item) => <button key={item} className={cx(owner === item && styles.dropdownActive)} onClick={() => setOwner(item)}>{item}</button>)}</div> : null}
+              </div>
+              <div className={styles.dropdownWrap}>
+                <button className={styles.chipButton} onClick={() => setShowChannelMenu((value) => !value)}>Channel <ChevronDown size={14} /></button>
+                {showChannelMenu ? <div className={styles.dropdown}>{channels.map((item) => <button key={item} className={cx(channel === item && styles.dropdownActive)} onClick={() => setChannel(item)}>{item}</button>)}</div> : null}
+              </div>
+              <button className={styles.buttonGhost} onClick={clearVideoFilters}>Clear filters</button>
             </div>
             <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
               No videos found. Upload or create videos to see them here.
@@ -780,10 +813,19 @@ function VideosSection({ initialVideos = [], metrics = [] }: { initialVideos?: V
                 </div>
               ) : null}
             </div>
-            <button className={styles.chipButton}>Status</button>
-            <button className={styles.chipButton}>Owner</button>
-            <button className={styles.chipButton}>Channel</button>
-            <button className={styles.buttonGhost}>Clear filters</button>
+            <div className={styles.dropdownWrap}>
+              <button className={styles.chipButton} onClick={() => setShowStatusMenu((value) => !value)}>Status <ChevronDown size={14} /></button>
+              {showStatusMenu ? <div className={styles.dropdown}>{statuses.map((item) => <button key={item} className={cx(status === item && styles.dropdownActive)} onClick={() => setStatus(item)}>{item}</button>)}</div> : null}
+            </div>
+            <div className={styles.dropdownWrap}>
+              <button className={styles.chipButton} onClick={() => setShowOwnerMenu((value) => !value)}>Owner <ChevronDown size={14} /></button>
+              {showOwnerMenu ? <div className={styles.dropdown}>{owners.map((item) => <button key={item} className={cx(owner === item && styles.dropdownActive)} onClick={() => setOwner(item)}>{item}</button>)}</div> : null}
+            </div>
+            <div className={styles.dropdownWrap}>
+              <button className={styles.chipButton} onClick={() => setShowChannelMenu((value) => !value)}>Channel <ChevronDown size={14} /></button>
+              {showChannelMenu ? <div className={styles.dropdown}>{channels.map((item) => <button key={item} className={cx(channel === item && styles.dropdownActive)} onClick={() => setChannel(item)}>{item}</button>)}</div> : null}
+            </div>
+            <button className={styles.buttonGhost} onClick={clearVideoFilters}>Clear filters</button>
           </div>
           <VideoTable rows={filtered} selectedId={selectedId} onSelect={setSelectedId} />
         </div>
@@ -819,7 +861,7 @@ function VideosSection({ initialVideos = [], metrics = [] }: { initialVideos?: V
         <div className={styles.videoPreview}>
           <div className={styles.previewCard}>
             <div className={styles.playButton}>
-              <span>
+              <span onClick={() => router.push(`/dashboard/videos/editor?video=${selectedVideo.id}`)}>
                 <Video size={22} />
               </span>
             </div>
@@ -840,9 +882,12 @@ function VideosSection({ initialVideos = [], metrics = [] }: { initialVideos?: V
           </div>
           <div className={styles.list}>
             <div className={styles.panelTitle}>CTA configuration</div>
-            <button className={styles.buttonGhost}>{selectedVideo?.cta} <ChevronDown size={14} /></button>
-            <button className={styles.buttonGhost}>https://calendly.com/online2day/demo <ChevronDown size={14} /></button>
-            <button className={styles.button}><ExternalLink size={15} /> Preview CTA</button>
+            <button className={styles.buttonGhost} onClick={() => setCtaType((current) => current === 'Book call' ? 'Watch video' : current === 'Watch video' ? 'Reply to email' : 'Book call')}>{ctaType} <ChevronDown size={14} /></button>
+            <button className={styles.buttonGhost} onClick={() => {
+              const next = window.prompt('Update CTA destination URL', ctaUrl)
+              if (next && next.trim()) setCtaUrl(next.trim())
+            }}>{ctaUrl} <ChevronDown size={14} /></button>
+            <button className={styles.button} onClick={() => window.open(ctaUrl, '_blank', 'noopener,noreferrer')}><ExternalLink size={15} /> Preview CTA</button>
           </div>
         </div>
       </div>
@@ -1820,6 +1865,17 @@ function LeadTable({ leads, selectedId, onSelect }: { leads: LeadRecord[]; selec
 }
 
 function VideoTable({ rows, selectedId, onSelect }: { rows: VideoRecord[]; selectedId: string; onSelect: (value: string) => void }) {
+  const [page, setPage] = useState(1)
+  const pageSize = 10
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const start = (safePage - 1) * pageSize
+  const pagedRows = rows.slice(start, start + pageSize)
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
   return (
     <>
       <div className={styles.tableScroll}>
@@ -1840,7 +1896,7 @@ function VideoTable({ rows, selectedId, onSelect }: { rows: VideoRecord[]; selec
             </tr>
           </thead>
           <tbody>
-            {rows.map((video) => (
+            {pagedRows.map((video) => (
               <tr key={video.id} className={cx(selectedId === video.id && styles.tableRowSelected)} onClick={() => onSelect(video.id)}>
                 <td><input type="checkbox" checked={selectedId === video.id} readOnly /></td>
                 <td>
@@ -1872,13 +1928,12 @@ function VideoTable({ rows, selectedId, onSelect }: { rows: VideoRecord[]; selec
         </table>
       </div>
       <div className={styles.tableFooter}>
-        Showing 1 to {rows.length} of 23 videos
+        Showing {rows.length === 0 ? 0 : start + 1} to {Math.min(start + pageSize, rows.length)} of {rows.length} videos
         <div className={styles.pagination}>
-          <button>{'<'}</button>
-          <button>1</button>
-          <button>2</button>
-          <button>3</button>
-          <button>{'>'}</button>
+          <button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage === 1}>{'<'}</button>
+          <button>{safePage}</button>
+          <button disabled>of {totalPages}</button>
+          <button onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={safePage === totalPages}>{'>'}</button>
         </div>
       </div>
     </>
