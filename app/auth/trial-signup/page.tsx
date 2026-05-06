@@ -4,7 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Mail, Phone, Shield } from 'lucide-react'
-import { startTrialAccount, isBusinessEmail } from '@/lib/actions/trial-signup'
+import { startTrialAccount } from '@/lib/actions/trial-signup'
+import { isBusinessEmail } from '@/lib/utils'
 
 // Update this to your real contact number
 const SUPPORT_PHONE = '+44 (0) 800 XXX XXXX'
