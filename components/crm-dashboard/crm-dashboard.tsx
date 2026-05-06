@@ -324,6 +324,10 @@ export function CrmDashboard({
     showNotice('Export ready', `${rows.length} ${section.replace('-', ' ')} records downloaded.`)
   }
 
+  function contactSales() {
+    showNotice('Contact sales to add this', 'This feature is on our enterprise roadmap. Email sales@online2day.com to get early access.')
+  }
+
   function handleCommand(label: string) {
     const normalized = label.replace(/\s+/g, ' ').trim()
     if (!normalized) return
@@ -332,13 +336,22 @@ export function CrmDashboard({
     if (/view plan/i.test(normalized)) return router.push('/pricing')
     if (/create video|send video|record new video|upload existing video|use template|create ai intro/i.test(normalized)) return router.push('/dashboard/videos/editor')
     if (/open lead/i.test(normalized)) return router.push('/dashboard/leads')
+    if (/^send email$/i.test(normalized)) return router.push('/dashboard/emails')
     if (/book call|calendly|schedule call/i.test(normalized)) return router.push('/contact')
+
+    // Features not yet built — direct to sales
+    if (/new campaign|create template|start sequence|create sequence|import contacts|upload contact list/i.test(normalized)) return contactSales()
+    if (/new conversation|create canned reply/i.test(normalized)) return contactSales()
+    if (/connect provider|open automations|open email settings|review mapping|manage connection|open library/i.test(normalized)) return contactSales()
+    if (/new request|create proposal/i.test(normalized)) return contactSales()
+    if (/assign owner/i.test(normalized)) return contactSales()
+
     if (/send proposal|share resource|convert to project|mark as scoped/i.test(normalized)) return showNotice(normalized, 'Workflow state recorded for the selected CRM item.')
     if (/filters|status|owner|source|audience|channel|score|budget|priority|type|goal|more filters/i.test(normalized)) return showNotice('Filter control active', 'Use the table controls and stage menus to narrow this workspace.')
     if (/columns/i.test(normalized)) return showNotice('Columns saved', 'Column preferences saved.')
     if (/sort|latest|last edited|last activity/i.test(normalized)) return showNotice('Sort applied', 'The table is now using the selected ordering preference.')
     if (/preview/i.test(normalized)) return showNotice('Preview opened', 'Preview mode is ready for review before sending.')
-    if (/campaign|sequence|template|send test|send email/i.test(normalized)) return showNotice('Email workflow ready', 'Use the email composer to send, test, and attach videos from the database.')
+    if (/campaign|sequence|template|send test|send email/i.test(normalized)) return router.push('/dashboard/emails')
     if (/reply|note|attach|internal note|schedule send|send update/i.test(normalized)) return showNotice('Conversation action queued', 'The selected conversation action is ready in this workspace.')
     if (/clear filters/i.test(normalized)) return showNotice('Filters cleared', 'The current table filters have been reset.')
     if (/may|calendar|date/i.test(normalized)) {
@@ -512,10 +525,12 @@ function Sidebar({ currentSection }: { currentSection: DashboardSection }) {
         <Link href="/pricing" className={cx(styles.buttonPrimary, styles.planButton)}>View Plan</Link>
       </div>
 
-      <a className={styles.signOut} href="#">
-        <LogOut size={17} />
-        Sign Out
-      </a>
+      <form action="/auth/signout" method="post" style={{ display: 'contents' }}>
+        <button type="submit" className={styles.signOut}>
+          <LogOut size={17} />
+          Sign Out
+        </button>
+      </form>
     </aside>
   )
 }
@@ -1576,15 +1591,15 @@ function IntegrationsSection({ integrationStatus = { connected: 0, suggested: 0,
           icon={<CalendarDays size={18} />}
           title="Calendar Booking"
           description="Drive meetings from video CTAs, email campaigns, and live chat recommendations."
-          status="Suggested"
-          action="Connect provider"
+          status="Not configured"
+          action="Contact sales to add this"
         />
         <IntegrationCard
           icon={<ShieldCheck size={18} />}
           title="Automation Rules"
           description="Create engagement-based follow-up rules that scale cleanly when live data arrives."
-          status="Enabled"
-          action="Open automations"
+          status="Not configured"
+          action="Contact sales to add this"
         />
       </div>
     </>
@@ -2226,14 +2241,21 @@ function LeadBottomBar({ lead }: { lead?: LeadRecord }) {
         <div className={styles.subtle}>Follow up via email with case study video to move to proposal stage.</div>
       </div>
       <div className={styles.actionGroup}>
-        <button className={styles.buttonPrimary}>Open lead</button>
-        <button className={styles.button}><Mail size={15} /> Send email</button>
-        <button className={styles.button}><Video size={15} /> Create video</button>
-        <button className={styles.button}><CalendarDays size={15} /> Book call</button>
+        <Link href={`/dashboard/leads/${lead.id}`} className={styles.buttonPrimary} data-dashboard-native="true">Open lead</Link>
+        <Link href="/dashboard/emails" className={styles.button} data-dashboard-native="true"><Mail size={15} /> Send email</Link>
+        <Link href="/dashboard/videos/editor" className={styles.button} data-dashboard-native="true"><Video size={15} /> Create video</Link>
+        <Link href="/contact" className={styles.button} data-dashboard-native="true"><CalendarDays size={15} /> Book call</Link>
         <button className={styles.button}><MoreHorizontal size={16} /></button>
       </div>
     </div>
   )
+}
+
+function integrationStatusPill(status: string) {
+  if (status === 'Connected' || status === 'Configured' || status === 'Ready') return styles.pillGreen
+  if (status === 'Enabled') return styles.pillBlue
+  if (status === 'Not configured') return styles.pillRed
+  return styles.pillYellow
 }
 
 function IntegrationCard({
@@ -2255,8 +2277,8 @@ function IntegrationCard({
       <h3>{title}</h3>
       <p>{description}</p>
       <div className={styles.listRow}>
-        <span className={cx(styles.pill, styles.pillGreen)}>{status}</span>
-        <button className={styles.button}>{action}</button>
+        <span className={cx(styles.pill, integrationStatusPill(status))}>{status}</span>
+        <button className={action.toLowerCase().includes('contact sales') ? styles.buttonGhost : styles.button}>{action}</button>
       </div>
     </div>
   )

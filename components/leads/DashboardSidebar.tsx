@@ -66,7 +66,9 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
         <p>Unlimited videos, advanced analytics and more.</p>
         <Link href="/pricing"><button>View Plans</button></Link>
       </div>
-      <a className={styles.signOut} href="/auth/login"><LogOut size={18} /> Sign Out</a>
+      <form action="/auth/signout" method="post" style={{ display: 'contents' }}>
+        <button type="submit" className={styles.signOut}><LogOut size={18} /> Sign Out</button>
+      </form>
     </aside>
   )
 }

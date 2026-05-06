@@ -1,157 +1,255 @@
-# online2day - Bespoke Web Development Website
+# online2day CRM — Production Build
 
-A production-grade website for online2day.com, a UK-based bespoke web development company. Built with Next.js 16, TypeScript, Tailwind CSS, and Supabase.
+A production-grade CRM, marketing site, and client dashboard for online2day.com. Built with Next.js App Router, TypeScript, Tailwind CSS, and Supabase.
 
-## Features
+---
 
-### Marketing Website
-- **Homepage** - Hero section, trust indicators, services overview, and CTAs
-- **Services Page** - Detailed service offerings with process overview
-- **Work Portfolio** - Showcase of example projects and case studies
-- **Blog** - CMS-backed blog with article listings and individual post pages
-- **About Page** - Company mission, values, and team information
-- **Contact Page** - Contact form with multiple contact methods
+## What's Live
 
-### Authenticated Dashboard
-- **Project Builder** - Multi-step project creation wizard with autosave
-- **Project Management** - View, edit, and delete projects
-- **Dashboard Stats** - Real-time statistics on project status
-- **User Authentication** - Secure email/password authentication via Supabase
+### Marketing site (`/`)
+- Homepage, Services, Work, Blog, About, Contact pages
+- Guided chatbot on `/contact` (multi-step, no form required)
+- `about` page with expandable team profiles (Oliver King, Mr Alok)
 
-### Technical Highlights
-- ⚡ **Performance-First** - Optimized for Lighthouse 90+ scores
-- 🎨 **Modern Design System** - Dark theme with electric blue accent
-- 📱 **Fully Responsive** - Mobile-first design approach
-- 🔒 **Secure Authentication** - Supabase Auth with Row Level Security
-- 💾 **Database-Backed** - PostgreSQL with Supabase for all data persistence
-- 🚀 **Production Ready** - Built with Next.js 16 App Router and TypeScript
+### Admin CRM (`/dashboard/*`)
+- **Overview** — pipeline metrics, lead table, activity feed, task panel
+- **Leads** — full CRUD, inline search/filter, stage pipeline
+- **Lead detail** (`/dashboard/leads/[id]`) — inline edit, notes (with author), email composer + history, video upload, schedule callback/follow-up → writes to Enterprise Calendar, Do Not Contact with confirmation + persistent banner, full activity timeline
+- **Videos** — library view, upload, video editor (`/dashboard/videos/editor`) with scene builder, timeline, recording
+- **Emails** — template table, enterprise email composer modal (send via Resend, attach video asset)
+- **Messages** — conversation list + threaded reply panel (Supabase-backed)
+- **Enterprise Command Center** (`/dashboard/enterprise`) — calendar, tasks, audit log, 50+ operational tools, ROI calculator, data quality scan
+- **Site Requests** — inbound project request pipeline
+- **Integrations** — Supabase, Resend, HubSpot status cards
+- **Settings** — user profile, password change, notification preferences
+
+### Auth
+- Sign-up, login, password reset, magic link
+- Sign-out — POST `/auth/signout` (wired in both sidebars)
+
+---
 
 ## Tech Stack
 
-- **Framework:** Next.js 16 (App Router)
-- **Language:** TypeScript
-- **Styling:** Tailwind CSS v4
-- **Database:** Supabase (PostgreSQL)
-- **Authentication:** Supabase Auth
-- **Deployment:** Vercel
-- **UI Components:** shadcn/ui
-- **Icons:** Lucide React
+| Layer | Choice |
+|---|---|
+| Framework | Next.js 15 App Router |
+| Language | TypeScript |
+| Styling | Tailwind CSS v4 + CSS Modules |
+| Database | Supabase (PostgreSQL) |
+| Auth | Supabase Auth |
+| Email | Resend |
+| Deployment | Vercel |
+| Icons | Lucide React |
+| UI | shadcn/ui |
+
+---
+
+## Environment Variables
+
+Required in Vercel (or `.env.local`):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=       # server-side only
+RESEND_API_KEY=                  # email sends
+HUBSPOT_PRIVATE_APP_TOKEN=       # contact sync
+NEXT_PUBLIC_SITE_URL=https://www.online2day.com
+```
+
+---
 
 ## Getting Started
 
-### Prerequisites
+```bash
+pnpm install
+pnpm dev         # http://localhost:3000
+```
 
-- Node.js 18+ and pnpm
-- Supabase account with project created
-
-### Installation
-
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   pnpm install
-   ```
-
-3. Set up environment variables (configured via Vercel integration)
-
-4. Run database migrations:
-   - Execute the SQL scripts in the `/scripts` folder in your Supabase SQL Editor:
-     1. `001_create_projects_table.sql`
-     2. `002_create_blog_posts_table.sql`
-     3. `003_seed_blog_posts.sql`
-
-5. Start the development server:
-   ```bash
-   pnpm dev
-   ```
-
-6. Open [http://localhost:3000](http://localhost:3000)
+---
 
 ## Database Schema
 
-### Projects Table
-Stores user project submissions with full CRUD support and RLS policies.
+Run the full schema at `supabase/schema.sql` against your Supabase project SQL Editor.
 
-### Blog Posts Table
-Stores blog articles with support for categories, excerpts, and published status.
+### Core tables
 
-## Project Structure
+| Table | Purpose |
+|---|---|
+| `leads` | CRM leads — name, company, email, phone, status, source, value, follow_up_date |
+| `lead_events` | Timeline events per lead — type, note, metadata, created_by |
+| `activity_feed` | Global activity stream shown on Overview |
+| `enterprise_events` | Calendar entries (from scheduling on lead detail + direct Enterprise page) |
+| `enterprise_tasks` | Task checklist items on Enterprise page |
+| `enterprise_features` | Enabled feature flags for the Enterprise Command Center |
+| `conversations` | Inbound chat conversations |
+| `messages` | Per-conversation messages |
+| `video_assets` | Uploaded video records linked to leads |
+| `site_requests` | Inbound website build requests |
+| `audit_log` | GDPR audit trail — action, resource, resource_id, changes, user_id |
+| `user_profiles` | Extended user info — full_name, email (used for note author display) |
+| `email_templates` | Email template records shown in the Emails section |
 
-```
-├── app/
-│   ├── (auth)/
-│   │   ├── login/
-│   │   ├── sign-up/
-│   │   └── error/
-│   ├── dashboard/
-│   │   ├── projects/
-│   │   │   ├── new/
-│   │   │   └── [id]/
-│   │   └── page.tsx
-│   ├── blog/
-│   │   ├── [slug]/
-│   │   └── page.tsx
-│   ├── services/
-│   ├── work/
-│   ├── about/
-│   ├── contact/
-│   └── page.tsx
-├── components/
-│   ├── dashboard/
-│   ├── ui/
-│   ├── header.tsx
-│   └── footer.tsx
-├── lib/
-│   └── supabase/
-│       ├── client.ts
-│       ├── server.ts
-│       └── proxy.ts
-└── scripts/
-    ├── 001_create_projects_table.sql
-    ├── 002_create_blog_posts_table.sql
-    └── 003_seed_blog_posts.sql
+---
+
+## Remaining Backend Tasks
+
+The following features have UI built but need backend plumbing before they are fully live in production.
+
+### 1. `user_profiles` table
+The lead notes panel shows who wrote each note via `creator_name`. This requires a `user_profiles` table:
+
+```sql
+create table public.user_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  full_name text,
+  created_at timestamptz default now()
+);
+alter table public.user_profiles enable row level security;
+create policy "Users can read all profiles" on public.user_profiles for select using (true);
+create policy "Users can update own profile" on public.user_profiles for update using (auth.uid() = user_id);
 ```
 
-## Key Features Implementation
+Populate it via a Supabase Auth trigger:
 
-### Authentication
-- Email/password authentication via Supabase
-- Protected routes with middleware
-- Session management with automatic token refresh
+```sql
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer as $$
+begin
+  insert into public.user_profiles (user_id, email, full_name)
+  values (new.id, new.email, new.raw_user_meta_data->>'full_name');
+  return new;
+end;
+$$;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+```
 
-### Project Builder
-- Multi-field project creation form
-- Autosave functionality (2-second debounce)
-- Status tracking (draft, in progress, completed)
-- Full CRUD operations with RLS
+### 2. `enterprise_events` table
+Scheduled callbacks and follow-ups from the lead detail page write to `enterprise_events`. Ensure this table exists and the Enterprise Calendar reads from it:
 
-### Blog CMS
-- Database-backed blog posts
-- SEO-friendly slugs
-- Category support
-- Reading time estimates
-- Published/draft status
+```sql
+create table public.enterprise_events (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  event_time text,
+  event_type text,
+  owner text,
+  created_at timestamptz default now()
+);
+alter table public.enterprise_events enable row level security;
+create policy "Authenticated users can manage events"
+  on public.enterprise_events for all using (auth.role() = 'authenticated');
+```
 
-## Performance Optimizations
+### 3. Resend email sending
+`sendEnterpriseEmail` in `lib/actions/email-actions.ts` sends via Resend. Requires:
+- `RESEND_API_KEY` env var set in Vercel
+- A verified sending domain in the Resend dashboard (currently defaults to `noreply@online2day.com`)
+- The `lead_events` table must accept `type = 'Email Sent'` inserts (no enum constraint)
 
-- Server Components by default
-- Optimized images and fonts
-- Minimal JavaScript bundle
-- CSS-only animations where possible
-- Efficient database queries with proper indexing
+### 4. Video upload storage bucket
+`uploadLeadVideo` in `lib/actions/video-actions.ts` uploads to Supabase Storage. Requires:
+- A public bucket named `lead-videos` created in Supabase Storage
+- RLS policy allowing authenticated uploads:
 
-## Security
+```sql
+create policy "Authenticated users can upload videos"
+  on storage.objects for insert
+  with check (bucket_id = 'lead-videos' and auth.role() = 'authenticated');
+create policy "Public read on lead-videos"
+  on storage.objects for select
+  using (bucket_id = 'lead-videos');
+```
 
-- Row Level Security (RLS) on all tables
-- Server-side authentication checks
-- Secure session management
-- Input validation and sanitization
-- HTTPS-only in production
+### 5. HubSpot contact sync
+`lib/actions/hubspot-actions.ts` posts contacts to HubSpot on form submit. Requires:
+- `HUBSPOT_PRIVATE_APP_TOKEN` env var set in Vercel
+- A HubSpot Private App created with `crm.objects.contacts.write` scope
+
+### 6. Features gated with "Contact sales to add this"
+The following are UI-visible but not yet built. Any click shows a "Contact sales" toast:
+- **Calendar booking integration** (Calendly / Google Calendar OAuth)
+- **Automation rules** (trigger-based follow-up sequences)
+- **Email campaign manager** (bulk send, sequences, A/B tests)
+- **Import contacts** (CSV upload, bulk lead creation)
+- **Assign owner** (multi-user role assignment)
+- **New conversation** (creating outbound inbox conversations)
+- **Create canned reply** (saved reply template management)
+- **Create proposal / send proposal** (proposal builder)
+
+These are labelled on-screen and redirect users to `sales@online2day.com`.
+
+### 7. Row Level Security
+All production tables should have RLS enabled. Key policies needed:
+
+```sql
+-- leads
+create policy "Auth users can read own leads"
+  on public.leads for select using (auth.role() = 'authenticated');
+create policy "Auth users can insert leads"
+  on public.leads for insert with check (auth.role() = 'authenticated');
+create policy "Auth users can update own leads"
+  on public.leads for update using (auth.role() = 'authenticated');
+
+-- lead_events (same pattern)
+-- audit_log (insert-only for authenticated)
+-- activity_feed (insert + select for authenticated)
+```
+
+### 8. Messages / conversations
+The Messages section reads from `conversations` + `messages` tables. Ensure:
+- Both tables exist per schema
+- `sendConversationReply` in `lib/actions/message-actions.ts` is configured
+- The public chat widget (`/contact` GuidedChat) posts to the same `conversations` table if real-time escalation is needed
+
+---
+
+## Project Structure (key paths)
+
+```
+app/
+  auth/signout/route.ts          ← POST sign-out handler
+  dashboard/leads/[id]/
+    page.tsx                     ← server: fetches lead + events
+    lead-detail-client.tsx       ← full lead detail UI
+  dashboard/enterprise/page.tsx  ← Enterprise Command Center
+  dashboard/emails/page.tsx
+  dashboard/videos/editor/
+
+components/
+  crm-dashboard/crm-dashboard.tsx ← main dashboard shell + all sections
+  leads/
+    DashboardSidebar.tsx
+    LeadsDashboard.tsx
+    LeadsDashboard.module.css    ← all lead detail CSS
+  enterprise-suite/
+    enterprise-command-center.tsx
+    local-video-room.tsx
+
+lib/
+  actions/
+    lead-actions.ts              ← createLead, updateLeadFields, scheduleLeadAction, setDoNotContact
+    email-actions.ts             ← sendEnterpriseEmail (Resend)
+    video-actions.ts             ← uploadLeadVideo, saveVideoEditorProject
+    enterprise-actions.ts        ← calendar events, tasks, feature flags, data quality scan
+    audit-actions.ts             ← logAuditEntry, getAuditLog
+    message-actions.ts           ← sendConversationReply
+
+supabase/schema.sql              ← full schema — run this first
+```
+
+---
 
 ## License
 
-Proprietary - All rights reserved by online2day
+Proprietary — all rights reserved by online2day Ltd.
 
 ## Support
 
-For questions or support, contact info@online2day.com
+- Technical: info@online2day.com
+- Sales enquiries: sales@online2day.com
+- Phone: +44 333 050 6098
