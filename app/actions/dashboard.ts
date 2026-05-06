@@ -2,12 +2,13 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { isFoundingAdminEmail, normalizeEmail } from '@/lib/license'
+import { getEnterpriseStateValue, setEnterpriseStateValue } from '@/lib/actions/enterprise-actions'
 import type {
   Lead, LeadStage, IconName, PipelineStage, LeadSourcePerformance,
   OwnerPerformance, Metric, TaskItem, ActivityItem, Recommendation
 } from '@/components/leads/leads-types'
 import type {
-  LeadRecord, VideoRecord, EmailRecord, ConversationRecord, SiteRequestRecord
+  LeadRecord, VideoRecord, EmailRecord, ConversationRecord, SiteRequestRecord, CrmSetupConfig
 } from '@/components/crm-dashboard/types'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -32,6 +33,59 @@ function relativeTime(date: string | null): string {
 function fmtDate(date: string | null): string {
   if (!date) return '—'
   return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+export async function getCrmSetupConfig(): Promise<CrmSetupConfig> {
+  const defaults: CrmSetupConfig = {
+    companyName: 'Online2Day',
+    defaultSenderName: 'Online2Day Team',
+    defaultSenderEmail: 'info@online2day.com',
+    bookingUrl: 'https://calendly.com/online2day/demo',
+    defaultCtaLabel: 'Book a call',
+    defaultCtaUrl: 'https://calendly.com/online2day/demo',
+    timezone: 'Europe/London',
+    followupHours: '24',
+    hotLeadScore: '80',
+    pipelineStages: 'New, Contacted, Qualified, Proposal Sent, Negotiation, Won',
+  }
+
+  const supabase = await createClient()
+  const { data: userData } = await supabase.auth.getUser()
+  const user = userData.user
+  if (!user) return defaults
+
+  const keys = [
+    'config.companyName',
+    'config.defaultSenderName',
+    'config.defaultSenderEmail',
+    'config.bookingUrl',
+    'config.defaultCtaLabel',
+    'config.defaultCtaUrl',
+    'config.timezone',
+    'config.followupHours',
+    'config.hotLeadScore',
+    'config.pipelineStages',
+  ]
+  const { data } = await supabase
+    .from('admin_preferences')
+    .select('key, value')
+    .eq('user_id', user.id)
+    .in('key', keys)
+
+  const prefs = new Map<string, string>()
+  for (const row of data || []) prefs.set(row.key, row.value)
+  return {
+    companyName: prefs.get('config.companyName') || defaults.companyName,
+    defaultSenderName: prefs.get('config.defaultSenderName') || defaults.defaultSenderName,
+    defaultSenderEmail: prefs.get('config.defaultSenderEmail') || defaults.defaultSenderEmail,
+    bookingUrl: prefs.get('config.bookingUrl') || defaults.bookingUrl,
+    defaultCtaLabel: prefs.get('config.defaultCtaLabel') || defaults.defaultCtaLabel,
+    defaultCtaUrl: prefs.get('config.defaultCtaUrl') || defaults.defaultCtaUrl,
+    timezone: prefs.get('config.timezone') || defaults.timezone,
+    followupHours: prefs.get('config.followupHours') || defaults.followupHours,
+    hotLeadScore: prefs.get('config.hotLeadScore') || defaults.hotLeadScore,
+    pipelineStages: prefs.get('config.pipelineStages') || defaults.pipelineStages,
+  }
 }
 
 // ─── LEADS ────────────────────────────────────────────────────────────────────
@@ -585,7 +639,102 @@ export async function getIntegrationStatus() {
   const connected = integrations.filter(i => i.status === 'connected' || i.status === 'Configured').length
   const pending = integrations.filter(i => i.status === 'pending').length
   const suggested = Math.max(0, integrations.length - connected - pending)
-  return { connected, suggested, pending }
+
+  const checks: Array<{
+    provider: string
+    status: 'healthy' | 'degraded' | 'down' | 'unknown'
+    latencyMs: number | null
+    checkedAt: string
+    detail: string
+  }> = []
+  const nowIso = new Date().toISOString()
+
+  const startedSupabase = Date.now()
+  const { error: supabasePingError } = await supabase.from('leads').select('id').limit(1)
+  const supabaseLatency = Date.now() - startedSupabase
+  checks.push({
+    provider: 'Supabase',
+    status: supabasePingError ? 'down' : supabaseLatency > 900 ? 'degraded' : 'healthy',
+    latencyMs: supabaseLatency,
+    checkedAt: nowIso,
+    detail: supabasePingError ? `Query error: ${supabasePingError.message}` : 'Read query completed successfully.',
+  })
+
+  const resendKey = process.env.RESEND_API_KEY || ''
+  checks.push({
+    provider: 'Resend',
+    status: resendKey ? 'healthy' : 'down',
+    latencyMs: null,
+    checkedAt: nowIso,
+    detail: resendKey ? 'API key configured in environment.' : 'Missing RESEND_API_KEY.',
+  })
+
+  const hubspotToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN || ''
+  checks.push({
+    provider: 'HubSpot',
+    status: hubspotToken ? 'healthy' : 'degraded',
+    latencyMs: null,
+    checkedAt: nowIso,
+    detail: hubspotToken ? 'Private app token configured.' : 'Missing HUBSPOT_PRIVATE_APP_TOKEN.',
+  })
+
+  const { data: persistedChecks } = await supabase
+    .from('integration_health_checks')
+    .select('provider, status, latency_ms, checked_at, detail')
+    .order('checked_at', { ascending: false })
+    .limit(6)
+
+  if (!persistedChecks || persistedChecks.length === 0) {
+    await supabase.from('integration_health_checks').insert(
+      checks.map((check) => ({
+        provider: check.provider,
+        status: check.status,
+        latency_ms: check.latencyMs,
+        checked_at: check.checkedAt,
+        detail: check.detail,
+      })) as any,
+    )
+  } else {
+    await supabase.from('integration_health_checks').insert(
+      checks.map((check) => ({
+        provider: check.provider,
+        status: check.status,
+        latency_ms: check.latencyMs,
+        checked_at: check.checkedAt,
+        detail: check.detail,
+      })) as any,
+    )
+  }
+
+  const history = (persistedChecks || []).map((row: any) => ({
+    provider: row.provider || 'Unknown',
+    status: (row.status || 'unknown') as 'healthy' | 'degraded' | 'down' | 'unknown',
+    latencyMs: row.latency_ms ?? null,
+    checkedAt: row.checked_at || nowIso,
+    detail: row.detail || 'No detail available.',
+  }))
+
+  if (history.length > 0) {
+    return { connected, suggested, pending, healthChecks: history }
+  }
+
+  // Fallback when integration_health_checks migration is not yet present.
+  const fallbackKey = 'integration_health_checks_history'
+  const fallbackRaw = await getEnterpriseStateValue(fallbackKey)
+  const fallback = Array.isArray(fallbackRaw) ? fallbackRaw : []
+  const combined = [
+    ...checks.map((check) => ({
+      provider: check.provider,
+      status: check.status,
+      latencyMs: check.latencyMs,
+      checkedAt: check.checkedAt,
+      detail: check.detail,
+    })),
+    ...fallback,
+  ].slice(0, 30)
+  await setEnterpriseStateValue(fallbackKey, combined)
+
+  return { connected, suggested, pending, healthChecks: combined.slice(0, 6) as any }
 }
 
 // ─── TASKS, ACTIVITY, RECOMMENDATIONS, GOALS ─────────────────────────────────
@@ -771,10 +920,13 @@ type PermissionMatrixRow = {
   canViewAudit?: boolean
 }
 
-function normalizeRoleFromEmail(email?: string | null) {
-  const value = (email || '').toLowerCase()
-  if (value.includes('view')) return 'Viewer'
-  if (value.includes('deliver')) return 'Delivery'
+function normalizeMatrixRole(value?: string | null) {
+  const role = (value || '').trim().toLowerCase()
+  if (!role) return 'Sales'
+  if (role === 'admin') return 'Admin'
+  if (role === 'viewer') return 'Viewer'
+  if (role === 'delivery') return 'Delivery'
+  if (role === 'member' || role === 'user' || role === 'sales') return 'Sales'
   return 'Sales'
 }
 
@@ -820,7 +972,12 @@ export async function getDashboardAccessProfile(): Promise<DashboardAccessProfil
 
   const { data: matrixState } = await supabase.from('enterprise_state').select('value').eq('key', 'permission_matrix').single()
   const matrix = Array.isArray(matrixState?.value) ? (matrixState.value as PermissionMatrixRow[]) : []
-  const role = normalizeRoleFromEmail(user.email)
+  const normalizedEmail = normalizeEmail(user.email)
+  const [{ data: profile }, { data: licensedUser }] = await Promise.all([
+    supabase.from('user_profiles').select('role').eq('user_id', user.id).single(),
+    supabase.from('licensed_users').select('role').eq('email', normalizedEmail).single(),
+  ])
+  const role = normalizeMatrixRole(licensedUser?.role || profile?.role)
   const row = matrix.find((item) => (item.role || '').toLowerCase() === role.toLowerCase())
   if (!row) return { isAdmin: false, canUseSystem: true, modules: fallbackModules }
 

@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { BarChart3, Download, FileSpreadsheet, ShieldCheck, TrendingUp } from 'lucide-react'
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import styles from '@/components/leads/LeadsDashboard.module.css'
+import { captureReportSnapshot, type ReportSnapshot } from '@/lib/actions/enterprise-actions'
 
 type Metric = { label: string; value: string | number; delta?: string }
 type DataQuality = {
@@ -19,10 +20,15 @@ type DataQuality = {
 export function ReportsClient({
   metrics,
   dataQuality,
+  snapshots,
 }: {
   metrics: Metric[]
   dataQuality: DataQuality
+  snapshots: ReportSnapshot[]
 }) {
+  const [isPending, startTransition] = useTransition()
+  const [snapshotState, setSnapshotState] = useState<ReportSnapshot[]>(snapshots)
+  const [notice, setNotice] = useState('')
   const summary = useMemo(() => {
     const missingTotal =
       dataQuality.missingEmail +
@@ -45,6 +51,30 @@ export function ReportsClient({
     a.download = name
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  function handleCaptureSnapshot() {
+    const periodLabel = `Weekly - ${new Date().toLocaleDateString()}`
+    const kpis = metrics.reduce<Record<string, string | number>>((acc, metric) => {
+      acc[metric.label] = metric.value
+      return acc
+    }, {})
+    startTransition(async () => {
+      const result = await captureReportSnapshot({ periodLabel, kpis })
+      if ('error' in result && result.error) {
+        setNotice(result.error)
+        return
+      }
+      const local: ReportSnapshot = {
+        id: `local-${Date.now()}`,
+        periodLabel,
+        kpis,
+        createdAt: new Date().toISOString(),
+        createdBy: null,
+      }
+      setSnapshotState((current) => [local, ...current].slice(0, 12))
+      setNotice('Snapshot captured successfully.')
+    })
   }
 
   return (
@@ -82,8 +112,13 @@ export function ReportsClient({
               <FileSpreadsheet size={15} />
               Export CSV
             </button>
+            <button className={styles.utilityButton} disabled={isPending} onClick={handleCaptureSnapshot}>
+              <ShieldCheck size={15} />
+              {isPending ? 'Saving snapshot...' : 'Capture Snapshot'}
+            </button>
           </div>
         </header>
+        {notice ? <p className={styles.notifState}>{notice}</p> : null}
 
         <section className={styles.metricsGrid}>
           <article><span>Report health</span><strong>{summary.score}%</strong><em>Data quality confidence</em></article>
@@ -125,6 +160,19 @@ export function ReportsClient({
         <section className={styles.panel}>
           <header><BarChart3 size={18} /><strong>Leadership Notes</strong></header>
           <p className={styles.notifState}>Use this report in weekly reviews to track pipeline movement, CRM hygiene, and delivery readiness.</p>
+        </section>
+        <section className={styles.panel}>
+          <header><TrendingUp size={18} /><strong>Recent Snapshots</strong></header>
+          {!snapshotState.length ? <p className={styles.notifState}>No snapshots yet. Capture your first weekly baseline.</p> : null}
+          <div className={styles.auditList}>
+            {snapshotState.map((item) => (
+              <div key={item.id}>
+                <span>{new Date(item.createdAt).toLocaleString()}</span>
+                <strong>{item.periodLabel}</strong>
+                <p>{Object.keys(item.kpis).length} KPI values captured</p>
+              </div>
+            ))}
+          </div>
         </section>
       </main>
     </div>

@@ -337,6 +337,7 @@
   padding: 8px;
   display: grid;
   gap: 4px;
+  cursor: pointer;
 }
 
 .notifItem strong {
@@ -354,6 +355,13 @@
 .notifItem span {
   color: #64748b;
   font-size: 10px;
+}
+
+.notifItem em {
+  color: #8fa7c9;
+  font-size: 10px;
+  font-style: normal;
+  text-transform: capitalize;
 }
 
 .notifUnread {

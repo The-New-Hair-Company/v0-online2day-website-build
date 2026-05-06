@@ -187,6 +187,8 @@ export type UserNotification = {
   id: string
   title: string
   detail: string
+  source: string
+  severity: 'info' | 'warning' | 'critical'
   createdAt: string
   readAt: string | null
 }
@@ -195,46 +197,84 @@ function notificationKey(userId: string) {
   return `notifications:${userId}`
 }
 
+function normalizeNotification(item: Record<string, unknown>): UserNotification | null {
+  if (typeof item.id !== 'string' || typeof item.title !== 'string' || typeof item.detail !== 'string') return null
+  const severityRaw = typeof item.severity === 'string' ? item.severity : 'info'
+  const severity: UserNotification['severity'] =
+    severityRaw === 'warning' || severityRaw === 'critical' ? severityRaw : 'info'
+  return {
+    id: item.id,
+    title: item.title,
+    detail: item.detail,
+    source: typeof item.source === 'string' ? item.source : 'system',
+    severity,
+    createdAt: typeof item.createdAt === 'string' ? item.createdAt : typeof item.created_at === 'string' ? item.created_at : new Date().toISOString(),
+    readAt: typeof item.readAt === 'string' ? item.readAt : typeof item.read_at === 'string' ? item.read_at : null,
+  }
+}
+
+async function getLegacyNotifications(userId: string): Promise<UserNotification[]> {
+  const value = await getEnterpriseStateValue(notificationKey(userId))
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => (item && typeof item === 'object' ? normalizeNotification(item as Record<string, unknown>) : null))
+    .filter((item): item is UserNotification => Boolean(item))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
 export async function getUserNotifications(): Promise<UserNotification[]> {
   const supabase = await createClient()
   const { data: auth } = await supabase.auth.getUser()
   const userId = auth.user?.id
   if (!userId) return []
-  const value = await getEnterpriseStateValue(notificationKey(userId))
-  if (!Array.isArray(value)) return []
-  return value
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null
-      const row = item as Record<string, unknown>
-      if (typeof row.id !== 'string' || typeof row.title !== 'string' || typeof row.detail !== 'string') return null
-      return {
-        id: row.id,
-        title: row.title,
-        detail: row.detail,
-        createdAt: typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString(),
-        readAt: typeof row.readAt === 'string' ? row.readAt : null,
-      }
-    })
-    .filter((item): item is UserNotification => Boolean(item))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id, title, detail, source, severity, created_at, read_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(80)
+
+  if (!error && data) {
+    return data
+      .map((row) => normalizeNotification(row as unknown as Record<string, unknown>))
+      .filter((item): item is UserNotification => Boolean(item))
+  }
+
+  return getLegacyNotifications(userId)
 }
 
-export async function addUserNotification(input: { title: string; detail: string }) {
+export async function addUserNotification(input: { title: string; detail: string; source?: string; severity?: UserNotification['severity'] }) {
   const supabase = await createClient()
   const { data: auth } = await supabase.auth.getUser()
   const userId = auth.user?.id
   if (!userId) return { error: 'Not authenticated' }
-  const current = await getUserNotifications()
-  const next: UserNotification[] = [
-    {
-      id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      title: input.title,
-      detail: input.detail,
-      createdAt: new Date().toISOString(),
-      readAt: null,
-    },
-    ...current,
-  ].slice(0, 80)
+
+  const now = new Date().toISOString()
+  const severity = input.severity === 'warning' || input.severity === 'critical' ? input.severity : 'info'
+  const source = input.source?.trim() || 'system'
+  const { error } = await supabase.from('notifications').insert({
+    user_id: userId,
+    title: input.title.trim(),
+    detail: input.detail.trim(),
+    source,
+    severity,
+    created_at: now,
+    read_at: null,
+  } as any)
+
+  if (!error) return { success: true }
+
+  const current = await getLegacyNotifications(userId)
+  const next: UserNotification[] = [{
+    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title: input.title.trim(),
+    detail: input.detail.trim(),
+    source,
+    severity: severity as UserNotification['severity'],
+    createdAt: now,
+    readAt: null,
+  }, ...current].slice(0, 80)
   return setEnterpriseStateValue(notificationKey(userId), next)
 }
 
@@ -244,9 +284,120 @@ export async function markAllNotificationsRead() {
   const userId = auth.user?.id
   if (!userId) return { error: 'Not authenticated' }
   const now = new Date().toISOString()
-  const current = await getUserNotifications()
+
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read_at: now } as any)
+    .eq('user_id', userId)
+    .is('read_at', null)
+
+  if (!error) return { success: true }
+
+  const current = await getLegacyNotifications(userId)
   const next = current.map((item) => item.readAt ? item : { ...item, readAt: now })
   return setEnterpriseStateValue(notificationKey(userId), next)
+}
+
+export async function markNotificationRead(notificationId: string) {
+  const supabase = await createClient()
+  const { data: auth } = await supabase.auth.getUser()
+  const userId = auth.user?.id
+  if (!userId) return { error: 'Not authenticated' }
+  if (!notificationId) return { error: 'Notification is required' }
+  const now = new Date().toISOString()
+
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read_at: now } as any)
+    .eq('id', notificationId)
+    .eq('user_id', userId)
+
+  if (!error) return { success: true }
+
+  const current = await getLegacyNotifications(userId)
+  const next = current.map((item) => item.id === notificationId ? { ...item, readAt: now } : item)
+  return setEnterpriseStateValue(notificationKey(userId), next)
+}
+
+export type ReportSnapshot = {
+  id: string
+  periodLabel: string
+  kpis: Record<string, number | string>
+  createdAt: string
+  createdBy: string | null
+}
+
+function reportSnapshotKey(userId: string) {
+  return `report_snapshots:${userId}`
+}
+
+export async function getReportSnapshots(limit = 12): Promise<ReportSnapshot[]> {
+  const supabase = await createClient()
+  const { data: auth } = await supabase.auth.getUser()
+  const userId = auth.user?.id
+  if (!userId) return []
+
+  const { data, error } = await supabase
+    .from('report_snapshots')
+    .select('id, period_label, kpis, created_at, created_by')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (!error && data) {
+    return data.map((row: any) => ({
+      id: String(row.id),
+      periodLabel: String(row.period_label || 'Snapshot'),
+      kpis: row.kpis && typeof row.kpis === 'object' ? row.kpis : {},
+      createdAt: String(row.created_at || new Date().toISOString()),
+      createdBy: row.created_by ? String(row.created_by) : null,
+    }))
+  }
+
+  const legacy = await getEnterpriseStateValue(reportSnapshotKey(userId))
+  if (!Array.isArray(legacy)) return []
+  return legacy
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const row = item as Record<string, unknown>
+      if (typeof row.id !== 'string') return null
+      return {
+        id: row.id,
+        periodLabel: typeof row.periodLabel === 'string' ? row.periodLabel : 'Snapshot',
+        kpis: row.kpis && typeof row.kpis === 'object' ? row.kpis as Record<string, number | string> : {},
+        createdAt: typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString(),
+        createdBy: typeof row.createdBy === 'string' ? row.createdBy : null,
+      }
+    })
+    .filter((item): item is ReportSnapshot => Boolean(item))
+    .slice(0, limit)
+}
+
+export async function captureReportSnapshot(input: { periodLabel: string; kpis: Record<string, number | string> }) {
+  const supabase = await createClient()
+  const { data: auth } = await supabase.auth.getUser()
+  const userId = auth.user?.id
+  if (!userId) return { error: 'Not authenticated' }
+
+  const row = {
+    user_id: userId,
+    period_label: input.periodLabel.trim() || 'Snapshot',
+    kpis: input.kpis,
+    created_by: userId,
+    created_at: new Date().toISOString(),
+  }
+  const { error } = await supabase.from('report_snapshots').insert(row as any)
+  if (!error) return { success: true }
+
+  const current = await getReportSnapshots(20)
+  const next: ReportSnapshot[] = [{
+    id: `snap-${Date.now()}`,
+    periodLabel: row.period_label,
+    kpis: row.kpis,
+    createdAt: row.created_at,
+    createdBy: row.created_by,
+  }, ...current].slice(0, 20)
+  return setEnterpriseStateValue(reportSnapshotKey(userId), next)
 }
 
 // ─── LEADS EXPORT ─────────────────────────────────────────────────────────────

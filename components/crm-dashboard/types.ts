@@ -143,6 +143,26 @@ export type IntegrationStatus = {
   connected: number
   suggested: number
   pending: number
+  healthChecks?: Array<{
+    provider: string
+    status: 'healthy' | 'degraded' | 'down' | 'unknown'
+    latencyMs: number | null
+    checkedAt: string
+    detail: string
+  }>
+}
+
+export type CrmSetupConfig = {
+  companyName: string
+  defaultSenderName: string
+  defaultSenderEmail: string
+  bookingUrl: string
+  defaultCtaLabel: string
+  defaultCtaUrl: string
+  timezone: string
+  followupHours: string
+  hotLeadScore: string
+  pipelineStages: string
 }
 
 export interface CrmDashboardProps {
@@ -162,4 +182,5 @@ export interface CrmDashboardProps {
   siteRequestMetrics?: RawMetric[]
   messageStats?: { unread: number; waiting: number; open: number; resolved: number }
   integrationStatus?: IntegrationStatus
+  setupConfig?: CrmSetupConfig
 }

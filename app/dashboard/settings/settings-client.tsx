@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { AlertTriangle, Check, Crown, KeyRound, Mail, ShieldCheck, Trash2, Type, UserPlus, Users } from 'lucide-react'
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import styles from '@/components/leads/LeadsDashboard.module.css'
-import { logAuditEntry } from '@/lib/actions/audit-actions'
+import { getAuditLog, logAuditEntry } from '@/lib/actions/audit-actions'
 import { addLicensedUser, getAdminPrefs, getLicenseManagementState, removeLicensedUser, setAdminPrefs, updateLicensedUserRole } from '@/lib/actions/settings-actions'
 
 const THEME_SUPABASE_KEYS = ['theme', 'textSize', 'textScale', 'contrast', 'motion', 'font', 'lineHeight'] as const
@@ -43,6 +43,20 @@ const defaultLicenseState: LicenseManagementState = {
   warning: null,
 }
 
+const CRM_SETUP_KEYS = [
+  'config.companyName',
+  'config.defaultSenderName',
+  'config.defaultSenderEmail',
+  'config.bookingUrl',
+  'config.defaultCtaLabel',
+  'config.defaultCtaUrl',
+  'config.timezone',
+  'config.followupHours',
+  'config.hotLeadScore',
+  'config.pipelineStages',
+  'config.onboardingComplete',
+] as const
+
 function textSizeFromScale(scale: number): TextSize {
   if (scale < 96) return 'sm'
   if (scale < 112) return 'md'
@@ -58,7 +72,7 @@ function scaleFromTextSize(size: TextSize) {
 }
 
 export function SettingsClient() {
-  const [activeTab, setActiveTab] = useState<'appearance' | 'license'>('appearance')
+  const [activeTab, setActiveTab] = useState<'setup' | 'appearance' | 'license'>('setup')
   const [theme, setTheme] = useState<ThemeChoice>('dark')
   const [textSize, setTextSize] = useState<TextSize>('md')
   const [textScale, setTextScale] = useState(100)
@@ -75,6 +89,27 @@ export function SettingsClient() {
   const [licenseNotice, setLicenseNotice] = useState('')
   const [licenseNoticeType, setLicenseNoticeType] = useState<'success' | 'warning'>('success')
   const [licenseBusy, setLicenseBusy] = useState(false)
+  const [setupSaving, setSetupSaving] = useState(false)
+  const [setupNotice, setSetupNotice] = useState('')
+  const [companyName, setCompanyName] = useState('Online2Day')
+  const [defaultSenderName, setDefaultSenderName] = useState('Online2Day Team')
+  const [defaultSenderEmail, setDefaultSenderEmail] = useState('info@online2day.com')
+  const [bookingUrl, setBookingUrl] = useState('https://calendly.com/online2day/demo')
+  const [defaultCtaLabel, setDefaultCtaLabel] = useState('Book a call')
+  const [defaultCtaUrl, setDefaultCtaUrl] = useState('https://calendly.com/online2day/demo')
+  const [timezone, setTimezone] = useState('Europe/London')
+  const [followupHours, setFollowupHours] = useState('24')
+  const [hotLeadScore, setHotLeadScore] = useState('80')
+  const [pipelineStages, setPipelineStages] = useState('New, Contacted, Qualified, Proposal Sent, Negotiation, Won')
+  const [onboardingComplete, setOnboardingComplete] = useState(false)
+  const [onboardingStep, setOnboardingStep] = useState(0)
+  const [auditItems, setAuditItems] = useState<Array<{
+    id: string
+    action: string
+    resource: string
+    actor_email: string | null
+    created_at: string
+  }>>([])
 
   useEffect(() => {
     // Apply localStorage instantly (no flicker on repeated visits)
@@ -89,9 +124,20 @@ export function SettingsClient() {
     setLineHeight(local.lineHeight)
 
     // Load all prefs from Supabase — theme prefs take precedence (cross-device sync)
-    getAdminPrefs([...THEME_SUPABASE_KEYS, 'license.key', 'license.status']).then((prefs) => {
+    getAdminPrefs([...THEME_SUPABASE_KEYS, 'license.key', 'license.status', ...CRM_SETUP_KEYS]).then((prefs) => {
       setLicenseKey(prefs['license.key'] || '')
       setLicenseStatus((prefs['license.status'] as typeof licenseStatus) || 'trial')
+      setCompanyName(prefs['config.companyName'] || 'Online2Day')
+      setDefaultSenderName(prefs['config.defaultSenderName'] || 'Online2Day Team')
+      setDefaultSenderEmail(prefs['config.defaultSenderEmail'] || 'info@online2day.com')
+      setBookingUrl(prefs['config.bookingUrl'] || 'https://calendly.com/online2day/demo')
+      setDefaultCtaLabel(prefs['config.defaultCtaLabel'] || 'Book a call')
+      setDefaultCtaUrl(prefs['config.defaultCtaUrl'] || 'https://calendly.com/online2day/demo')
+      setTimezone(prefs['config.timezone'] || 'Europe/London')
+      setFollowupHours(prefs['config.followupHours'] || '24')
+      setHotLeadScore(prefs['config.hotLeadScore'] || '80')
+      setPipelineStages(prefs['config.pipelineStages'] || 'New, Contacted, Qualified, Proposal Sent, Negotiation, Won')
+      setOnboardingComplete(prefs['config.onboardingComplete'] === 'true')
 
       if (prefs['theme']) {
         const scale = Number(prefs['textScale']) || scaleFromTextSize((prefs['textSize'] as TextSize) || local.textSize)
@@ -127,7 +173,77 @@ export function SettingsClient() {
       }
     })
     getLicenseManagementState().then(setLicenseState)
+    getAuditLog(12).then((items) => {
+      const normalised = (items || []).map((item: any) => ({
+        id: String(item.id ?? `${item.action}-${item.created_at}`),
+        action: String(item.action || 'update'),
+        resource: String(item.resource || 'system'),
+        actor_email: item.actor_email ? String(item.actor_email) : null,
+        created_at: String(item.created_at || new Date().toISOString()),
+      }))
+      setAuditItems(normalised)
+    })
   }, [])
+
+  const setupCompletion = [
+    companyName.trim(),
+    defaultSenderName.trim(),
+    defaultSenderEmail.trim(),
+    bookingUrl.trim(),
+    defaultCtaLabel.trim(),
+    defaultCtaUrl.trim(),
+    timezone.trim(),
+    followupHours.trim(),
+    hotLeadScore.trim(),
+    pipelineStages.trim(),
+  ].filter(Boolean).length
+  const setupProgress = Math.round((setupCompletion / 10) * 100)
+  const onboardingSteps = [
+    'Company profile',
+    'Sender and outreach defaults',
+    'CTA and booking settings',
+    'Pipeline and SLA thresholds',
+  ]
+  const showOnboardingWizard = !onboardingComplete
+
+  async function saveSetupConfig() {
+    if (!defaultSenderEmail.includes('@')) {
+      setSetupNotice('Please enter a valid sender email.')
+      return
+    }
+    if (!bookingUrl.startsWith('http') || !defaultCtaUrl.startsWith('http')) {
+      setSetupNotice('Booking URL and CTA URL must start with http or https.')
+      return
+    }
+    setSetupSaving(true)
+    await setAdminPrefs({
+      'config.companyName': companyName.trim(),
+      'config.defaultSenderName': defaultSenderName.trim(),
+      'config.defaultSenderEmail': defaultSenderEmail.trim().toLowerCase(),
+      'config.bookingUrl': bookingUrl.trim(),
+      'config.defaultCtaLabel': defaultCtaLabel.trim(),
+      'config.defaultCtaUrl': defaultCtaUrl.trim(),
+      'config.timezone': timezone.trim(),
+      'config.followupHours': followupHours.trim(),
+      'config.hotLeadScore': hotLeadScore.trim(),
+      'config.pipelineStages': pipelineStages.trim(),
+    })
+    await logAuditEntry('update', 'crm_setup_config', 'global', JSON.stringify({
+      companyName: companyName.trim(),
+      defaultSenderEmail: defaultSenderEmail.trim().toLowerCase(),
+      bookingUrl: bookingUrl.trim(),
+      timezone: timezone.trim(),
+    }))
+    setSetupNotice('Setup configuration saved. These defaults now apply across CRM workflows.')
+    setSetupSaving(false)
+  }
+
+  async function completeOnboarding() {
+    await setAdminPrefs({ 'config.onboardingComplete': 'true' })
+    setOnboardingComplete(true)
+    setSetupNotice('Onboarding complete. You can still edit any setup default at any time.')
+    await logAuditEntry('complete', 'crm_setup_onboarding', 'global')
+  }
 
   function saveAccessibility(patch: Partial<AccessibilitySettings>) {
     const patchedScale = patch.textScale
@@ -235,11 +351,117 @@ export function SettingsClient() {
         <p className={styles.subtle}>Preferences are saved locally and applied across the website, dashboard, editor and video pages.</p>
 
         <div className={styles.settingsTabs} role="tablist">
+          <button className={`${styles.settingsTab} ${activeTab === 'setup' ? styles.settingsTabActive : ''}`} onClick={() => setActiveTab('setup')}>Setup Center</button>
           <button className={`${styles.settingsTab} ${activeTab === 'appearance' ? styles.settingsTabActive : ''}`} onClick={() => setActiveTab('appearance')}>Appearance</button>
           <button className={`${styles.settingsTab} ${activeTab === 'license' ? styles.settingsTabActive : ''}`} onClick={() => setActiveTab('license')}>License</button>
         </div>
 
-        {activeTab === 'appearance' ? (
+        {activeTab === 'setup' ? (
+          <section className={styles.settingsSection}>
+            <header className={styles.settingsSectionHeader}>
+              <h2>CRM Setup Center</h2>
+              <p>Configure all core defaults in one place. This is the fastest route to a production-ready CRM.</p>
+            </header>
+            <div className={styles.settingsSectionBody}>
+              {showOnboardingWizard ? (
+                <div className={styles.licenseCard}>
+                  <div className={styles.licenseIcon}><Users size={22} /></div>
+                  <div className={styles.licenseInfo}>
+                    <strong>First-time onboarding wizard</strong>
+                    <span>Step {onboardingStep + 1} of {onboardingSteps.length}: {onboardingSteps[onboardingStep]}</span>
+                  </div>
+                  <span className={styles.gdprBadge}>5 min setup</span>
+                </div>
+              ) : null}
+              <div className={styles.licenseCard}>
+                <div className={styles.licenseIcon}><ShieldCheck size={22} /></div>
+                <div className={styles.licenseInfo}>
+                  <strong>Setup progress: {setupProgress}%</strong>
+                  <span>{setupCompletion} of 10 core configuration blocks completed.</span>
+                </div>
+                {setupProgress === 100 ? <span className={styles.gdprBadge}><Check size={13} />Ready</span> : null}
+              </div>
+              <div className={styles.licenseCard} style={{ alignItems: 'flex-start' }}>
+                <div className={styles.licenseInfo}>
+                  <strong>Recent audit activity</strong>
+                  <span>Critical setup and admin actions are tracked for accountability.</span>
+                </div>
+                <div className={styles.licenseUserTable} style={{ width: '100%', marginTop: 10 }}>
+                  <div className={styles.licenseUserHeader} style={{ gridTemplateColumns: '1.1fr 1fr 1.2fr 1fr' }}>
+                    <span>Action</span>
+                    <span>Resource</span>
+                    <span>Actor</span>
+                    <span>Time</span>
+                  </div>
+                  {auditItems.length === 0 ? (
+                    <div className={styles.licenseUserRow} style={{ gridTemplateColumns: '1fr' }}>
+                      <span style={{ color: '#9db0c8' }}>No recent audit records yet.</span>
+                    </div>
+                  ) : auditItems.map((item) => (
+                    <div key={item.id} className={styles.licenseUserRow} style={{ gridTemplateColumns: '1.1fr 1fr 1.2fr 1fr' }}>
+                      <strong style={{ textTransform: 'capitalize' }}>{item.action.replace(/_/g, ' ')}</strong>
+                      <span>{item.resource.replace(/_/g, ' ')}</span>
+                      <span>{item.actor_email || 'System'}</span>
+                      <span>{new Date(item.created_at).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.formGrid2}>
+                <div className={styles.formRow}><label>Company name</label><input className={styles.formInput} value={companyName} onChange={(event) => setCompanyName(event.target.value)} /></div>
+                <div className={styles.formRow}><label>Timezone</label><input className={styles.formInput} value={timezone} onChange={(event) => setTimezone(event.target.value)} placeholder="Europe/London" /></div>
+              </div>
+              <div className={styles.formGrid2}>
+                <div className={styles.formRow}><label>Default sender name</label><input className={styles.formInput} value={defaultSenderName} onChange={(event) => setDefaultSenderName(event.target.value)} /></div>
+                <div className={styles.formRow}><label>Default sender email</label><input className={styles.formInput} value={defaultSenderEmail} onChange={(event) => setDefaultSenderEmail(event.target.value)} /></div>
+              </div>
+              <div className={styles.formGrid2}>
+                <div className={styles.formRow}><label>Booking URL</label><input className={styles.formInput} value={bookingUrl} onChange={(event) => setBookingUrl(event.target.value)} /></div>
+                <div className={styles.formRow}><label>Default CTA label</label><input className={styles.formInput} value={defaultCtaLabel} onChange={(event) => setDefaultCtaLabel(event.target.value)} /></div>
+              </div>
+              <div className={styles.formGrid2}>
+                <div className={styles.formRow}><label>Default CTA URL</label><input className={styles.formInput} value={defaultCtaUrl} onChange={(event) => setDefaultCtaUrl(event.target.value)} /></div>
+                <div className={styles.formRow}><label>Follow-up SLA (hours)</label><input className={styles.formInput} value={followupHours} onChange={(event) => setFollowupHours(event.target.value)} /></div>
+              </div>
+              <div className={styles.formGrid2}>
+                <div className={styles.formRow}><label>Hot lead score threshold</label><input className={styles.formInput} value={hotLeadScore} onChange={(event) => setHotLeadScore(event.target.value)} /></div>
+                <div className={styles.formRow}><label>Pipeline stages (comma separated)</label><input className={styles.formInput} value={pipelineStages} onChange={(event) => setPipelineStages(event.target.value)} /></div>
+              </div>
+              {setupNotice ? <div className={styles.licenseNotice}><Check size={15} /><span>{setupNotice}</span></div> : null}
+              <div className={styles.licenseActions}>
+                <button className={styles.btnPrimary} onClick={saveSetupConfig} disabled={setupSaving}>{setupSaving ? 'Saving...' : 'Save setup defaults'}</button>
+                {showOnboardingWizard ? (
+                  <button className={styles.btnSecondary} onClick={() => setOnboardingStep((current) => Math.min(onboardingSteps.length - 1, current + 1))}>
+                    Next step
+                  </button>
+                ) : null}
+                {showOnboardingWizard ? (
+                  <button className={styles.btnSecondary} onClick={() => setOnboardingStep((current) => Math.max(0, current - 1))} disabled={onboardingStep === 0}>
+                    Previous
+                  </button>
+                ) : null}
+                {showOnboardingWizard ? (
+                  <button className={styles.btnSecondary} onClick={completeOnboarding}>
+                    Mark onboarding complete
+                  </button>
+                ) : null}
+                <button className={styles.btnSecondary} onClick={() => {
+                  setCompanyName('Online2Day')
+                  setDefaultSenderName('Online2Day Team')
+                  setDefaultSenderEmail('info@online2day.com')
+                  setBookingUrl('https://calendly.com/online2day/demo')
+                  setDefaultCtaLabel('Book a call')
+                  setDefaultCtaUrl('https://calendly.com/online2day/demo')
+                  setTimezone('Europe/London')
+                  setFollowupHours('24')
+                  setHotLeadScore('80')
+                  setPipelineStages('New, Contacted, Qualified, Proposal Sent, Negotiation, Won')
+                  setSetupNotice('Setup defaults reset locally. Save to apply.')
+                }}>Reset defaults</button>
+              </div>
+            </div>
+          </section>
+        ) : activeTab === 'appearance' ? (
           <section className={styles.settingsSection}>
             <header className={styles.settingsSectionHeader}>
               <h2>Theme and readability</h2>

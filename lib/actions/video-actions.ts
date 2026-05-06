@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { logLeadEvent } from './lead-actions'
+import { logAsyncActionFailure } from './reliability-actions'
 
 // ─── ADMIN STANDALONE VIDEO UPLOAD ───────────────────────────────────────────
 
@@ -27,7 +28,15 @@ export async function uploadAdminVideo(formData: FormData) {
     .from('lead-videos')
     .upload(filePath, file, { contentType: file.type, upsert: false })
 
-  if (uploadError) return { error: uploadError.message }
+  if (uploadError) {
+    await logAsyncActionFailure({
+      action: 'upload_admin_video_storage',
+      payload: { filePath, contentType: file.type, size: file.size },
+      error: new Error(uploadError.message),
+      recoverable: true,
+    })
+    return { error: uploadError.message }
+  }
 
   const { data: asset, error: assetError } = await supabase
     .from('lead_assets')
@@ -51,6 +60,12 @@ export async function uploadAdminVideo(formData: FormData) {
     .single()
 
   if (assetError) {
+    await logAsyncActionFailure({
+      action: 'upload_admin_video_asset_insert',
+      payload: { title, filePath, contentType: file.type, size: file.size },
+      error: new Error(assetError.message),
+      recoverable: true,
+    })
     await supabase.storage.from('lead-videos').remove([filePath])
     return { error: assetError.message }
   }
@@ -162,7 +177,12 @@ export async function uploadLeadVideo(leadId: string, formData: FormData) {
     })
 
   if (uploadError) {
-    console.error('Upload error:', uploadError)
+    await logAsyncActionFailure({
+      action: 'upload_lead_video_storage',
+      payload: { leadId, filePath, contentType: file.type, size: file.size },
+      error: new Error(uploadError.message),
+      recoverable: true,
+    })
     return { error: uploadError.message }
   }
 
@@ -192,7 +212,12 @@ export async function uploadLeadVideo(leadId: string, formData: FormData) {
     .single()
 
   if (assetError) {
-    console.error('Asset insert error:', assetError)
+    await logAsyncActionFailure({
+      action: 'upload_lead_video_asset_insert',
+      payload: { leadId, filePath, name: videoName || file.name },
+      error: new Error(assetError.message),
+      recoverable: true,
+    })
     return { error: assetError.message }
   }
 
@@ -273,7 +298,12 @@ export async function saveVideoEditorProject(payload: EditorProjectPayload) {
   const { data: asset, error } = await assetMutation
 
   if (error) {
-    console.error('Editor project save error:', error)
+    await logAsyncActionFailure({
+      action: 'save_video_editor_project',
+      payload: { leadId: payload.leadId, title: payload.title, sourceAssetId: payload.sourceAssetId || null },
+      error: new Error(error.message),
+      recoverable: true,
+    })
     return { error: error.message }
   }
 

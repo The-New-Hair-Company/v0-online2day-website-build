@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { enforceRateLimit, getClientIp } from '@/lib/security/rate-limit'
+import { recordSecurityEvent } from '@/lib/security/security-events'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MAX_IDS = 100
@@ -22,11 +24,23 @@ function escapeHtml(value: unknown) {
  * For a full PDF, install @react-pdf/renderer and swap the body below.
  */
 export async function GET(request: NextRequest) {
+  const ip = getClientIp(request)
+  const rate = enforceRateLimit({
+    key: `download-agreements:${ip}`,
+    limit: 20,
+    windowMs: 60_000,
+  })
+  if (!rate.ok) {
+    await recordSecurityEvent({ type: 'rate_limit', route: '/api/download-agreements', ip, detail: 'Rate limit exceeded' })
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
+
   const supabase = await createClient()
 
   // Auth check
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
+    await recordSecurityEvent({ type: 'failed_auth', route: '/api/download-agreements', ip, detail: 'Unauthorized request' })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -41,6 +55,7 @@ export async function GET(request: NextRequest) {
     .filter((id) => UUID_RE.test(id))
     .slice(0, MAX_IDS)
   if (ids.length === 0) {
+    await recordSecurityEvent({ type: 'invalid_uuid', route: '/api/download-agreements', ip, detail: `ids=${idsParam}` })
     return NextResponse.json({ error: 'No valid IDs provided' }, { status: 400 })
   }
 
@@ -142,6 +157,7 @@ export async function GET(request: NextRequest) {
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Disposition': `attachment; filename="online2day-agreements-${Date.now()}.html"`,
       'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'X-RateLimit-Remaining': String(rate.remaining),
     },
   })
 }

@@ -1446,13 +1446,25 @@ function UploadContactsModal({ onClose, onImport }: { onClose: () => void; onImp
   const [companyCol, setCompanyCol] = useState('company')
   const [defaultStage, setDefaultStage] = useState('New')
   const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState('')
+  const [importReport, setImportReport] = useState<{
+    totalRows: number
+    imported: number
+    failed: number
+    failures: Array<{ rowNumber: number; reason: string; preview: string }>
+  } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  function handleFile(f: File) { setFile(f) }
+  function handleFile(f: File) {
+    setFile(f)
+    setImportError('')
+    setImportReport(null)
+  }
 
   async function handleImport() {
     if (!file || importing) return
     setImporting(true)
+    setImportError('')
     try {
       const text = await file.text()
       const rows = parseCsv(text).map(row => ({
@@ -1464,7 +1476,14 @@ function UploadContactsModal({ onClose, onImport }: { onClose: () => void; onImp
         stage: row['stage'] || '',
       }))
       const result = await importContactsFromRows(rows, file.name, defaultStage)
+      if (result.report) setImportReport(result.report)
+      if (result.error) {
+        setImportError(result.error)
+        return
+      }
       onImport(result.imported ?? 0)
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed. Please try again.')
     } finally {
       setImporting(false)
     }
@@ -1503,7 +1522,7 @@ function UploadContactsModal({ onClose, onImport }: { onClose: () => void; onImp
               <div className={styles.uploadedFile}>
                 <Icon name="check" />
                 <span>{file.name} ({(file.size / 1024).toFixed(1)} KB)</span>
-                <button className={styles.btnSecondary} onClick={() => setFile(null)} style={{ padding: '4px 10px', minHeight: 28, fontSize: 12 }}>Remove</button>
+                <button className={styles.btnSecondary} onClick={() => { setFile(null); setImportReport(null); setImportError('') }} style={{ padding: '4px 10px', minHeight: 28, fontSize: 12 }}>Remove</button>
               </div>
               <div className={styles.formRow}>
                 <label>Map "Name" column</label>
@@ -1529,6 +1548,32 @@ function UploadContactsModal({ onClose, onImport }: { onClose: () => void; onImp
                   {stageOptions.map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
+              {importError ? (
+                <div className={styles.licenseWarning}>
+                  <span>{importError}</span>
+                </div>
+              ) : null}
+              {importReport ? (
+                <div className={styles.licenseCard} style={{ alignItems: 'flex-start' }}>
+                  <div className={styles.licenseInfo}>
+                    <strong>Import summary</strong>
+                    <span>{importReport.imported} imported, {importReport.failed} skipped out of {importReport.totalRows} rows.</span>
+                  </div>
+                  {importReport.failures.length > 0 ? (
+                    <div style={{ width: '100%', marginTop: 8 }}>
+                      <div style={{ fontSize: 12, color: '#b8c5d9', marginBottom: 6 }}>Rows needing attention</div>
+                      <div style={{ display: 'grid', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
+                        {importReport.failures.slice(0, 8).map((failure) => (
+                          <div key={`${failure.rowNumber}-${failure.preview}`} style={{ fontSize: 12, color: '#d5e0f5', border: '1px solid rgba(120,145,182,0.28)', borderRadius: 8, padding: '8px 10px' }}>
+                            <strong style={{ color: '#fca5a5' }}>Row {failure.rowNumber}</strong> - {failure.reason}
+                            <div style={{ color: '#97a6bc', marginTop: 2 }}>{failure.preview}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </>
           )}
         </div>

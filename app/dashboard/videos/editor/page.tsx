@@ -1,4 +1,4 @@
-import { getEmailComposerData } from '@/app/actions/dashboard'
+import { getCrmSetupConfig, getEmailComposerData } from '@/app/actions/dashboard'
 import { VideoEditorClient } from './video-editor-client'
 
 export const metadata = {
@@ -7,6 +7,9 @@ export const metadata = {
 }
 
 export default async function VideoEditorPage() {
-  const data = await getEmailComposerData()
-  return <VideoEditorClient leads={data.leads} videos={data.videos} />
+  const [data, setupConfig] = await Promise.all([
+    getEmailComposerData(),
+    getCrmSetupConfig(),
+  ])
+  return <VideoEditorClient leads={data.leads} videos={data.videos} setupConfig={setupConfig} />
 }

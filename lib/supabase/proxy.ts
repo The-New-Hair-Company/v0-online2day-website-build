@@ -1,5 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { isFoundingAdminEmail, normalizeEmail } from '@/lib/license'
+
+const ADMIN_ONLY_PREFIXES = [
+  '/dashboard/settings',
+  '/dashboard/integrations',
+  '/dashboard/enterprise',
+  '/dashboard/reports',
+]
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -41,6 +49,18 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  async function isAdminUser() {
+    if (!user) return false
+    const email = normalizeEmail(user.email)
+    if (isFoundingAdminEmail(email)) return true
+
+    const [{ data: profile }, { data: licensed }] = await Promise.all([
+      supabase.from('user_profiles').select('role').eq('user_id', user.id).single(),
+      supabase.from('licensed_users').select('role, status').eq('email', email).single(),
+    ])
+    return profile?.role === 'admin' || (licensed?.role === 'admin' && licensed?.status === 'active')
+  }
+
   if (
     // if the user is not logged in and the app path, in this case, /protected, is accessed, redirect to the login page
     request.nextUrl.pathname.startsWith('/protected') &&
@@ -50,6 +70,16 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
     return NextResponse.redirect(url)
+  }
+
+  if (user && ADMIN_ONLY_PREFIXES.some((prefix) => request.nextUrl.pathname.startsWith(prefix))) {
+    const admin = await isAdminUser()
+    if (!admin) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard/overview'
+      url.searchParams.set('restricted', '1')
+      return NextResponse.redirect(url)
+    }
   }
 
   // IMPORTANT: You *must* return the supabaseResponse object as it is.

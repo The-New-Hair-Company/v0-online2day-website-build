@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:e2e:security": "playwright test tests/e2e/security-regression.spec.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

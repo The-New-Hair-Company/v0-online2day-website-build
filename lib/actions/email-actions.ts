@@ -4,6 +4,7 @@ import { Resend } from 'resend'
 import { logLeadEvent } from './lead-actions'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { logAsyncActionFailure, withRetry } from './reliability-actions'
 
 type SendEnterpriseEmailInput = {
   leadId?: string
@@ -146,22 +147,36 @@ export async function sendEnterpriseEmail(input: SendEnterpriseEmailInput) {
     ctaLabel: input.ctaLabel,
   })
 
-  const { data, error } = await resend.emails.send({
-    from: process.env.EMAIL_FROM || 'Online2Day <hello@online2day.com>',
-    replyTo: process.env.EMAIL_REPLY_TO || 'hello@online2day.com',
-    to: [to],
-    subject: input.subject.trim(),
-    html,
-    text: `${input.recipientName || lead?.name ? `Hi ${input.recipientName || lead?.name},\n\n` : ''}${input.body}${videoUrl ? `\n\nWatch video: ${videoUrl}` : ''}`,
-    tags: [
-      { name: 'system', value: 'crm' },
-      { name: 'template', value: (input.templateName || 'custom').toLowerCase().replace(/[^a-z0-9_-]/g, '-') },
-    ],
-  })
+  let data: { id?: string } | null = null
+  let error: unknown = null
+  try {
+    data = await withRetry('send_enterprise_email', async () => {
+      const result = await resend.emails.send({
+        from: process.env.EMAIL_FROM || 'Online2Day <hello@online2day.com>',
+        replyTo: process.env.EMAIL_REPLY_TO || 'hello@online2day.com',
+        to: [to],
+        subject: input.subject.trim(),
+        html,
+        text: `${input.recipientName || lead?.name ? `Hi ${input.recipientName || lead?.name},\n\n` : ''}${input.body}${videoUrl ? `\n\nWatch video: ${videoUrl}` : ''}`,
+        tags: [
+          { name: 'system', value: 'crm' },
+          { name: 'template', value: (input.templateName || 'custom').toLowerCase().replace(/[^a-z0-9_-]/g, '-') },
+        ],
+      })
+      return { id: (result as any)?.data?.id || (result as any)?.id }
+    }, { attempts: 3, payload: { to, leadId: input.leadId || null, template: input.templateName || 'custom' } })
+  } catch (err) {
+    error = err
+  }
 
   if (error) {
-    console.error('Resend error:', error)
-    return { error: typeof error === 'string' ? error : 'Resend rejected the message.' }
+    await logAsyncActionFailure({
+      action: 'send_enterprise_email',
+      payload: { to, leadId: input.leadId || null, subject: input.subject.trim() },
+      error,
+      recoverable: true,
+    })
+    return { error: error instanceof Error ? error.message : 'Resend rejected the message.' }
   }
 
   if (input.leadId) {

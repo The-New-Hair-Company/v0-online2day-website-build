@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import styles from './LeadsDashboard.module.css'
 import { getDashboardAccessProfile, type DashboardAccessProfile } from '@/app/actions/dashboard'
-import { getUserNotifications, markAllNotificationsRead, type UserNotification } from '@/lib/actions/enterprise-actions'
+import { getUserNotifications, markAllNotificationsRead, markNotificationRead, type UserNotification } from '@/lib/actions/enterprise-actions'
 
 const cx = (...classes: Array<string | false | undefined>) => classes.filter(Boolean).join(' ')
 
@@ -77,6 +77,11 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
 
   async function readNotifications() {
     await markAllNotificationsRead()
+    await refreshNotifications()
+  }
+
+  async function readNotification(id: string) {
+    await markNotificationRead(id)
     await refreshNotifications()
   }
 
@@ -147,9 +152,10 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
             {notificationsError ? <p className={styles.notifState}>{notificationsError}</p> : null}
             {!notifications.length && !notificationsError ? <p className={styles.notifState}>No notifications yet.</p> : null}
             {notifications.slice(0, 8).map((item) => (
-              <article key={item.id} className={cx(styles.notifItem, !item.readAt && styles.notifUnread)}>
+              <article key={item.id} className={cx(styles.notifItem, !item.readAt && styles.notifUnread)} onClick={() => void readNotification(item.id)}>
                 <strong>{item.title}</strong>
                 <p>{item.detail}</p>
+                <em>{item.source}</em>
                 <span>{new Date(item.createdAt).toLocaleString()}</span>
               </article>
             ))}

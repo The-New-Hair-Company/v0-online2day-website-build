@@ -1,12 +1,13 @@
 import Link from 'next/link'
 import { CrmDashboard } from '@/components/crm-dashboard/crm-dashboard'
-import { getVideos, getVideoMetrics } from '@/app/actions/dashboard'
+import { getCrmSetupConfig, getVideos, getVideoMetrics } from '@/app/actions/dashboard'
 import { Upload } from 'lucide-react'
 
 export default async function VideosPage() {
-  const [initialVideos, videoMetrics] = await Promise.all([
+  const [initialVideos, videoMetrics, setupConfig] = await Promise.all([
     getVideos(),
     getVideoMetrics(),
+    getCrmSetupConfig(),
   ])
 
   return (
@@ -21,7 +22,7 @@ export default async function VideosPage() {
           Upload Video
         </Link>
       </div>
-      <CrmDashboard section="videos" initialVideos={initialVideos} videoMetrics={videoMetrics} />
+      <CrmDashboard section="videos" initialVideos={initialVideos} videoMetrics={videoMetrics} setupConfig={setupConfig} />
     </div>
   )
 }

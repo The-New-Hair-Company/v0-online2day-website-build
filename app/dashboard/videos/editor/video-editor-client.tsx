@@ -56,6 +56,7 @@ import { sendEnterpriseEmail } from '@/lib/actions/email-actions'
 import { saveVideoEditorProject, uploadLeadVideo } from '@/lib/actions/video-actions'
 import styles from './video-editor.module.css'
 import type { EmailComposerLead, EmailComposerVideo } from '@/components/crm-dashboard/types'
+import type { CrmSetupConfig } from '@/components/crm-dashboard/types'
 
 type Scene = {
   id: string
@@ -194,7 +195,7 @@ function formatSeconds(seconds: number) {
   return `${String(minutes).padStart(2, '0')}:${String(remaining).padStart(2, '0')}`
 }
 
-export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[]; videos: EmailComposerVideo[] }) {
+export function VideoEditorClient({ leads, videos, setupConfig }: { leads: EmailComposerLead[]; videos: EmailComposerVideo[]; setupConfig: CrmSetupConfig }) {
   const router = useRouter()
   const [projectTitle, setProjectTitle] = useState('Personalised website growth video')
   const [leadId, setLeadId] = useState(leads[0]?.id || '')
@@ -208,8 +209,8 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
   const [watermark, setWatermark] = useState(true)
   const [approvalMode, setApprovalMode] = useState(false)
   const [emailTo, setEmailTo] = useState(leads[0]?.email || '')
-  const [emailSubject, setEmailSubject] = useState('A short personalised video from Online2Day')
-  const [emailBody, setEmailBody] = useState('I made a short video with a practical first pass on how Online2Day would approach your next growth project.\n\nIt includes the key opportunity, a quick proof point and one clear next step.')
+  const [emailSubject, setEmailSubject] = useState(`A short personalised video from ${setupConfig.companyName}`)
+  const [emailBody, setEmailBody] = useState(`I made a short video with a practical first pass on how ${setupConfig.companyName} would approach your next growth project.\n\nIt includes the key opportunity, a quick proof point and one clear next step.`)
   const [savedAssetId, setSavedAssetId] = useState('')
   const [saveStatus, setSaveStatus] = useState('')
   const [sendStatus, setSendStatus] = useState('')
@@ -236,7 +237,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
   const [assetCount, setAssetCount] = useState(videos.length)
   const [libraryVideos, setLibraryVideos] = useState(videos)
   const [thumbnailMode, setThumbnailMode] = useState('Smart poster frame')
-  const [ctaLabel, setCtaLabel] = useState('Book a call')
+  const [ctaLabel, setCtaLabel] = useState(setupConfig.defaultCtaLabel)
   const [safeChecklist, setSafeChecklist] = useState(false)
   const [logoPlacement, setLogoPlacement] = useState<'top-left' | 'top-right' | 'bottom-left'>('top-left')
   const [recordingState, setRecordingState] = useState<'idle' | 'preparing' | 'recording' | 'recorded'>('idle')
@@ -794,7 +795,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
       scenes,
       timeline,
       brand: { primary: brandColor, accent: accentColor, watermark, logoPlacement },
-      cta: { label: ctaLabel, destination: 'https://online2day.com/contact' },
+      cta: { label: ctaLabel, destination: setupConfig.defaultCtaUrl || setupConfig.bookingUrl },
       email: { subject: emailSubject, body: emailBody },
       recording: recordedClip ? {
         name: recordedClip.name,
@@ -972,7 +973,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
         body: emailBody,
         templateName: 'Video editor campaign',
         videoAssetId: assetId,
-        ctaLabel: 'Watch video',
+      ctaLabel: ctaLabel || setupConfig.defaultCtaLabel || 'Watch video',
       })
       if ('error' in response && response.error) {
         setSendStatus(String(response.error))
@@ -992,7 +993,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
     setEmailTo(lead?.email || '')
     setSavedAssetId('')
     setRecordedAssetId('')
-    setEmailSubject(lead?.company ? `A focused video for ${lead.company}` : 'A short personalised video from Online2Day')
+    setEmailSubject(lead?.company ? `A focused video for ${lead.company}` : `A short personalised video from ${setupConfig.companyName}`)
     setSendStatus('Lead changed. Choose a database video for this lead or save a fresh editor asset before sending.')
   }
 
@@ -1612,7 +1613,7 @@ export function VideoEditorClient({ leads, videos }: { leads: EmailComposerLead[
                     </div>
                     {captionMode ? <div className={styles.captionBar}>Captions: enterprise-grade delivery, accessibility and conversion tracking.</div> : null}
                     {transcriptEnabled ? <div className={styles.transcriptBadge}><Subtitles size={14} /> Transcript notes attached</div> : null}
-                    <button className={styles.ctaButton} onClick={() => router.push('/contact')}>{ctaLabel} <ChevronRight size={15} /></button>
+                    <button className={styles.ctaButton} onClick={() => window.open(setupConfig.defaultCtaUrl || setupConfig.bookingUrl, '_blank', 'noopener,noreferrer')}>{ctaLabel} <ChevronRight size={15} /></button>
                   </div>
                 )}
               </div>

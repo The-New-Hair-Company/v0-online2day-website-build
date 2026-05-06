@@ -48,6 +48,7 @@ import styles from './dashboard.module.css'
 import { sendEnterpriseEmail } from '@/lib/actions/email-actions'
 import { sendConversationReply } from '@/lib/actions/message-actions'
 import type {
+  CrmSetupConfig,
   ConversationRecord,
   CrmDashboardProps,
   DashboardSection,
@@ -274,6 +275,7 @@ export function CrmDashboard({
   messageStats,
   integrationStatus,
   emailComposerData,
+  setupConfig,
 }: CrmDashboardProps) {
   const meta = PAGE_META[section]
   const router = useRouter()
@@ -449,6 +451,7 @@ export function CrmDashboard({
           messageStats,
           resolvedIntegrationStatus,
           emailComposerData,
+          setupConfig,
         })}
         {notice ? (
           <div className={styles.actionToast} role="status" aria-live="polite">
@@ -550,9 +553,9 @@ function renderSection(section: DashboardSection, props: ResolvedSectionProps) {
     case 'leads':
       return <LeadsSection initialLeads={props.initialLeads} metrics={props.resolvedLeadMetrics} />
     case 'videos':
-      return <VideosSection initialVideos={props.initialVideos} metrics={props.resolvedVideoMetrics} />
+      return <VideosSection initialVideos={props.initialVideos} metrics={props.resolvedVideoMetrics} setupConfig={props.setupConfig} />
     case 'emails':
-      return <EmailsSection initialEmails={props.initialEmails} metrics={props.resolvedEmailMetrics} composerData={props.emailComposerData} />
+      return <EmailsSection initialEmails={props.initialEmails} metrics={props.resolvedEmailMetrics} composerData={props.emailComposerData} setupConfig={props.setupConfig} />
     case 'messages':
       return <MessagesSection initialConversations={props.initialConversations} messageStats={props.messageStats} />
     case 'site-requests':
@@ -692,7 +695,7 @@ function LeadsSection({ initialLeads = [], metrics = [] }: { initialLeads?: Lead
   )
 }
 
-function VideosSection({ initialVideos = [], metrics = [] }: { initialVideos?: VideoRecord[]; metrics?: MetricItem[] }) {
+function VideosSection({ initialVideos = [], metrics = [], setupConfig }: { initialVideos?: VideoRecord[]; metrics?: MetricItem[]; setupConfig?: CrmSetupConfig }) {
   const router = useRouter()
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(initialVideos[0]?.id || '')
@@ -705,8 +708,8 @@ function VideosSection({ initialVideos = [], metrics = [] }: { initialVideos?: V
   const [owner, setOwner] = useState('All owners')
   const [channel, setChannel] = useState('All channels')
   const [activeTab, setActiveTab] = useState('Library')
-  const [ctaType, setCtaType] = useState('Book call')
-  const [ctaUrl, setCtaUrl] = useState('https://calendly.com/online2day/demo')
+  const [ctaType, setCtaType] = useState(setupConfig?.defaultCtaLabel || 'Book call')
+  const [ctaUrl, setCtaUrl] = useState(setupConfig?.defaultCtaUrl || setupConfig?.bookingUrl || 'https://calendly.com/online2day/demo')
   const videoTabs = [{ label: 'Library' }, { label: 'Personalised' }, { label: 'Templates' }, { label: 'Campaigns' }, { label: 'Analytics' }]
   const statuses = useMemo(() => ['All statuses', ...Array.from(new Set(initialVideos.map((video) => video.status)))], [initialVideos])
   const owners = useMemo(() => ['All owners', ...Array.from(new Set(initialVideos.map((video) => video.owner)))], [initialVideos])
@@ -899,10 +902,12 @@ function EmailsSection({
   initialEmails = [],
   metrics = [],
   composerData = { leads: [], videos: [] },
+  setupConfig,
 }: {
   initialEmails?: EmailRecord[]
   metrics?: MetricItem[]
   composerData?: { leads: EmailComposerLead[]; videos: EmailComposerVideo[] }
+  setupConfig?: CrmSetupConfig
 }) {
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(initialEmails[1]?.id || initialEmails[0]?.id || '')
@@ -1023,6 +1028,7 @@ function EmailsSection({
           selectedTemplate={selectedEmail}
           leads={composerData.leads}
           videos={composerData.videos}
+          setupConfig={setupConfig}
           onClose={() => setIsComposerOpen(false)}
         />
       ) : null}
@@ -1034,11 +1040,13 @@ function EnterpriseEmailComposer({
   selectedTemplate,
   leads,
   videos,
+  setupConfig,
   onClose,
 }: {
   selectedTemplate?: EmailRecord
   leads: EmailComposerLead[]
   videos: EmailComposerVideo[]
+  setupConfig?: CrmSetupConfig
   onClose: () => void
 }) {
   const firstLead = leads.find((lead) => lead.email) || leads[0]
@@ -1047,8 +1055,8 @@ function EnterpriseEmailComposer({
   const leadVideos = videos.filter((video) => !leadId || video.leadId === leadId)
   const [videoAssetId, setVideoAssetId] = useState(leadVideos[0]?.id || '')
   const [to, setTo] = useState(firstLead?.email || '')
-  const [subject, setSubject] = useState(selectedTemplate?.subject || 'A quick personalised video from Online2Day')
-  const [body, setBody] = useState(`I wanted to send over a focused follow-up for ${firstLead?.company || 'your team'}.\n\nThe video below walks through the most relevant next step and gives you a simple way to book a call if it is useful.`)
+  const [subject, setSubject] = useState(selectedTemplate?.subject || `A quick personalised video from ${setupConfig?.companyName || 'Online2Day'}`)
+  const [body, setBody] = useState(`I wanted to send over a focused follow-up for ${firstLead?.company || 'your team'}.\n\nThe video below walks through the most relevant next step and gives you a simple way to ${setupConfig?.defaultCtaLabel?.toLowerCase() || 'book a call'} if it is useful.`)
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
@@ -1071,7 +1079,7 @@ function EnterpriseEmailComposer({
       body,
       templateName: selectedTemplate?.template,
       videoAssetId: videoAssetId || undefined,
-      ctaLabel: selectedTemplate?.cta || 'Watch video',
+      ctaLabel: selectedTemplate?.cta || setupConfig?.defaultCtaLabel || 'Watch video',
     })
     setSending(false)
     if ('error' in result && result.error) {
@@ -1598,6 +1606,8 @@ function IntegrationStatusBar({ status }: { status: IntegrationStatus }) {
 }
 
 function IntegrationsSection({ integrationStatus = { connected: 0, suggested: 0, pending: 0 } }: { integrationStatus?: IntegrationStatus }) {
+  const checks = integrationStatus.healthChecks || []
+  const toneFor = (status: string) => status === 'healthy' ? styles.pillGreen : status === 'degraded' ? styles.pillYellow : status === 'down' ? styles.pillRed : styles.pill
   return (
     <>
       <IntegrationStatusBar status={integrationStatus} />
@@ -1646,6 +1656,26 @@ function IntegrationsSection({ integrationStatus = { connected: 0, suggested: 0,
           status="Not configured"
           action="Contact sales to add this"
         />
+      </div>
+      <div className={styles.panel} style={{ marginTop: 10 }}>
+        <div className={styles.panelTitle}>Integration health checks</div>
+        <div className={styles.list}>
+          {checks.length === 0 ? (
+            <div className={styles.subtle}>No health checks available yet.</div>
+          ) : (
+            checks.map((check) => (
+              <div key={`${check.provider}-${check.checkedAt}`} className={styles.listRow}>
+                <div className={styles.identity}>
+                  <strong>{check.provider}</strong>
+                  <div className={styles.subtle}>{new Date(check.checkedAt).toLocaleString('en-GB')}</div>
+                </div>
+                <span className={cx(styles.pill, toneFor(check.status))}>{check.status}</span>
+                <span className={styles.subtle}>{check.latencyMs !== null ? `${check.latencyMs}ms` : 'n/a'}</span>
+                <span className={styles.subtle}>{check.detail}</span>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </>
   )
