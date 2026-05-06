@@ -54,7 +54,7 @@ export function LegalPage({ title, description, lastUpdated, sections }: LegalPa
                     <ul className="mt-5 space-y-3 text-muted-foreground">
                       {section.items.map((item) => (
                         <li key={item} className="flex gap-3 leading-7">
-                          <span className="mt-3 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary" />
+                          <span className="mt-3 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
                           <span>{item}</span>
                         </li>
                       ))}
@@ -62,7 +62,7 @@ export function LegalPage({ title, description, lastUpdated, sections }: LegalPa
                   ) : null}
                   {section.table ? (
                     <div className="mt-5 overflow-x-auto rounded-lg border border-border">
-                      <table className="w-full min-w-[680px] border-collapse text-left text-sm">
+                      <table className="w-full min-w-170 border-collapse text-left text-sm">
                         <thead className="bg-muted/40 text-foreground">
                           <tr>
                             {section.table.columns.map((column) => (

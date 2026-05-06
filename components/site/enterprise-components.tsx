@@ -81,7 +81,7 @@ export function SitePageShell({ children }: { children: React.ReactNode }) {
 
 export function SiteSection({ children, tint = false }: { children: React.ReactNode; tint?: boolean }) {
   return (
-    <section className={`px-4 py-16 md:py-20 ${tint ? 'bg-card/45 border-y border-border/70' : ''}`}>
+    <section className={`px-4 py-12 md:py-20 ${tint ? 'bg-card/45 border-y border-border/70' : ''}`}>
       <div className="container mx-auto max-w-6xl">{children}</div>
     </section>
   )
@@ -98,10 +98,10 @@ export function EyebrowBadge({ children }: { children: React.ReactNode }) {
 
 export function SectionHeading({ eyebrow, title, description }: { eyebrow?: string; title: React.ReactNode; description: string }) {
   return (
-    <div className="mx-auto mb-10 max-w-3xl text-center">
+    <div className="mx-auto mb-8 max-w-3xl text-center md:mb-10">
       {eyebrow ? <div className="mb-3 text-sm font-bold uppercase tracking-[0.14em] text-primary">{eyebrow}</div> : null}
-      <h2 className="text-3xl font-bold tracking-tight text-balance md:text-4xl">{title}</h2>
-      <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-muted-foreground text-pretty">{description}</p>
+      <h2 className="text-2xl font-bold tracking-tight text-balance sm:text-3xl md:text-4xl">{title}</h2>
+      <p className="mx-auto mt-3 max-w-2xl text-base leading-relaxed text-muted-foreground text-pretty md:text-lg">{description}</p>
     </div>
   )
 }
@@ -161,17 +161,17 @@ export function ProductPreview() {
 
 export function ProductHero() {
   return (
-    <section className="relative px-4 pb-48 pt-28 md:pb-56">
+    <section className="relative px-4 pt-16 pb-24 sm:pt-20 sm:pb-36 md:pt-28 md:pb-56">
       {/* gradient clipped to section, preview allowed to overflow */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklch,var(--primary),transparent_76%),transparent_34%)]" />
       </div>
       <div className="container relative mx-auto max-w-6xl text-center">
         <EyebrowBadge>Bespoke web development for serious operators</EyebrowBadge>
-        <h1 className="mx-auto mt-6 max-w-5xl text-5xl font-black tracking-tight text-balance md:text-7xl">
+        <h1 className="mx-auto mt-5 max-w-5xl text-3xl font-black tracking-tight text-balance sm:text-5xl md:text-7xl">
           Build fast, polished systems that make growth easier to run.
         </h1>
-        <p className="mx-auto mt-6 max-w-2xl text-xl leading-relaxed text-muted-foreground text-pretty">
+        <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground text-pretty sm:mt-6 sm:text-xl">
           Online2Day designs and builds SaaS, CRM, automation and conversion workflows with enterprise detail and a light, fast user experience.
         </p>
         <HeroActions />
@@ -183,10 +183,10 @@ export function ProductHero() {
 
 export function MetricTile({ metric }: { metric: Metric }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
-      <div className="text-3xl font-black text-primary">{metric.value}</div>
-      <div className="mt-2 font-bold">{metric.label}</div>
-      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{metric.detail}</p>
+    <div className="rounded-lg border border-border bg-card p-4 md:p-5">
+      <div className="text-2xl font-black text-primary md:text-3xl">{metric.value}</div>
+      <div className="mt-2 text-sm font-bold md:text-base">{metric.label}</div>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground md:mt-2 md:text-sm">{metric.detail}</p>
     </div>
   )
 }
@@ -194,7 +194,7 @@ export function MetricTile({ metric }: { metric: Metric }) {
 export function MetricsStrip() {
   return (
     <SiteSection tint>
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {metrics.map((metric) => <MetricTile key={metric.label} metric={metric} />)}
       </div>
     </SiteSection>

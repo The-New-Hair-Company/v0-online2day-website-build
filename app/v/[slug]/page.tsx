@@ -169,7 +169,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
                 />
               </div>
             ) : editorProject ? (
-              <div className="aspect-video relative overflow-hidden bg-gradient-to-br from-[#081225] via-[#0b1020] to-[#111827]">
+              <div className="aspect-video relative overflow-hidden bg-linear-to-br from-[#081225] via-[#0b1020] to-[#111827]">
                 <div className="absolute inset-8 border border-white/10 rounded-xl" />
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_18%,rgba(47,107,255,0.35),transparent_30%)]" />
                 <div className="relative h-full p-10 flex flex-col justify-center">

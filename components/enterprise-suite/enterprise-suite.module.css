@@ -998,3 +998,45 @@
     justify-items: start;
   }
 }
+
+/* ── Light mode overrides ──────────────────────────────────────────────────── */
+
+:global(html[data-theme='light']) .callActions button,
+:global(html[data-theme='light']) .changeGrid article button,
+:global(html[data-theme='light']) .categoryTabs button,
+:global(html[data-theme='light']) .primaryButton {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #1f2937;
+}
+
+:global(html[data-theme='light']) .backLink {
+  color: #1d4ed8;
+}
+
+:global(html[data-theme='light']) .eventItem {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(126, 145, 178, 0.22);
+}
+
+:global(html[data-theme='light']) .eventItem span {
+  color: #1d4ed8;
+}
+
+:global(html[data-theme='light']) .searchBox {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #526070;
+}
+
+:global(html[data-theme='light']) .searchBox input {
+  color: #111827;
+}
+
+:global(html[data-theme='light']) .snippetForm input,
+:global(html[data-theme='light']) .snippetForm textarea,
+:global(html[data-theme='light']) .releaseNotesEditor textarea {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #111827;
+}

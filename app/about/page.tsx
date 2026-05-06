@@ -11,36 +11,36 @@ export default function AboutPage() {
     <>
       <Header />
       <main className="min-h-screen pt-24">
-        <section className="pt-8 pb-20 px-4">
+        <section className="pt-8 pb-16 px-4 md:pb-20">
           <div className="container mx-auto max-w-6xl">
-            <div className="text-center mb-16">
-              <h1 className="text-4xl md:text-6xl font-bold mb-6 text-balance">
+            <div className="text-center mb-10 md:mb-16">
+              <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-4 md:mb-6 text-balance">
                 About <span className="text-primary">online2day</span>
               </h1>
-              <p className="text-xl text-muted-foreground max-w-3xl mx-auto text-pretty leading-relaxed">
-                We're a UK-based development company passionate about creating exceptional 
-                web experiences. Whatever your requirement, we have the skills and dedication 
+              <p className="text-base sm:text-xl text-muted-foreground max-w-3xl mx-auto text-pretty leading-relaxed">
+                We&apos;re a UK-based development company passionate about creating exceptional
+                web experiences. Whatever your requirement, we have the skills and dedication
                 to deliver.
               </p>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-8 mb-20">
-              <Card className="p-8 bg-card border-border text-center">
-                <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
-                  <Target className="h-8 w-8 text-primary" />
+            <div className="grid md:grid-cols-3 gap-5 md:gap-8 mb-12 md:mb-20">
+              <Card className="p-5 sm:p-8 bg-card border-border text-center">
+                <div className="h-12 w-12 md:h-14 md:w-14 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4 md:mb-6">
+                  <Target className="h-6 w-6 md:h-8 md:w-8 text-primary" />
                 </div>
-                <h3 className="text-xl font-bold mb-3">Our Mission</h3>
-                <p className="text-muted-foreground leading-relaxed">
+                <h3 className="text-lg md:text-xl font-bold mb-2 md:mb-3">Our Mission</h3>
+                <p className="text-sm md:text-base text-muted-foreground leading-relaxed">
                   To empower businesses with cutting-edge web solutions that drive growth and innovation.
                 </p>
               </Card>
 
-              <Card className="p-8 bg-card border-border text-center">
-                <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
-                  <Heart className="h-8 w-8 text-primary" />
+              <Card className="p-5 sm:p-8 bg-card border-border text-center">
+                <div className="h-12 w-12 md:h-14 md:w-14 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4 md:mb-6">
+                  <Heart className="h-6 w-6 md:h-8 md:w-8 text-primary" />
                 </div>
-                <h3 className="text-xl font-bold mb-3">Our Values</h3>
-                <p className="text-muted-foreground leading-relaxed">
+                <h3 className="text-lg md:text-xl font-bold mb-2 md:mb-3">Our Values</h3>
+                <p className="text-sm md:text-base text-muted-foreground leading-relaxed">
                   Quality, transparency, and client satisfaction are at the heart of everything we do.
                 </p>
               </Card>
@@ -48,11 +48,11 @@ export default function AboutPage() {
               <TeamSection />
             </div>
 
-            <Card className="p-12 bg-gradient-to-br from-card to-card/50 border-primary/20 mb-20">
-              <h2 className="text-3xl font-bold mb-6 text-center text-balance">
-                Why We're Different
+            <Card className="p-6 sm:p-10 md:p-12 bg-linear-to-br from-card to-card/50 border-primary/20 mb-12 md:mb-20">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-5 md:mb-6 text-center text-balance">
+                Why We&apos;re Different
               </h2>
-              <div className="grid md:grid-cols-3 gap-8">
+              <div className="grid sm:grid-cols-3 gap-6 md:gap-8">
                 <div className="text-center">
                   <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mx-auto mb-4">
                     <Code2 className="h-6 w-6 text-primary" />
@@ -84,13 +84,13 @@ export default function AboutPage() {
             </Card>
 
             <div className="text-center">
-              <h2 className="text-3xl font-bold mb-6 text-balance">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4 md:mb-6 text-balance">
                 Ready to Work Together?
               </h2>
-              <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto text-pretty">
-                Let's discuss your project and how we can help bring your vision to life.
+              <p className="text-base md:text-lg text-muted-foreground mb-6 md:mb-8 max-w-2xl mx-auto text-pretty">
+                Let&apos;s discuss your project and how we can help bring your vision to life.
               </p>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center">
                 <Button size="lg" asChild>
                   <Link href="/contact">Get in Touch</Link>
                 </Button>

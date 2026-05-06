@@ -21,17 +21,17 @@ export default async function BlogPage() {
       <main className="min-h-screen pt-24">
         <section className="pt-8 pb-20 px-4">
           <div className="container mx-auto max-w-6xl">
-            <div className="text-center mb-16">
-              <h1 className="text-4xl md:text-6xl font-bold mb-6 text-balance">
-                Blog & <span className="text-primary">Insights</span>
+            <div className="text-center mb-10 md:mb-16">
+              <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-4 md:mb-6 text-balance">
+                Blog &amp; <span className="text-primary">Insights</span>
               </h1>
-              <p className="text-xl text-muted-foreground max-w-2xl mx-auto text-pretty leading-relaxed">
+              <p className="text-base sm:text-xl text-muted-foreground max-w-2xl mx-auto text-pretty leading-relaxed">
                 Technical articles, industry insights, and best practices from our team
               </p>
             </div>
 
             {!posts || posts.length === 0 ? (
-              <Card className="p-12 bg-card border-border text-center">
+              <Card className="p-8 bg-card border-border text-center">
                 <h3 className="text-xl font-semibold mb-2">No posts yet</h3>
                 <p className="text-muted-foreground">
                   Check back soon for our latest articles and insights
@@ -52,7 +52,7 @@ export default async function BlogPage() {
                         {post.title}
                       </h2>
                       
-                      <p className="text-muted-foreground mb-4 line-clamp-3 leading-relaxed flex-grow">
+                      <p className="text-muted-foreground mb-4 line-clamp-3 leading-relaxed grow">
                         {post.excerpt}
                       </p>
 

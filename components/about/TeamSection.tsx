@@ -40,22 +40,22 @@ export function TeamSection() {
   return (
     <div className="flex flex-col gap-0">
       <Card
-        className="p-8 bg-card border-border text-center cursor-pointer hover:border-primary/40 transition-colors select-none"
+        className="p-5 sm:p-8 bg-card border-border text-center cursor-pointer hover:border-primary/40 transition-colors select-none"
         onClick={() => setOpen(v => !v)}
         role="button"
         aria-expanded={open}
       >
-        <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
-          <Users className="h-8 w-8 text-primary" />
+        <div className="h-12 w-12 md:h-14 md:w-14 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4 md:mb-6">
+          <Users className="h-6 w-6 md:h-8 md:w-8 text-primary" />
         </div>
-        <h3 className="text-xl font-bold mb-3 flex items-center justify-center gap-2">
+        <h3 className="text-lg md:text-xl font-bold mb-2 md:mb-3 flex items-center justify-center gap-2">
           Meet Our Team
           <ChevronDown
             className="h-5 w-5 text-primary transition-transform duration-200"
             style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
           />
         </h3>
-        <p className="text-muted-foreground leading-relaxed">
+        <p className="text-sm md:text-base text-muted-foreground leading-relaxed">
           Experienced developers, designers, and strategists working together to exceed expectations.
         </p>
       </Card>
@@ -63,7 +63,7 @@ export function TeamSection() {
       {open && (
         <div className="grid md:grid-cols-2 gap-6 mt-6 animate-in fade-in slide-in-from-top-2 duration-200">
           {/* Oliver King */}
-          <Card className="p-8 bg-card border-border flex flex-col items-center text-center gap-4">
+          <Card className="p-5 sm:p-8 bg-card border-border flex flex-col items-center text-center gap-3 sm:gap-4">
             <div className="relative">
               <PersonSketch className="w-28 h-36 text-primary/60" />
               <div className="absolute inset-0 rounded-full" style={{ background: 'radial-gradient(ellipse at 50% 30%, rgba(99,102,241,0.08) 0%, transparent 70%)' }} />
@@ -78,7 +78,7 @@ export function TeamSection() {
           </Card>
 
           {/* Mr Alok */}
-          <Card className="p-8 bg-card border-border flex flex-col items-center text-center gap-4">
+          <Card className="p-5 sm:p-8 bg-card border-border flex flex-col items-center text-center gap-3 sm:gap-4">
             <div className="relative">
               <PersonSketch className="w-28 h-36 text-primary/60" />
               <div className="absolute inset-0 rounded-full" style={{ background: 'radial-gradient(ellipse at 50% 30%, rgba(99,102,241,0.08) 0%, transparent 70%)' }} />

@@ -3500,6 +3500,41 @@
   background-clip: text;
 }
 
+:global(html[data-theme='light']) .detailQuickNav a {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #475569;
+}
+
+:global(html[data-theme='light']) .detailQuickNav a:hover {
+  border-color: rgba(37, 99, 235, 0.38);
+  background: rgba(37, 99, 235, 0.06);
+  color: #1d4ed8;
+}
+
+:global(html[data-theme='light']) .btnSecondary {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #475569;
+}
+
+:global(html[data-theme='light']) .btnSecondary:hover {
+  background: rgba(255, 255, 255, 1);
+  border-color: rgba(37, 99, 235, 0.38);
+}
+
+:global(html[data-theme='light']) .navItem:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+:global(html[data-theme='light']) .detailBreadcrumb a {
+  color: #1d4ed8;
+}
+
+:global(html[data-theme='light']) .detailBreadcrumb span {
+  color: #64748b;
+}
+
 .pricingPopular {
   position: absolute;
   top: -12px;

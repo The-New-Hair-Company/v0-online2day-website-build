@@ -1502,6 +1502,90 @@
   color: #111827;
 }
 
+:global(html[data-theme='light']) .button,
+:global(html[data-theme='light']) .buttonGhost,
+:global(html[data-theme='light']) .chipButton,
+:global(html[data-theme='light']) .priorityButton {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #1f2937;
+}
+
+:global(html[data-theme='light']) .smallSearch {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #111827;
+}
+
+:global(html[data-theme='light']) .menu {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(126, 145, 178, 0.28);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+}
+
+:global(html[data-theme='light']) .menu button,
+:global(html[data-theme='light']) .menu a {
+  color: #1f2937;
+}
+
+:global(html[data-theme='light']) .menu button:hover,
+:global(html[data-theme='light']) .menu a:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+:global(html[data-theme='light']) .planCard {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 246, 255, 0.98));
+  border-color: rgba(126, 145, 178, 0.28);
+}
+
+:global(html[data-theme='light']) .planIcon {
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.12);
+}
+
+:global(html[data-theme='light']) .metricIcon {
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.12);
+}
+
+:global(html[data-theme='light']) .processBadge {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #374151;
+}
+
+:global(html[data-theme='light']) .processStep::before {
+  background: rgba(0, 0, 0, 0.10);
+}
+
+:global(html[data-theme='light']) .shortcut {
+  background: rgba(0, 0, 0, 0.06);
+  color: #526070;
+}
+
+:global(html[data-theme='light']) .navItem:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+:global(html[data-theme='light']) .chatHeaderActions button {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #475569;
+}
+
+:global(html[data-theme='light']) .chatHeaderActions button:hover {
+  background: rgba(0, 0, 0, 0.07);
+}
+
+:global(html[data-theme='light']) .navDot {
+  background: #1d4ed8;
+  box-shadow: 0 0 10px rgba(29, 78, 216, 0.45);
+}
+
+:global(html[data-theme='light']) .navBadge {
+  background: #1d4ed8;
+}
+
 @media (max-width: 1400px) {
   .metricsGrid {
     grid-template-columns: repeat(4, minmax(0, 1fr));

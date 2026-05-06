@@ -76,7 +76,7 @@ export function GuidedChat() {
   }
 
   return (
-    <div className="flex flex-col" style={{ height: 520 }}>
+    <div className="flex flex-col" style={{ minHeight: 420, maxHeight: 560 }}>
       {/* message list */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {msgs.map((m, i) => (
@@ -85,7 +85,7 @@ export function GuidedChat() {
             className={`flex ${m.from === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             {m.from === 'bot' && (
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center mr-3 mt-0.5">
+              <div className="shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center mr-3 mt-0.5">
                 <span className="text-primary text-xs font-bold">O2D</span>
               </div>
             )}

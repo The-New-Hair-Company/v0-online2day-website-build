@@ -56,37 +56,37 @@ export default function WorkPage() {
     <>
       <Header />
       <main className="min-h-screen pt-24">
-        <section className="pt-8 pb-20 px-4">
+        <section className="pt-8 pb-16 px-4 md:pb-20">
           <div className="container mx-auto max-w-6xl">
-            <div className="text-center mb-16">
-              <h1 className="text-4xl md:text-6xl font-bold mb-6 text-balance">
+            <div className="text-center mb-10 md:mb-16">
+              <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-4 md:mb-6 text-balance">
                 Our <span className="text-primary">Work</span>
               </h1>
-              <p className="text-xl text-muted-foreground max-w-2xl mx-auto text-pretty leading-relaxed">
-                Explore some of our recent projects. Each one built with modern technologies 
+              <p className="text-base sm:text-xl text-muted-foreground max-w-2xl mx-auto text-pretty leading-relaxed">
+                Explore some of our recent projects. Each one built with modern technologies
                 and a focus on user experience.
               </p>
             </div>
 
-            <div className="grid gap-8 md:grid-cols-2">
+            <div className="grid gap-5 md:gap-8 md:grid-cols-2">
               {projects.map((project) => (
                 <Card
                   key={project.id}
-                  className="p-8 bg-card border-border hover:border-primary/50 transition-colors"
+                  className="p-5 sm:p-8 bg-card border-border hover:border-primary/50 transition-colors"
                 >
-                  <div className="mb-4">
+                  <div className="mb-3 md:mb-4">
                     <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
                       {project.category}
                     </Badge>
                   </div>
 
-                  <h2 className="text-2xl font-bold mb-3">{project.title}</h2>
-                  
-                  <p className="text-muted-foreground mb-6 leading-relaxed">
+                  <h2 className="text-xl md:text-2xl font-bold mb-2 md:mb-3">{project.title}</h2>
+
+                  <p className="text-sm md:text-base text-muted-foreground mb-4 md:mb-6 leading-relaxed">
                     {project.description}
                   </p>
 
-                  <div className="flex flex-wrap gap-2 mb-6">
+                  <div className="flex flex-wrap gap-2 mb-4 md:mb-6">
                     {project.tags.map((tag) => (
                       <Badge key={tag} variant="secondary" className="text-xs">
                         {tag}
@@ -94,7 +94,7 @@ export default function WorkPage() {
                     ))}
                   </div>
 
-                  <Button variant="ghost" className="group">
+                  <Button variant="ghost" className="group h-auto py-2 px-3 text-sm">
                     View Case Study
                     <ExternalLink className="ml-2 h-4 w-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                   </Button>
@@ -102,12 +102,12 @@ export default function WorkPage() {
               ))}
             </div>
 
-            <Card className="mt-16 p-12 bg-gradient-to-br from-card to-card/50 border-primary/20 text-center">
-              <h2 className="text-3xl font-bold mb-4 text-balance">
+            <Card className="mt-8 sm:mt-16 p-6 sm:p-10 md:p-12 bg-linear-to-br from-card to-card/50 border-primary/20 text-center">
+              <h2 className="text-2xl md:text-3xl font-bold mb-3 md:mb-4 text-balance">
                 Have a Project in Mind?
               </h2>
-              <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto text-pretty">
-                Let's collaborate and create something exceptional together.
+              <p className="text-base md:text-lg text-muted-foreground mb-6 md:mb-8 max-w-2xl mx-auto text-pretty">
+                Let&apos;s collaborate and create something exceptional together.
               </p>
               <Button size="lg" asChild>
                 <Link href="/contact">
