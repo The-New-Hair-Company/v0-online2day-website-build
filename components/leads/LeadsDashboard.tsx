@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { DashboardSidebar } from './DashboardSidebar'
 import styles from './LeadsDashboard.module.css'
 import { Icon, Avatar, Score, StageBadge, ProgressBar, initialsForOwner } from './DashboardComponents'
@@ -260,34 +260,6 @@ export default function LeadsDashboard({
     window.setTimeout(() => setNotice(null), 3400)
   }
 
-  function handleCommand(label: string) {
-    const normalized = label.replace(/\s+/g, ' ').trim()
-    if (!normalized) return
-
-    if (/columns/i.test(normalized)) return showNotice('Columns saved', 'Your lead table layout has been acknowledged for this session.')
-    if (/sort/i.test(normalized)) return showNotice('Sort applied', 'Leads are sorted by the selected activity signal.')
-    if (/view full|view all|all activity|leaderboard|report/i.test(normalized)) return showNotice('Report opened', 'The detailed report is ready for the selected dashboard panel.')
-    if (/recommendations|follow up|nudge|create video/i.test(normalized) && !/Create \/ Add/i.test(normalized)) {
-      if (/create video/i.test(normalized)) router.push(`/dashboard/videos/editor${selectedLead ? `?lead=${selectedLead.id}` : ''}`)
-      return showNotice('Recommended action queued', 'The selected lead action has been moved into the active workflow.')
-    }
-    if (/website/i.test(normalized)) return showNotice('Website unavailable', 'No website URL is stored for this lead yet.')
-    if (/book call|calendar/i.test(normalized)) return router.push('/contact')
-    if (/rows per page|‹|›|^\d+$/i.test(normalized)) return showNotice('Pagination updated', 'Lead table paging has been applied.')
-    if (/more|ellipsis/i.test(normalized)) return showNotice('More actions', 'Additional lead actions are ready for this record.')
-  }
-
-  function handleShellClick(event: ReactMouseEvent<HTMLDivElement>) {
-    const actionable = (event.target as HTMLElement).closest('button, a') as HTMLButtonElement | HTMLAnchorElement | null
-    if (!actionable || actionable.closest('[data-leads-native="true"]')) return
-    if ('disabled' in actionable && actionable.disabled) return
-    const href = actionable instanceof HTMLAnchorElement ? actionable.getAttribute('href') : null
-    if (href === '#') event.preventDefault()
-    if (href && href !== '#') return
-    const label = actionable.getAttribute('aria-label') || actionable.getAttribute('title') || actionable.textContent || ''
-    handleCommand(label)
-  }
-
   function handleContactAction(type: 'email' | 'phone' | 'linkedin') {
     if (!selectedLead) return
     const contact = leadContacts[selectedLead.id]
@@ -310,12 +282,7 @@ export default function LeadsDashboard({
   }
 
   return (
-    <div
-      className={styles.shell}
-      data-theme={theme}
-      data-size={textSize === 'md' ? undefined : textSize}
-      onClick={handleShellClick}
-    >
+    <div className={styles.shell} data-theme={theme} data-size={textSize === 'md' ? undefined : textSize}>
       <DashboardSidebar active={section} />
       <main className={styles.main}>
         <header className={styles.header}>
@@ -470,6 +437,8 @@ export default function LeadsDashboard({
             pipelineStages={pipelineStages}
             pipelineSummary={pipelineSummary}
             onCompleteTask={async (id) => { await completeTask(id); router.refresh() }}
+            onViewAllTasks={() => router.push('/dashboard/overview')}
+            onViewAllActivity={() => router.push('/dashboard/messages')}
           />
         </section>
       </main>
@@ -481,6 +450,12 @@ export default function LeadsDashboard({
           onEmail={() => handleContactAction('email')}
           onPhone={() => handleContactAction('phone')}
           onLinkedin={() => handleContactAction('linkedin')}
+          onWebsite={() => {
+            if (!selectedLead.website) return showNotice('Website unavailable', 'No website URL is stored for this lead yet.')
+            window.open(selectedLead.website, '_blank')
+          }}
+          onCreateVideo={() => router.push(`/dashboard/videos/editor?lead=${selectedLead.id}`)}
+          onBookCall={() => router.push('/contact')}
         />
       )}
 
@@ -741,6 +716,8 @@ function FilterPanel({ filterStatus, filterOwner, filterSource, filterScoreMin, 
 // ─── METRIC CARD ─────────────────────────────────────────────────────────────
 
 function MetricCard({ metric }: { metric: Metric }) {
+  const isPositive = metric.delta.trim().startsWith('+')
+  const hasDelta = metric.delta.trim() !== '+0%' && metric.delta.trim() !== '0%'
   return (
     <article className={styles.metricCard}>
       <div className={styles.metricTop}>
@@ -748,7 +725,7 @@ function MetricCard({ metric }: { metric: Metric }) {
         <span>{metric.label}</span>
       </div>
       <strong>{metric.value}</strong>
-      <p>↑ {metric.delta.replace('+ ', '')}</p>
+      <p>{hasDelta ? (isPositive ? '↑' : '↓') : '•'} {metric.delta}</p>
       <Sparkline values={metric.sparkline} />
     </article>
   )
@@ -757,6 +734,13 @@ function MetricCard({ metric }: { metric: Metric }) {
 // ─── SPARKLINE ───────────────────────────────────────────────────────────────
 
 function Sparkline({ values }: { values: number[] }) {
+  if (!values.length) {
+    return <div className={styles.sparkline} aria-hidden="true" />
+  }
+  if (values.length === 1) {
+    const repeated = [values[0], values[0]]
+    return <Sparkline values={repeated} />
+  }
   const width = 140; const height = 34
   const max = Math.max(...values); const min = Math.min(...values)
   const points = values.map((value, i) => {
@@ -830,7 +814,7 @@ function AnalyticsStrip({ pipelineStages, pipelineSummary, sourcePerformance, ow
             </div>
           ))}
         </div>
-        <a className={styles.panelLink} href="#">View full report →</a>
+        <Link className={styles.panelLink} href="/dashboard/reports">View full report →</Link>
       </article>
       <article className={styles.analyticsCard}>
         <h3>Owner performance</h3>
@@ -844,7 +828,7 @@ function AnalyticsStrip({ pipelineStages, pipelineSummary, sourcePerformance, ow
             </div>
           ))}
         </div>
-        <a className={styles.panelLink} href="#">View full leaderboard →</a>
+        <Link className={styles.panelLink} href="/dashboard/reports">View full leaderboard →</Link>
       </article>
     </section>
   )
@@ -1022,9 +1006,14 @@ function TopLeadsPanel({ leads }: { leads: Lead[] }) {
 
 // ─── RIGHT RAIL ───────────────────────────────────────────────────────────────
 
-function RightRail({ tasks, recommendations, recentActivity, section = 'leads', pipelineStages = [], pipelineSummary, onCompleteTask }: {
+function RightRail({ tasks, recommendations, recentActivity, section = 'leads', pipelineStages = [], pipelineSummary, onCompleteTask, onViewAllTasks, onViewAllActivity }: {
   tasks: TaskItem[]; recommendations: Recommendation[]; recentActivity: ActivityItem[]
-  section?: DashboardSection; pipelineStages?: PipelineStage[]; pipelineSummary?: PipelineSummary; onCompleteTask?: (id: string) => void
+  section?: DashboardSection
+  pipelineStages?: PipelineStage[]
+  pipelineSummary?: PipelineSummary
+  onCompleteTask?: (id: string) => void
+  onViewAllTasks?: () => void
+  onViewAllActivity?: () => void
 }) {
   return (
     <aside className={styles.rightRail}>
@@ -1056,7 +1045,7 @@ function RightRail({ tasks, recommendations, recentActivity, section = 'leads', 
           )}
         </article>
       )}
-      <Panel title="Today's priorities" badge={tasks.filter(t => !t.checked).length.toString()}>
+      <Panel title="Today's priorities" badge={tasks.filter(t => !t.checked).length.toString()} action="All" onAction={onViewAllTasks}>
         <div className={styles.taskList}>
           {tasks.map(t => (
             <label key={t.label}>
@@ -1069,7 +1058,7 @@ function RightRail({ tasks, recommendations, recentActivity, section = 'leads', 
             </label>
           ))}
         </div>
-        <a className={styles.panelLink} href="#">View all tasks →</a>
+        <Link className={styles.panelLink} href="/dashboard/overview">View all tasks →</Link>
       </Panel>
       {section === 'leads' && (
         <Panel title="AI recommendations">
@@ -1082,30 +1071,42 @@ function RightRail({ tasks, recommendations, recentActivity, section = 'leads', 
               </div>
             ))}
           </div>
-          <a className={styles.panelLink} href="#">View all →</a>
+          <Link className={styles.panelLink} href="/dashboard/leads">View all →</Link>
         </Panel>
       )}
       {section === 'overview' && (
-        <Panel title="Recent activity" action="All">
+        <Panel title="Recent activity" action="All" onAction={onViewAllActivity}>
           <div className={styles.activityList}>
             {recentActivity.map(a => (
               <div key={a.title}><span /><p>{a.title}</p><time>{a.time}</time></div>
             ))}
           </div>
-          <a className={styles.panelLink} href="#">View all activity →</a>
+          <Link className={styles.panelLink} href="/dashboard/messages">View all activity →</Link>
         </Panel>
       )}
     </aside>
   )
 }
 
-function Panel({ title, badge, action, children }: { title: string; badge?: string; action?: string; children: ReactNode }) {
+function Panel({
+  title,
+  badge,
+  action,
+  onAction,
+  children
+}: {
+  title: string
+  badge?: string
+  action?: string
+  onAction?: () => void
+  children: ReactNode
+}) {
   return (
     <section className={styles.railPanel}>
       <header>
         <h3>{title}</h3>
         {badge ? <span className={styles.panelBadge}>{badge}</span> : null}
-        {action ? <button>{action} <Icon name="chevron" /></button> : null}
+        {action ? <button onClick={onAction}>{action} <Icon name="chevron" /></button> : null}
       </header>
       {children}
     </section>
@@ -1114,9 +1115,10 @@ function Panel({ title, badge, action, children }: { title: string; badge?: stri
 
 // ─── COMMAND BAR ─────────────────────────────────────────────────────────────
 
-function LeadCommandBar({ lead, onOpen, onEmail, onPhone, onLinkedin }: {
+function LeadCommandBar({ lead, onOpen, onEmail, onPhone, onLinkedin, onWebsite, onCreateVideo, onBookCall }: {
   lead: Lead; onOpen: (id: string) => void
   onEmail: () => void; onPhone: () => void; onLinkedin: () => void
+  onWebsite: () => void; onCreateVideo: () => void; onBookCall: () => void
 }) {
   return (
     <section className={styles.commandBar}>
@@ -1128,7 +1130,7 @@ function LeadCommandBar({ lead, onOpen, onEmail, onPhone, onLinkedin }: {
           <button title="Send email" onClick={onEmail}><Icon name="mail" /></button>
           <button title="Call" onClick={onPhone}><Icon name="phone" /></button>
           <button title="LinkedIn" onClick={onLinkedin}><Icon name="linkedin" /></button>
-          <button title="Website"><Icon name="globe" /></button>
+          <button title="Website" onClick={onWebsite}><Icon name="globe" /></button>
           <button><Icon name="ellipsis" /></button>
         </div>
       </div>
@@ -1143,8 +1145,8 @@ function LeadCommandBar({ lead, onOpen, onEmail, onPhone, onLinkedin }: {
       <div className={styles.commandActions}>
         <button className={styles.primaryAction} onClick={() => onOpen(lead.id)}><Icon name="external" />Open lead</button>
         <button onClick={onEmail}><Icon name="mail" />Send email</button>
-        <button><Icon name="video" />Create video</button>
-        <button><Icon name="calendar" />Book call</button>
+        <button onClick={onCreateVideo}><Icon name="video" />Create video</button>
+        <button onClick={onBookCall}><Icon name="calendar" />Book call</button>
         <button className={styles.iconButton}><Icon name="ellipsis" /></button>
       </div>
     </section>
