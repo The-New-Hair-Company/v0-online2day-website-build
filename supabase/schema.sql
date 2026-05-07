@@ -1,7 +1,7 @@
 -- ==========================================
 -- ONLINE2DAY CRM DATABASE SCHEMA
 -- Consolidated Backup Script
--- Last updated: 2026-04-29
+-- Last updated: 2026-05-07
 -- Project: mmxwpnbztddaxagxbung (online2day)
 -- ==========================================
 
@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT NOT NULL,
+    full_name TEXT,
+    avatar_url TEXT,
     role TEXT NOT NULL DEFAULT 'user',  -- 'user' | 'admin'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     UNIQUE(user_id)
@@ -261,31 +263,99 @@ CREATE POLICY "Admins can update messages" ON public.messages
 -- ==========================================
 -- 6. STORAGE POLICIES (lead-videos bucket)
 -- ==========================================
+-- All authenticated users can upload and view; only admins can delete.
 
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'Admins can upload lead videos'
+    SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'Authenticated users can upload to lead-videos'
   ) THEN
-    EXECUTE 'CREATE POLICY "Admins can upload lead videos" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = ''lead-videos'' AND public.is_admin())';
+    EXECUTE 'CREATE POLICY "Authenticated users can upload to lead-videos" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = ''lead-videos'')';
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'Admins can read lead videos'
+    SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'Authenticated users can read lead-videos'
   ) THEN
-    EXECUTE 'CREATE POLICY "Admins can read lead videos" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = ''lead-videos'' AND public.is_admin())';
+    EXECUTE 'CREATE POLICY "Authenticated users can read lead-videos" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = ''lead-videos'')';
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'Admins can delete lead videos'
+    SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'Admins can delete lead-videos'
   ) THEN
-    EXECUTE 'CREATE POLICY "Admins can delete lead videos" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = ''lead-videos'' AND public.is_admin())';
+    EXECUTE 'CREATE POLICY "Admins can delete lead-videos" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = ''lead-videos'' AND public.is_admin())';
   END IF;
 END $$;
 
 
 -- ==========================================
--- 7. TRIAL ACCOUNTS (14-day free trial signups)
+-- 7. NOTIFICATIONS, REPORTING, RELIABILITY, SECURITY
+-- ==========================================
+
+-- NOTIFICATIONS (Per-user activity feed; falls back to enterprise_state if unavailable)
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    title      TEXT        NOT NULL,
+    detail     TEXT        NOT NULL DEFAULT '',
+    source     TEXT        NOT NULL DEFAULT 'system',
+    severity   TEXT        NOT NULL DEFAULT 'info' CHECK (severity IN ('info', 'warning', 'critical')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    read_at    TIMESTAMPTZ
+);
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON public.notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread  ON public.notifications(user_id, read_at) WHERE read_at IS NULL;
+CREATE POLICY "Users can read own notifications"   ON public.notifications FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own notifications" ON public.notifications FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own notifications" ON public.notifications FOR UPDATE USING (auth.uid() = user_id);
+
+-- REPORT SNAPSHOTS (Saved KPI snapshots for the Reports page)
+CREATE TABLE IF NOT EXISTS public.report_snapshots (
+    id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id      UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    period_label TEXT        NOT NULL DEFAULT 'Snapshot',
+    kpis         JSONB       NOT NULL DEFAULT '{}',
+    created_by   UUID        REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.report_snapshots ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_report_snapshots_user_created ON public.report_snapshots(user_id, created_at DESC);
+CREATE POLICY "Users can manage own report_snapshots" ON public.report_snapshots FOR ALL USING (auth.uid() = user_id);
+
+-- ASYNC ACTION FAILURES (Dead-letter queue for recoverable server-action errors)
+CREATE TABLE IF NOT EXISTS public.async_action_failures (
+    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    action        TEXT        NOT NULL,
+    user_id       UUID        REFERENCES auth.users(id) ON DELETE SET NULL,
+    payload_hash  TEXT,
+    error_code    TEXT        NOT NULL DEFAULT 'ACTION_ERROR',
+    error_message TEXT        NOT NULL DEFAULT '',
+    recoverable   BOOLEAN     NOT NULL DEFAULT true,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.async_action_failures ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_async_failures_created ON public.async_action_failures(created_at DESC);
+CREATE POLICY "System can insert async_action_failures" ON public.async_action_failures FOR INSERT WITH CHECK (true);
+CREATE POLICY "Admins can manage async_action_failures" ON public.async_action_failures FOR ALL USING (is_admin());
+
+-- SECURITY EVENTS (Tracks invalid UUID requests, failed auth, rate-limit hits)
+CREATE TABLE IF NOT EXISTS public.security_events (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_type TEXT        NOT NULL,
+    route      TEXT        NOT NULL DEFAULT '',
+    ip         TEXT        NOT NULL DEFAULT '',
+    detail     TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.security_events ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_security_events_created ON public.security_events(created_at DESC);
+CREATE POLICY "System can insert security_events" ON public.security_events FOR INSERT WITH CHECK (true);
+CREATE POLICY "Admins can read security_events"   ON public.security_events FOR SELECT USING (is_admin());
+CREATE POLICY "Admins can delete security_events" ON public.security_events FOR DELETE USING (is_admin());
+
+
+-- ==========================================
+-- 8. TRIAL ACCOUNTS (14-day free trial signups)
 -- ==========================================
 
 CREATE TABLE IF NOT EXISTS public.trial_accounts (
@@ -318,7 +388,7 @@ CREATE POLICY "Users can read own trial account" ON public.trial_accounts
 
 
 -- ==========================================
--- 8. GDPR DATA ISOLATION — MEMBER RLS POLICIES
+-- 9. GDPR DATA ISOLATION — MEMBER RLS POLICIES
 -- ==========================================
 -- Trial and member users can ONLY see leads assigned to their own user ID.
 -- Existing admin policies are preserved and OR'd in by Postgres.
@@ -354,7 +424,7 @@ CREATE POLICY "Members access own lead agreements" ON public.lead_agreements
 
 
 -- ==========================================
--- 9. MIGRATION HISTORY (for reference)
+-- 10. MIGRATION HISTORY (for reference)
 -- ==========================================
 -- 20260428163148 — init_crm_tables
 -- 20260428173323 — add_admin_roles_and_restrict_crm
@@ -369,3 +439,7 @@ CREATE POLICY "Members access own lead agreements" ON public.lead_agreements
 --                          lead_assets.metadata, lead_events.metadata)
 -- 20260505000000 — add_trial_accounts_and_member_rls
 --                   (adds: trial_accounts table, member data-isolation RLS policies)
+-- 20260507000000 — create_missing_backend_tables
+--                   (adds: notifications, report_snapshots, async_action_failures,
+--                          security_events, licensed_users tables;
+--                          broadens lead-videos storage policies to all authenticated users)

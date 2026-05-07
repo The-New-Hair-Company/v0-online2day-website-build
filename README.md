@@ -19,13 +19,21 @@ A production-grade CRM, marketing site, and client dashboard for online2day.com.
 - **Emails** — template table, enterprise email composer modal (send via Resend, attach video asset)
 - **Messages** — conversation list + threaded reply panel (Supabase-backed)
 - **Enterprise Command Center** (`/dashboard/enterprise`) — calendar, tasks, audit log, 50+ operational tools, ROI calculator, data quality scan
+- **Reports** — live KPI metrics, data quality scan, audit trail, snapshot capture (backed by `report_snapshots` table)
 - **Site Requests** — inbound project request pipeline
 - **Integrations** — Supabase, Resend, HubSpot status cards
-- **Settings** — user profile, password change, notification preferences
+- **Settings** — appearance, CRM setup, license management (backed by `licensed_users` table)
+
+### User dashboard (`/user-dashboard/*`)
+- **Overview** — project status and quick actions
+- **My Website** — site builder view
+- **Support Chat** — real-time messaging with admin
+- **Profile** — manage account details
 
 ### Auth
 - Sign-up, login, password reset, magic link
 - Sign-out — POST `/auth/signout` (wired in both sidebars)
+- New users auto-get a `user_profiles` row via `on_auth_user_created` trigger
 
 ---
 
@@ -79,98 +87,65 @@ Run the full schema at `supabase/schema.sql` against your Supabase project SQL E
 |---|---|
 | `leads` | CRM leads — name, company, email, phone, status, source, value, follow_up_date |
 | `lead_events` | Timeline events per lead — type, note, metadata, created_by |
+| `lead_assets` | Videos, documents, proposals per lead |
+| `lead_agreements` | Downloadable agreement records |
+| `lead_tasks` | Task checklist items per lead |
+| `lead_audit_log` | Per-lead change trail |
 | `activity_feed` | Global activity stream shown on Overview |
-| `enterprise_events` | Calendar entries (from scheduling on lead detail + direct Enterprise page) |
+| `enterprise_events` | Calendar entries (from scheduling on lead detail + Enterprise page) |
 | `enterprise_tasks` | Task checklist items on Enterprise page |
-| `enterprise_features` | Enabled feature flags for the Enterprise Command Center |
+| `enterprise_state` | Key-value store for feature flags, enabled features, and legacy fallback data |
 | `conversations` | Inbound chat conversations |
 | `messages` | Per-conversation messages |
-| `video_assets` | Uploaded video records linked to leads |
-| `site_requests` | Inbound website build requests |
-| `audit_log` | GDPR audit trail — action, resource, resource_id, changes, user_id |
-| `user_profiles` | Extended user info — full_name, email (used for note author display) |
+| `videos` | Video library records |
+| `video_templates` | Reusable video templates |
 | `email_templates` | Email template records shown in the Emails section |
+| `emails` | Sent email records |
+| `site_requests` | Inbound website build requests (public form) |
+| `site_build_requests` | User-dashboard website build request pipeline |
+| `integrations` | Integration status cards (Supabase, Resend, HubSpot) |
+| `goals` | Pipeline goals and targets |
+| `metric_snapshots` | Time-series metric data for charts |
+| `analytics_snapshots` | Analytics rollup snapshots |
+| `admin_preferences` | Per-admin key-value settings (theme, CRM config) |
+| `admin_audit_log` | GDPR audit trail — action, resource, resource_id, changes, user_id |
+| `user_profiles` | Extended user info — full_name, email, role, avatar_url |
+| `licensed_users` | Seat-based access control — email, role, status, seat_type |
+| `trial_accounts` | 14-day free trial signups |
+| `contact_imports` | Bulk contact import records |
+| `notifications` | Per-user notification feed — title, detail, source, severity, read_at |
+| `report_snapshots` | Saved KPI snapshots — period_label, kpis (jsonb) |
+| `async_action_failures` | Dead-letter queue for recoverable server-action errors |
+| `security_events` | Security event log — invalid UUIDs, failed auth, rate-limit hits |
 
 ---
 
-## Remaining Backend Tasks
+## Backend Status
 
-The following features have UI built but need backend plumbing before they are fully live in production.
+### Completed
 
-### 1. `user_profiles` table
-The lead notes panel shows who wrote each note via `creator_name`. This requires a `user_profiles` table:
+- **`user_profiles` table** — exists with RLS; `on_auth_user_created` trigger auto-creates rows on signup and assigns `admin` role for founding admin emails
+- **`licensed_users` table** — exists with RLS; `is_admin()` function checks it; founding admins seeded
+- **`enterprise_events` table** — exists with RLS; lead detail scheduling writes to it; Enterprise Calendar reads from it
+- **`enterprise_tasks` table** — exists; Enterprise page manages tasks
+- **`conversations` + `messages` tables** — exist with RLS; Messages section and Support Chat are fully wired
+- **`notifications` table** — exists with per-user RLS; sidebar notification panel reads/writes it; graceful fallback to `enterprise_state` if needed
+- **`report_snapshots` table** — exists; Reports page snapshot capture reads/writes it; graceful fallback to `enterprise_state`
+- **`async_action_failures` table** — exists; `reliability-actions.ts` dead-letter queue writes to it; graceful fallback to `enterprise_state`
+- **`security_events` table** — exists; `security-events.ts` writes invalid UUID, failed auth, and rate-limit events; graceful fallback to `enterprise_state`
+- **`lead-videos` storage bucket** — exists (private); RLS policies allow authenticated upload/read, admin-only delete
+- **`lead-assets` storage bucket** — exists (public); RLS policies allow authenticated upload/delete
+- **Row Level Security** — enabled on all tables; admin-only access for CRM tables; member data-isolation policies for multi-tenant trial accounts
+- **Resend email sending** — `sendEnterpriseEmail` in `lib/actions/email-actions.ts` is wired; requires `RESEND_API_KEY` in Vercel and a verified sending domain
 
-```sql
-create table public.user_profiles (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  email text,
-  full_name text,
-  created_at timestamptz default now()
-);
-alter table public.user_profiles enable row level security;
-create policy "Users can read all profiles" on public.user_profiles for select using (true);
-create policy "Users can update own profile" on public.user_profiles for update using (auth.uid() = user_id);
-```
+### Remaining / Not Yet Wired
 
-Populate it via a Supabase Auth trigger:
-
-```sql
-create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer as $$
-begin
-  insert into public.user_profiles (user_id, email, full_name)
-  values (new.id, new.email, new.raw_user_meta_data->>'full_name');
-  return new;
-end;
-$$;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute procedure public.handle_new_user();
-```
-
-### 2. `enterprise_events` table
-Scheduled callbacks and follow-ups from the lead detail page write to `enterprise_events`. Ensure this table exists and the Enterprise Calendar reads from it:
-
-```sql
-create table public.enterprise_events (
-  id uuid primary key default gen_random_uuid(),
-  title text not null,
-  event_time text,
-  event_type text,
-  owner text,
-  created_at timestamptz default now()
-);
-alter table public.enterprise_events enable row level security;
-create policy "Authenticated users can manage events"
-  on public.enterprise_events for all using (auth.role() = 'authenticated');
-```
-
-### 3. Resend email sending
-`sendEnterpriseEmail` in `lib/actions/email-actions.ts` sends via Resend. Requires:
-- `RESEND_API_KEY` env var set in Vercel
-- A verified sending domain in the Resend dashboard (currently defaults to `noreply@online2day.com`)
-- The `lead_events` table must accept `type = 'Email Sent'` inserts (no enum constraint)
-
-### 4. Video upload storage bucket
-`uploadLeadVideo` in `lib/actions/video-actions.ts` uploads to Supabase Storage. Requires:
-- A public bucket named `lead-videos` created in Supabase Storage
-- RLS policy allowing authenticated uploads:
-
-```sql
-create policy "Authenticated users can upload videos"
-  on storage.objects for insert
-  with check (bucket_id = 'lead-videos' and auth.role() = 'authenticated');
-create policy "Public read on lead-videos"
-  on storage.objects for select
-  using (bucket_id = 'lead-videos');
-```
-
-### 5. HubSpot contact sync
+#### 1. HubSpot contact sync
 `lib/actions/hubspot-actions.ts` posts contacts to HubSpot on form submit. Requires:
 - `HUBSPOT_PRIVATE_APP_TOKEN` env var set in Vercel
 - A HubSpot Private App created with `crm.objects.contacts.write` scope
 
-### 6. Features gated with "Contact sales to add this"
+#### 2. Features gated with "Contact sales to add this"
 The following are UI-visible but not yet built. Any click shows a "Contact sales" toast:
 - **Calendar booking integration** (Calendly / Google Calendar OAuth)
 - **Automation rules** (trigger-based follow-up sequences)
@@ -183,67 +158,37 @@ The following are UI-visible but not yet built. Any click shows a "Contact sales
 
 These are labelled on-screen and redirect users to `sales@online2day.com`.
 
-### 7. Row Level Security
-All production tables should have RLS enabled. Key policies needed:
+#### 3. Role-aware access: move from heuristics to pure DB-backed RBAC
+`is_admin()` currently checks founding admin emails by hardcoded list in addition to DB roles. For a fully tenant-agnostic setup:
+- Remove the hardcoded email list from `is_admin()` and rely solely on `user_profiles.role = 'admin'` or `licensed_users.role = 'admin'`
+- Add a `team_memberships` table with workspace/tenant scoping
+- Enforce route-level authorization from DB roles on every `/dashboard/*` server component
 
-```sql
--- leads
-create policy "Auth users can read own leads"
-  on public.leads for select using (auth.role() = 'authenticated');
-create policy "Auth users can insert leads"
-  on public.leads for insert with check (auth.role() = 'authenticated');
-create policy "Auth users can update own leads"
-  on public.leads for update using (auth.role() = 'authenticated');
+#### 4. Scheduled report snapshots
+Reports compute live. For trend integrity and executive reporting:
+- Add scheduled Supabase Edge Function to materialize daily/weekly KPI snapshots into `report_snapshots`
+- Add export audit rows to `admin_audit_log` for every CSV/JSON download
 
--- lead_events (same pattern)
--- audit_log (insert-only for authenticated)
--- activity_feed (insert + select for authenticated)
-```
-
-### 8. Messages / conversations
-The Messages section reads from `conversations` + `messages` tables. Ensure:
-- Both tables exist per schema
-- `sendConversationReply` in `lib/actions/message-actions.ts` is configured
-- The public chat widget (`/contact` GuidedChat) posts to the same `conversations` table if real-time escalation is needed
-
-### 9. Role-aware access should move from heuristics to DB-backed RBAC
-Current sidebar gating now reads `permission_matrix` and user context, but production-grade access should be explicit per user/team:
-- Add a table such as `team_memberships` or `user_roles` with role enum and tenant/workspace id
-- Enforce route-level authorization from DB roles (not email-name heuristics)
-- Add policy tests to confirm every `/dashboard/*` route has server-side permission checks
-
-### 10. Notifications should be promoted to first-class relational tables
-Notifications currently persist through `enterprise_state` for speed. For scale and auditability:
-- Add `notifications` table (`id`, `user_id`, `title`, `detail`, `created_at`, `read_at`, `source`, `severity`)
-- Add indexes on `(user_id, created_at desc)` and `(user_id, read_at)`
-- Add server action endpoints for pagination, mark-read batch, and retention cleanup
-
-### 11. Reporting pipeline should support scheduled snapshots
-Reports now compute live. For executive reporting and trend integrity:
-- Add `report_snapshots` table with daily/weekly aggregates
-- Add scheduled jobs (Supabase cron/Edge Function) to materialize key KPI snapshots
-- Add export audit rows for every CSV/JSON report download (who exported what, when)
-
-### 12. Add reliability instrumentation around async actions
-For enterprise supportability:
-- Add structured error logging (action name, user id, payload hash, error code)
-- Add retry/backoff wrappers for storage, email, and third-party requests
-- Add dead-letter / failed-job queue table for recoverable async failures
-
-### 13. Add integration health checks with stored history
-Integrations page should include historical uptime and last-check evidence:
+#### 5. Integration health check history
+Integrations page shows current status only. For SLA visibility:
 - Add `integration_health_checks` table (`provider`, `status`, `latency_ms`, `checked_at`, `detail`)
-- Run scheduled checks for Supabase, Resend, HubSpot
-- Surface degradation alerts into notifications feed
+- Add scheduled Edge Function to ping Supabase, Resend, HubSpot
+- Surface degraded status into notifications feed
 
-### 14. Security + performance hardening follow-ups (new)
-The following should be completed on the backend/infra side to complement the latest app-level hardening:
+#### 6. Rate limiting at the edge
+API routes (`/api/track/view`, `/api/download-agreements`) have no server-side rate limit:
+- Add Edge Middleware using Vercel KV token buckets
+- Log rate-limit hits to `security_events` table (already exists)
 
-- Add a real rate-limit layer for API endpoints (`/api/track/view`, `/api/download-agreements`) using Edge middleware, Redis, or Vercel KV-based token buckets.
-- Introduce CSP with nonces/hashes and remove inline script dependencies over time (current layout still relies on inline bootstrap script).
-- Add server-side request logging + alerting for repeated invalid UUID requests and failed auth attempts.
-- Move agreement export generation to a queued background job for large exports (avoid synchronous request-time rendering under heavy load).
-- Add E2E security tests for XSS regression in export templates and for safe external link opening behavior.
+#### 7. Content Security Policy
+Layout still uses an inline bootstrap script for theme injection (FOUC prevention). To add a strict CSP:
+- Move theme bootstrap to a separate file loaded with a nonce/hash
+- Add `Content-Security-Policy` header in `next.config` or Edge Middleware
+
+#### 8. Background job queue for large exports
+Agreement export generation runs synchronously. For large datasets:
+- Move to a queued background job (Supabase Edge Function or Vercel background function)
+- Write job status to `async_action_failures` / a new `export_jobs` table
 
 ---
 
@@ -256,15 +201,23 @@ app/
     page.tsx                     ← server: fetches lead + events
     lead-detail-client.tsx       ← full lead detail UI
   dashboard/enterprise/page.tsx  ← Enterprise Command Center
+  dashboard/reports/
+    page.tsx                     ← server: fetches metrics + snapshots
+    reports-client.tsx           ← Reports UI
+  dashboard/settings/
+    settings-client.tsx          ← Appearance / CRM Setup / License tabs
   dashboard/emails/page.tsx
   dashboard/videos/editor/
+  user-dashboard/                ← client portal (overview, site builder, chat, profile)
 
 components/
   crm-dashboard/crm-dashboard.tsx ← main dashboard shell + all sections
   leads/
-    DashboardSidebar.tsx
+    DashboardSidebar.tsx          ← role-gated nav + notification panel
     LeadsDashboard.tsx
-    LeadsDashboard.module.css    ← all lead detail CSS
+    LeadsDashboard.module.css
+  dashboard/
+    UserNavLink.tsx               ← active-state nav link for user dashboard
   enterprise-suite/
     enterprise-command-center.tsx
     local-video-room.tsx
@@ -274,9 +227,13 @@ lib/
     lead-actions.ts              ← createLead, updateLeadFields, scheduleLeadAction, setDoNotContact
     email-actions.ts             ← sendEnterpriseEmail (Resend)
     video-actions.ts             ← uploadLeadVideo, saveVideoEditorProject
-    enterprise-actions.ts        ← calendar events, tasks, feature flags, data quality scan
-    audit-actions.ts             ← logAuditEntry, getAuditLog
+    enterprise-actions.ts        ← calendar events, tasks, notifications, report snapshots
+    audit-actions.ts             ← logAuditEntry, getAuditLog (admin_audit_log)
     message-actions.ts           ← sendConversationReply
+    settings-actions.ts          ← license management, admin prefs, CRM config
+    reliability-actions.ts       ← withRetry, logAsyncActionFailure, async_action_failures
+  security/
+    security-events.ts           ← recordSecurityEvent, getSecurityEvents, security_events table
 
 supabase/schema.sql              ← full schema — run this first
 ```
