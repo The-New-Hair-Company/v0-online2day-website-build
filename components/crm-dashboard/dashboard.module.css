@@ -1506,6 +1506,8 @@
 }
 
 :global(html[data-theme='light']) .searchBox,
+:global(html[data-theme='light']) .smallSearch,
+:global(html[data-theme='light']) .chatInput,
 :global(html[data-theme='light']) .filterButton,
 :global(html[data-theme='light']) .toolButton,
 :global(html[data-theme='light']) .searchBox input,
