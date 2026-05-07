@@ -1241,3 +1241,50 @@
     bottom: 16px;
   }
 }
+
+/* ─── MISSING LIGHT-THEME OVERRIDES ───────────────────────────────────────── */
+
+:global(html[data-theme='light']) .headerActions button,
+:global(html[data-theme='light']) .stageToolbar button,
+:global(html[data-theme='light']) .inspector button,
+:global(html[data-theme='light']) .handoffActions button,
+:global(html[data-theme='light']) .timelineTools button,
+:global(html[data-theme='light']) .guideSteps button,
+:global(html[data-theme='light']) .guideActions button {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #374151;
+}
+
+:global(html[data-theme='light']) .editorMetaRow span {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #374151;
+}
+
+:global(html[data-theme='light']) .draftPrompt {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+:global(html[data-theme='light']) .draftPrompt span {
+  color: #92400e;
+}
+
+:global(html[data-theme='light']) .draftPrompt button {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #374151;
+}
+
+:global(html[data-theme='light']) .backLink {
+  color: #1d4ed8;
+}
+
+:global(html[data-theme='light']) .header h1 {
+  color: #111827;
+}
+
+:global(html[data-theme='light']) .header p {
+  color: #526070;
+}

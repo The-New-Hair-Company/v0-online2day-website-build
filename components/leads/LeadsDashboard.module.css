@@ -2318,7 +2318,7 @@
 
 /* ─── SETTINGS (LIGHT THEME) ───────────────────────────────────────────────── */
 
-.shell[data-theme="light"] {
+:global(html[data-theme='light']) .shell {
   --bg: #f4f7fb;
   --panel: rgba(255, 255, 255, 0.96);
   --panel-2: rgba(244, 248, 255, 0.94);
@@ -2334,7 +2334,7 @@
     var(--bg);
 }
 
-.shell[data-theme="light"] .sidebar {
+:global(html[data-theme='light']) .sidebar {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 246, 255, 0.98));
   border-color: rgba(126, 145, 178, 0.28);
 }
@@ -2347,7 +2347,7 @@
   border-color: rgba(126, 145, 178, 0.28);
 }
 
-.shell[data-theme="light"] .brand span {
+:global(html[data-theme='light']) .brand span {
   color: #1d4ed8;
 }
 
@@ -2358,7 +2358,7 @@
   color: #1d4ed8;
 }
 
-.shell[data-theme="light"] .brand p {
+:global(html[data-theme='light']) .brand p {
   color: #64748b;
 }
 
@@ -2369,7 +2369,7 @@
   color: #64748b;
 }
 
-.shell[data-theme="light"] .navItem {
+:global(html[data-theme='light']) .navItem {
   color: #475569;
 }
 
@@ -2380,7 +2380,7 @@
   color: #475569;
 }
 
-.shell[data-theme="light"] .navItem svg {
+:global(html[data-theme='light']) .navItem svg {
   color: #64748b;
 }
 
@@ -2391,7 +2391,7 @@
   color: #64748b;
 }
 
-.shell[data-theme="light"] .navItemActive {
+:global(html[data-theme='light']) .navItemActive {
   color: #1d4ed8;
   background: linear-gradient(90deg, rgba(37, 99, 235, 0.13), rgba(37, 99, 235, 0.04));
 }
@@ -2404,37 +2404,37 @@
   background: linear-gradient(90deg, rgba(37, 99, 235, 0.13), rgba(37, 99, 235, 0.04));
 }
 
-.shell[data-theme="light"] .metricCard,
-.shell[data-theme="light"] .processCard,
-.shell[data-theme="light"] .analyticsCard,
-.shell[data-theme="light"] .tableCard,
-.shell[data-theme="light"] .railPanel,
-.shell[data-theme="light"] .commandBar,
-.shell[data-theme="light"] .modal {
+:global(html[data-theme='light']) .metricCard,
+:global(html[data-theme='light']) .processCard,
+:global(html[data-theme='light']) .analyticsCard,
+:global(html[data-theme='light']) .tableCard,
+:global(html[data-theme='light']) .railPanel,
+:global(html[data-theme='light']) .commandBar,
+:global(html[data-theme='light']) .modal {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.98));
   border-color: rgba(126, 145, 178, 0.26);
 }
 
-.shell[data-theme="light"] .leadsTable th {
+:global(html[data-theme='light']) .leadsTable th {
   color: #64748b;
 }
 
-.shell[data-theme="light"] .leadsTable td {
+:global(html[data-theme='light']) .leadsTable td {
   color: #1f2937;
 }
 
-.shell[data-theme="light"] .filterButton,
-.shell[data-theme="light"] .utilityButton,
-.shell[data-theme="light"] .commandActions button {
+:global(html[data-theme='light']) .filterButton,
+:global(html[data-theme='light']) .utilityButton,
+:global(html[data-theme='light']) .commandActions button {
   background: rgba(255, 255, 255, 0.92);
   color: #1f2937;
   border-color: rgba(126, 145, 178, 0.28);
 }
 
-.shell[data-theme="light"] .formInput,
-.shell[data-theme="light"] .formSelect,
-.shell[data-theme="light"] .formTextarea,
-.shell[data-theme="light"] .timerLeadSelect {
+:global(html[data-theme='light']) .formInput,
+:global(html[data-theme='light']) .formSelect,
+:global(html[data-theme='light']) .formTextarea,
+:global(html[data-theme='light']) .timerLeadSelect {
   background: rgba(255, 255, 255, 0.92);
   color: #111827;
   border-color: rgba(126, 145, 178, 0.28);
@@ -4207,4 +4207,130 @@
 @media (max-width: 900px) {
   .bottomGrid { grid-template-columns: 1fr; }
   .scanGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ─── MISSING LIGHT-THEME OVERRIDES ───────────────────────────────────────── */
+
+:global(html[data-theme='light']) .proCard {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 246, 255, 0.98));
+  border-color: rgba(126, 145, 178, 0.28);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+:global(html[data-theme='light']) .proCard p {
+  color: #526070;
+}
+
+:global(html[data-theme='light']) .proCard h3 {
+  color: #111827;
+}
+
+:global(html[data-theme='light']) .proIcon {
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.12);
+}
+
+:global(html[data-theme='light']) .notifTrigger {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #374151;
+}
+
+:global(html[data-theme='light']) .notifPanel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.98));
+  border-color: rgba(126, 145, 178, 0.26);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+}
+
+:global(html[data-theme='light']) .createMenu,
+:global(html[data-theme='light']) .stageMenu {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(126, 145, 178, 0.28);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+}
+
+:global(html[data-theme='light']) .createMenu button,
+:global(html[data-theme='light']) .stageMenu button {
+  color: #1f2937;
+}
+
+:global(html[data-theme='light']) .createMenu button:hover,
+:global(html[data-theme='light']) .stageMenu button:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+:global(html[data-theme='light']) .modal {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 249, 255, 0.99));
+  border-color: rgba(126, 145, 178, 0.28);
+  box-shadow: 0 32px 80px rgba(15, 23, 42, 0.18);
+}
+
+:global(html[data-theme='light']) .modalHeader h2 {
+  color: #111827;
+}
+
+:global(html[data-theme='light']) .modalClose {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #475569;
+}
+
+:global(html[data-theme='light']) .filterPanel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 249, 255, 0.99));
+  border-color: rgba(126, 145, 178, 0.26);
+  box-shadow: -24px 0 60px rgba(15, 23, 42, 0.12);
+}
+
+:global(html[data-theme='light']) .filterPanelHeader h2 {
+  color: #111827;
+}
+
+:global(html[data-theme='light']) .filterChip {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(126, 145, 178, 0.28);
+  color: #374151;
+}
+
+:global(html[data-theme='light']) .timerWidget {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 249, 255, 0.99));
+  border-color: rgba(126, 145, 178, 0.26);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+}
+
+:global(html[data-theme='light']) .detailCard {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.98));
+  border-color: rgba(126, 145, 178, 0.22);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+:global(html[data-theme='light']) .detailCardHeader {
+  border-color: rgba(126, 145, 178, 0.18);
+}
+
+:global(html[data-theme='light']) .detailCardHeader h2 {
+  color: #111827;
+}
+
+:global(html[data-theme='light']) .detailQuickNav a {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(126, 145, 178, 0.26);
+  color: #374151;
+}
+
+:global(html[data-theme='light']) .navSection {
+  color: #94a3b8;
+}
+
+:global(html[data-theme='light']) .navItem:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: #1e293b;
+}
+
+:global(html[data-theme='light']) .signOut {
+  color: #64748b;
+  border-color: rgba(126, 145, 178, 0.24);
+}
+
+:global(html[data-theme='light']) .signOut:hover {
+  color: #1e293b;
 }
