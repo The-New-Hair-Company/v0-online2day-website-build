@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
 import { isAdmin } from '@/app/actions/dashboard'
 import { getAdminPrefs } from '@/lib/actions/settings-actions'
 
@@ -7,10 +8,19 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
+  // Defence-in-depth: middleware already guards this, but verify server-side too
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
   const admin = await isAdmin()
 
   if (!admin) {
-    redirect('/auth/login')
+    // Authenticated but not an admin — send to their portal, not the login page
+    redirect('/user-dashboard')
   }
 
   // Load persisted theme prefs from Supabase to apply before first paint

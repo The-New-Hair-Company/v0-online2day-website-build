@@ -1016,3 +1016,27 @@ function getSourceColor(source: string): string {
   }
   return colors[source] || '#2f6bff'
 }
+
+// ─── POST-LOGIN ROUTING ───────────────────────────────────────────────────────
+// Called by the login page after signInWithPassword succeeds.
+// Returns the path the user should be redirected to, or null if not allowed.
+
+export async function getPostLoginRedirect(): Promise<'/dashboard' | '/user-dashboard' | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  const { data: isAdminResult } = await supabase.rpc('is_admin')
+  if (isAdminResult) return '/dashboard'
+
+  const email = normalizeEmail(user.email)
+  const { data: licensed } = await supabase
+    .from('licensed_users')
+    .select('status')
+    .eq('email', email)
+    .single()
+
+  if (licensed?.status === 'active' || licensed?.status === 'pending') return '/user-dashboard'
+
+  return null
+}
