@@ -460,9 +460,12 @@
 .metricValue {
   display: block;
   margin-top: 14px;
-  font-size: 40px;
+  font-size: clamp(22px, 3.5vw, 40px);
   font-weight: 700;
   line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .metricDelta {
@@ -1660,11 +1663,50 @@
   .headerTools {
     justify-content: flex-start;
   }
+
+  .bottomBar {
+    left: 12px;
+    right: 12px;
+  }
 }
 
 @media (max-width: 800px) {
+  .main {
+    padding: 20px 20px 100px;
+  }
+
+  .pageTitle {
+    font-size: 28px;
+  }
+
+  .pageDescription {
+    font-size: 14px;
+    margin-top: 8px;
+  }
+
   .metricsGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .metricCard {
+    padding: 18px 16px 14px;
+    min-height: 120px;
+  }
+
+  .metricValue {
+    font-size: 30px;
+    margin-top: 10px;
+  }
+
+  .metricHeader {
+    font-size: 14px;
+    gap: 10px;
+  }
+
+  .metricIcon {
+    width: 36px;
+    height: 36px;
   }
 
   .suggestedReplies,
@@ -1687,6 +1729,131 @@
   .searchBox {
     width: 100%;
     min-width: 0;
+  }
+
+  .button,
+  .buttonGhost {
+    min-height: 40px;
+    padding: 0 12px;
+  }
+}
+
+@media (max-width: 600px) {
+  .main {
+    padding: 14px 14px 90px;
+  }
+
+  .pageTitle {
+    font-size: 22px;
+  }
+
+  .pageDescription {
+    font-size: 13px;
+  }
+
+  .metricsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .metricCard {
+    padding: 14px 12px 12px;
+    min-height: 110px;
+  }
+
+  .metricValue {
+    font-size: 22px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .metricHeader {
+    font-size: 12px;
+    gap: 8px;
+  }
+
+  .metricIcon {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+
+  .metricIcon svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .metricDelta {
+    font-size: 12px;
+    margin-top: 8px;
+  }
+
+  .sparkline {
+    height: 20px;
+  }
+
+  .button,
+  .buttonGhost,
+  .chipButton,
+  .priorityButton {
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  .buttonPrimary {
+    min-height: 38px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  .searchBox {
+    height: 38px;
+    min-width: 0;
+    width: 100%;
+    padding: 0 10px;
+  }
+
+  .headerTools {
+    gap: 8px;
+  }
+
+  .toolbar {
+    gap: 8px;
+    padding: 12px 14px;
+  }
+
+  .panel {
+    padding: 18px 16px;
+  }
+
+  .rightPanel {
+    padding: 18px 16px;
+  }
+
+  .panelTitle {
+    font-size: 16px;
+  }
+
+  .bottomBar {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .table {
+    min-width: 600px;
+  }
+
+  .table th,
+  .table td {
+    padding: 10px 10px;
+    font-size: 13px;
   }
 }
 
