@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { canUseSystem } from '@/app/actions/dashboard'
-import Link from 'next/link'
 import { MessageSquare, LogOut, Blocks, User, LayoutDashboard } from 'lucide-react'
+import { UserNavLink } from '@/components/dashboard/UserNavLink'
 
 export default async function UserDashboardLayout({
   children,
@@ -49,14 +49,7 @@ export default async function UserDashboardLayout({
 
         <nav className="flex-1 px-3 py-4 space-y-1">
           {navItems.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className="flex items-center gap-3 px-3 py-2 rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground text-sm"
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-            </Link>
+            <UserNavLink key={href} href={href} label={label} icon={Icon} />
           ))}
         </nav>
 
