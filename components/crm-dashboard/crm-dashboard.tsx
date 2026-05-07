@@ -200,7 +200,7 @@ const PAGE_META: Record<DashboardSection, { title: string; description: string; 
     createItems: [
       { label: 'Open video editor', icon: WandSparkles, href: '/dashboard/videos/editor' },
       { label: 'Record new video', icon: Video, href: '/dashboard/videos/editor?mode=record' },
-      { label: 'Upload existing video', icon: Upload, href: '/dashboard/videos/editor?mode=upload' },
+      { label: 'Upload existing video', icon: Upload, href: '/dashboard/videos/upload' },
       { label: 'Use template', icon: Grid2x2, href: '/dashboard/videos/editor?mode=template' },
       { label: 'Create AI intro', icon: Bot, href: '/dashboard/videos/editor?mode=ai-intro' },
       { label: 'Import from library', icon: Download },
