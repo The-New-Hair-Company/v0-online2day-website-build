@@ -1022,6 +1022,7 @@
   border-bottom: 1px solid rgba(114, 133, 170, 0.12);
   color: #d9e2ee;
   vertical-align: middle;
+  text-align: left;
 }
 
 .leadsTable tr {
@@ -1047,9 +1048,19 @@
   accent-color: #2f6bff;
 }
 
+.checkboxCell {
+  width: 44px;
+}
+
 .leadCell,
 .companyCell,
 .ownerCell {
+  /* td should remain as table-cell */
+}
+
+.leadCell > div,
+.companyCell > div,
+.ownerCell > div {
   display: flex;
   align-items: center;
   gap: 8px;

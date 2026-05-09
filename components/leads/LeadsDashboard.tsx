@@ -953,18 +953,18 @@ function LeadTable({ leads, selectedId, onSelect, totalCount, onOpen, hiddenCols
       <table className={styles.leadsTable}>
         <thead>
           <tr>
-            <th><input aria-label="Select all" type="checkbox" /></th>
-            <th>Lead</th>
-            {show('company') && <th>Company</th>}
-            {show('score') && <th>Score</th>}
-            {show('stage') && <th>Stage</th>}
-            {show('owner') && <th>Owner</th>}
-            {show('source') && <th>Source</th>}
-            {show('lastActivity') && <th>Last activity</th>}
-            {show('engagement') && <th>Engagement</th>}
-            {show('value') && <th>Value</th>}
-            {show('nextAction') && <th>Next action</th>}
-            <th />
+            <th className={styles.checkboxCell}><input aria-label="Select all" type="checkbox" /></th>
+            <th style={{ minWidth: '220px' }}>Lead</th>
+            {show('company') && <th style={{ minWidth: '200px' }}>Company</th>}
+            {show('score') && <th style={{ minWidth: '80px' }}>Score</th>}
+            {show('stage') && <th style={{ minWidth: '120px' }}>Stage</th>}
+            {show('owner') && <th style={{ minWidth: '150px' }}>Owner</th>}
+            {show('source') && <th style={{ minWidth: '80px' }}>Source</th>}
+            {show('lastActivity') && <th style={{ minWidth: '120px' }}>Last activity</th>}
+            {show('engagement') && <th style={{ minWidth: '140px' }}>Engagement</th>}
+            {show('value') && <th style={{ minWidth: '100px' }}>Value</th>}
+            {show('nextAction') && <th style={{ minWidth: '160px' }}>Next action</th>}
+            <th style={{ width: '60px' }} />
           </tr>
         </thead>
         <tbody>
@@ -982,20 +982,31 @@ function LeadTable({ leads, selectedId, onSelect, totalCount, onOpen, hiddenCols
               tabIndex={0}
               aria-selected={selectedId === lead.id}
             >
-              <td><input checked={selectedId === lead.id} readOnly type="checkbox" /></td>
+              <td className={styles.checkboxCell}><input checked={selectedId === lead.id} readOnly type="checkbox" /></td>
               <td className={styles.leadCell}>
-                <Avatar initials={lead.contactName.split(' ').map(n => n[0]).join('')} />
-                <div><strong>{lead.contactName}</strong><span>{lead.role}</span></div>
+                <div>
+                  <Avatar initials={lead.contactName.split(' ').map(n => n[0]).join('')} />
+                  <div><strong>{lead.contactName}</strong><span>{lead.role}</span></div>
+                </div>
               </td>
               {show('company') && (
                 <td className={styles.companyCell}>
-                  <div className={cx(styles.companyLogo, styles[lead.logoClass])}>{lead.companyMark}</div>
-                  <span>{lead.company}</span>
+                  <div>
+                    <div className={cx(styles.companyLogo, styles[lead.logoClass])}>{lead.companyMark}</div>
+                    <span>{lead.company}</span>
+                  </div>
                 </td>
               )}
               {show('score') && <td><Score value={lead.score} /></td>}
               {show('stage') && <td><StageBadge stage={lead.stage} /></td>}
-              {show('owner') && <td className={styles.ownerCell}><Avatar initials={initialsForOwner(lead.owner)} size="sm" />{lead.owner}</td>}
+              {show('owner') && (
+                <td className={styles.ownerCell}>
+                  <div>
+                    <Avatar initials={initialsForOwner(lead.owner)} size="sm" />
+                    {lead.owner}
+                  </div>
+                </td>
+              )}
               {show('source') && <td><Icon name={lead.sourceIcon} className={styles.sourceIcon} /></td>}
               {show('lastActivity') && <td>{lead.lastActivity}</td>}
               {show('engagement') && (
