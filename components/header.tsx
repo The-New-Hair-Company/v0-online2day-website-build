@@ -41,8 +41,8 @@ function HeaderActions({ mobile = false }: { mobile?: boolean }) {
       <Button variant="ghost" asChild>
         <Link href="/auth/login">Login</Link>
       </Button>
-      <Button variant="outline" asChild>
-        <Link href="/dashboard">Dashboard</Link>
+      <Button variant="outline" disabled title="Dashboard coming soon (API in progress)">
+        Dashboard
       </Button>
       <Button asChild>
         <Link href="/contact">Get Started</Link>
