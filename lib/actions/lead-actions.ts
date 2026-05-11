@@ -1,134 +1,85 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { leadsApi } from '@/lib/api/client'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
-export async function createLead(formData: FormData) {
+async function getToken(): Promise<string> {
   const supabase = await createClient()
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) throw new Error('Not authenticated')
+  return token
+}
 
+export async function createLead(formData: FormData) {
   const name = formData.get('name') as string
-  const company = formData.get('company') as string
-  const email = formData.get('email') as string
-  const phone = formData.get('phone') as string
-  const source = formData.get('source') as string
-  const notes = formData.get('notes') as string
-  const website = formData.get('website') as string
+  if (!name) return { error: 'Name is required' }
 
-  if (!name) {
-    return { error: 'Name is required' }
+  try {
+    const token = await getToken()
+    const lead = await leadsApi.create(token, {
+      name,
+      company: (formData.get('company') as string) || null,
+      email: (formData.get('email') as string) || null,
+      phone: (formData.get('phone') as string) || null,
+      source: (formData.get('source') as string) || null,
+      notes: (formData.get('notes') as string) || null,
+      website: (formData.get('website') as string) || null,
+    })
+    revalidatePath('/dashboard/leads')
+    return { data: lead }
+  } catch (e) {
+    return { error: (e as Error).message }
   }
-
-  const { data: user } = await supabase.auth.getUser()
-
-  const { data, error } = await supabase.from('leads').insert({
-    name,
-    company,
-    email,
-    phone,
-    source,
-    notes,
-    website,
-    status: 'New',
-    assigned_to: user.user?.id || null,
-  }).select().single()
-
-  if (error) {
-    console.error('Error creating lead:', error)
-    return { error: error.message }
-  }
-
-  // Log creation event
-  if (data) {
-    await logLeadEvent(data.id, 'Lead Created', `Lead created by ${user.user?.email || 'unknown'}`)
-  }
-
-  revalidatePath('/dashboard/leads')
-  return { data }
 }
 
 export async function updateLead(leadId: string, formData: FormData) {
-  const supabase = await createClient()
-  const { data: user } = await supabase.auth.getUser()
-
   const name = formData.get('name') as string
-  const company = formData.get('company') as string
-  const email = formData.get('email') as string
-  const phone = formData.get('phone') as string
-  const source = formData.get('source') as string
-  const notes = formData.get('notes') as string
-  const website = formData.get('website') as string
-  const status = formData.get('status') as string
-  const follow_up_date = formData.get('follow_up_date') as string
+  if (!name) return { error: 'Name is required' }
 
-  if (!name) {
-    return { error: 'Name is required' }
-  }
-
-  const { error } = await supabase
-    .from('leads')
-    .update({
+  try {
+    const token = await getToken()
+    await leadsApi.update(token, leadId, {
       name,
-      company,
-      email,
-      phone,
-      source,
-      notes,
-      website,
-      status,
-      follow_up_date: follow_up_date || null,
-      updated_at: new Date().toISOString(),
-      assigned_to: user.user?.id || null,
+      company: (formData.get('company') as string) || null,
+      email: (formData.get('email') as string) || null,
+      phone: (formData.get('phone') as string) || null,
+      source: (formData.get('source') as string) || null,
+      notes: (formData.get('notes') as string) || null,
+      website: (formData.get('website') as string) || null,
+      followUpDate: (formData.get('follow_up_date') as string) || null,
     })
-    .eq('id', leadId)
-
-  if (error) {
-    console.error('Error updating lead:', error)
-    return { error: error.message }
+    revalidatePath('/dashboard/leads')
+    revalidatePath(`/dashboard/leads/${leadId}`)
+    return { success: true }
+  } catch (e) {
+    return { error: (e as Error).message }
   }
-
-  await logLeadEvent(leadId, 'Lead Updated', `Contact details updated by ${user.user?.email || 'unknown'}`)
-
-  revalidatePath('/dashboard/leads')
-  revalidatePath(`/dashboard/leads/${leadId}`)
-  return { success: true }
 }
 
 export async function deleteLead(leadId: string) {
-  const supabase = await createClient()
-
-  const { error } = await supabase
-    .from('leads')
-    .delete()
-    .eq('id', leadId)
-
-  if (error) {
-    console.error('Error deleting lead:', error)
-    return { error: error.message }
+  try {
+    const token = await getToken()
+    await leadsApi.delete(token, leadId)
+  } catch (e) {
+    return { error: (e as Error).message }
   }
-
   revalidatePath('/dashboard/leads')
   redirect('/dashboard/leads')
 }
 
 export async function updateLeadStatus(leadId: string, status: string) {
-  const supabase = await createClient()
-  const { data: user } = await supabase.auth.getUser()
-
-  const { error } = await supabase
-    .from('leads')
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq('id', leadId)
-
-  if (error) {
-    return { error: error.message }
+  try {
+    const token = await getToken()
+    await leadsApi.updateStatus(token, leadId, status)
+    revalidatePath('/dashboard/leads')
+    revalidatePath(`/dashboard/leads/${leadId}`)
+    return { success: true }
+  } catch (e) {
+    return { error: (e as Error).message }
   }
-
-  await logLeadEvent(leadId, 'Status Updated', `Status changed to "${status}" by ${user.user?.email || 'unknown'}`)
-  revalidatePath(`/dashboard/leads`)
-  revalidatePath(`/dashboard/leads/${leadId}`)
-
-  return { success: true }
 }
 
 export async function createLeadFromObject(data: {
@@ -143,40 +94,30 @@ export async function createLeadFromObject(data: {
   value?: string
   notes?: string
 }) {
-  const supabase = await createClient()
-  const { data: user } = await supabase.auth.getUser()
-
   if (!data.name?.trim()) return { error: 'Name is required.' }
 
   const numericValue = data.value
     ? Number(data.value.replace(/[^0-9.]/g, '')) || null
     : null
 
-  const { data: lead, error } = await supabase
-    .from('leads')
-    .insert({
+  try {
+    const token = await getToken()
+    const lead = await leadsApi.create(token, {
       name: data.name.trim(),
       company: data.company?.trim() || null,
       role: data.role?.trim() || null,
       email: data.email?.trim() || null,
       phone: data.phone?.trim() || null,
-      linkedin_url: data.linkedin?.trim() || null,
+      linkedInUrl: data.linkedin?.trim() || null,
       source: data.source || 'Website',
       status: data.stage || 'New',
       value: numericValue,
       notes: data.notes?.trim() || null,
-      assigned_to: user.user?.id || null,
     })
-    .select()
-    .single()
 
-  if (error) {
-    console.error('createLeadFromObject error:', error)
-    return { error: error.message }
-  }
-
-  if (lead) {
-    await logLeadEvent(lead.id, 'Lead Created', `Lead created: ${data.name}`)
+    // Log to activity feed directly (no .NET endpoint yet)
+    const supabase = await createClient()
+    const { data: user } = await supabase.auth.getUser()
     await supabase.from('activity_feed').insert({
       actor_name: user.user?.email || 'Admin',
       type: 'lead_created',
@@ -185,11 +126,13 @@ export async function createLeadFromObject(data: {
       entity_name: data.name,
       description: `New lead added: ${data.name}${data.company ? ` (${data.company})` : ''}`,
     })
-  }
 
-  revalidatePath('/dashboard/leads')
-  revalidatePath('/dashboard/overview')
-  return { success: true, lead }
+    revalidatePath('/dashboard/leads')
+    revalidatePath('/dashboard/overview')
+    return { success: true, lead }
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
 }
 
 export async function logActivityEvent(data: {
@@ -225,9 +168,7 @@ export async function logActivityEvent(data: {
   })
   if (feedError) return { error: feedError.message }
 
-  if (data.leadId) {
-    revalidatePath(`/dashboard/leads/${data.leadId}`)
-  }
+  if (data.leadId) revalidatePath(`/dashboard/leads/${data.leadId}`)
   revalidatePath('/dashboard/overview')
   revalidatePath('/dashboard/leads')
   return { success: true }
@@ -245,28 +186,18 @@ export async function logLeadEvent(leadId: string, type: string, note?: string, 
     created_by: user.user?.id || null,
   })
 
-  if (error) {
-    console.error('Error logging event:', error)
-  }
+  if (error) console.error('Error logging event:', error)
 }
 
 export async function addLeadNote(leadId: string, note: string) {
-  const supabase = await createClient()
-  const { data: user } = await supabase.auth.getUser()
-
-  const { error } = await supabase.from('lead_events').insert({
-    lead_id: leadId,
-    type: 'Note Added',
-    note,
-    created_by: user.user?.id || null,
-  })
-
-  if (error) {
-    return { error: error.message }
+  try {
+    const token = await getToken()
+    await leadsApi.addNote(token, leadId, note)
+    revalidatePath(`/dashboard/leads/${leadId}`)
+    return { success: true }
+  } catch (e) {
+    return { error: (e as Error).message }
   }
-
-  revalidatePath(`/dashboard/leads/${leadId}`)
-  return { success: true }
 }
 
 export async function updateLeadFields(leadId: string, fields: {
@@ -279,19 +210,32 @@ export async function updateLeadFields(leadId: string, fields: {
   source?: string
   notes?: string
 }) {
-  const supabase = await createClient()
+  try {
+    const token = await getToken()
+    // Status updates go via the dedicated endpoint
+    if (fields.status && Object.keys(fields).length === 1) {
+      await leadsApi.updateStatus(token, leadId, fields.status)
+    } else {
+      // For mixed updates get current data and merge
+      const current = await leadsApi.get(token, leadId)
+      await leadsApi.update(token, leadId, {
+        name: fields.name ?? current.name,
+        email: fields.email ?? current.email,
+        phone: fields.phone ?? current.phone,
+        company: fields.company ?? current.company,
+        website: fields.website ?? current.website,
+        source: fields.source ?? current.source,
+        notes: fields.notes ?? current.notes,
+      })
+    }
 
-  const { error } = await supabase
-    .from('leads')
-    .update({ ...fields, updated_at: new Date().toISOString() })
-    .eq('id', leadId)
-
-  if (error) return { error: error.message }
-
-  await logLeadEvent(leadId, 'Lead Updated', `Updated: ${Object.keys(fields).join(', ')}`)
-  revalidatePath('/dashboard/leads')
-  revalidatePath(`/dashboard/leads/${leadId}`)
-  return { success: true }
+    await logLeadEvent(leadId, 'Lead Updated', `Updated: ${Object.keys(fields).join(', ')}`)
+    revalidatePath('/dashboard/leads')
+    revalidatePath(`/dashboard/leads/${leadId}`)
+    return { success: true }
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
 }
 
 export async function scheduleLeadAction(
@@ -314,17 +258,20 @@ export async function scheduleLeadAction(
 
   if (error) return { error: error.message }
 
-  await supabase
-    .from('leads')
-    .update({ follow_up_date: scheduledAt, updated_at: new Date().toISOString() })
-    .eq('id', leadId)
+  try {
+    const token = await getToken()
+    await leadsApi.update(token, leadId, {
+      name: (await leadsApi.get(token, leadId)).name,
+      followUpDate: scheduledAt,
+    })
+  } catch {}
 
   const label = actionType === 'Callback Scheduled' ? 'Callback' : 'Follow-up'
   await supabase.from('enterprise_events').insert({
     title: `${label}: ${leadName}`,
     event_time: scheduledAt,
     event_type: label,
-  }).then(() => {}) // non-fatal
+  }).then(() => {})
 
   revalidatePath(`/dashboard/leads/${leadId}`)
   revalidatePath('/dashboard/enterprise')
