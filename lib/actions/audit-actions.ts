@@ -1,7 +1,13 @@
 'use server'
 
+import { auditApi } from '@/lib/api/client'
 import { createClient } from '@/lib/supabase/server'
-import { revalidatePath } from 'next/cache'
+
+async function getToken(): Promise<string | null> {
+  const supabase = await createClient()
+  const { data } = await supabase.auth.getSession()
+  return data.session?.access_token ?? null
+}
 
 export async function logAuditEntry(
   action: string,
@@ -9,26 +15,24 @@ export async function logAuditEntry(
   resourceId?: string,
   changes?: string,
 ) {
-  const supabase = await createClient()
-  const { data: userData } = await supabase.auth.getUser()
-  const user = userData.user
+  const token = await getToken()
+  if (!token) return
 
-  await supabase.from('admin_audit_log').insert({
-    user_id: user?.id ?? null,
-    actor_email: user?.email ?? null,
+  await auditApi.log(token, {
     action,
     resource,
-    resource_id: resourceId ?? null,
+    resourceId: resourceId ?? null,
     changes: changes ?? null,
-  })
+  }).catch((e) => console.error('Audit log error:', e))
 }
 
 export async function getAuditLog(limit = 100) {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('admin_audit_log')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(limit)
-  return data || []
+  const token = await getToken()
+  if (!token) return []
+
+  try {
+    return await auditApi.list(token, limit)
+  } catch {
+    return []
+  }
 }

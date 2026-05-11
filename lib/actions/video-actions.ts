@@ -1,9 +1,18 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { assetsApi, agreementsApi } from '@/lib/api/client'
 import { revalidatePath } from 'next/cache'
 import { logLeadEvent } from './lead-actions'
 import { logAsyncActionFailure } from './reliability-actions'
+
+async function getToken(): Promise<string> {
+  const supabase = await createClient()
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) throw new Error('Not authenticated')
+  return token
+}
 
 // ─── ADMIN STANDALONE VIDEO UPLOAD ───────────────────────────────────────────
 
@@ -24,6 +33,7 @@ export async function uploadAdminVideo(formData: FormData) {
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
   const filePath = `shared/${slug}-${safeName}`
 
+  // Storage upload stays direct — binary upload not routed through .NET
   const { error: uploadError } = await supabase.storage
     .from('lead-videos')
     .upload(filePath, file, { contentType: file.type, upsert: false })
@@ -38,6 +48,8 @@ export async function uploadAdminVideo(formData: FormData) {
     return { error: uploadError.message }
   }
 
+  // DB record goes through .NET API (lead_id=null for shared videos not supported by repo — fallback to direct)
+  // Since lead_id is required by the .NET schema, shared (no-lead) videos go direct
   const { data: asset, error: assetError } = await supabase
     .from('lead_assets')
     .insert({
@@ -62,7 +74,7 @@ export async function uploadAdminVideo(formData: FormData) {
   if (assetError) {
     await logAsyncActionFailure({
       action: 'upload_admin_video_asset_insert',
-      payload: { title, filePath, contentType: file.type, size: file.size },
+      payload: { title, filePath },
       error: new Error(assetError.message),
       recoverable: true,
     })
@@ -80,8 +92,7 @@ export async function sendVideoViaChat(conversationUserId: string, videoSlug: st
   if (!userData.user) return { error: 'Not authenticated' }
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || ''
-  const videoUrl = `${baseUrl}/v/${videoSlug}`
-  const content = `📹 Here is your video: ${videoUrl}`
+  const content = `📹 Here is your video: ${baseUrl}/v/${videoSlug}`
 
   const { error } = await supabase.from('messages').insert({
     conversation_user_id: conversationUserId,
@@ -99,7 +110,7 @@ export async function getClientUsers() {
     .from('user_profiles')
     .select('user_id, full_name, email, role')
     .order('full_name', { ascending: true })
-  return (data || []).filter(u => u.role !== 'admin')
+  return (data || []).filter((u) => u.role !== 'admin')
 }
 
 export async function getVideoSignedUrl(storagePath: string) {
@@ -113,28 +124,26 @@ export async function getVideoSignedUrl(storagePath: string) {
 // ─── AGREEMENT DOWNLOAD ───────────────────────────────────────────────────────
 
 export async function getLeadAgreements(leadId: string) {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('lead_agreements')
-    .select('id, title, storage_path, public_url, created_at')
-    .eq('lead_id', leadId)
-    .order('created_at', { ascending: false })
-
-  if (error) return []
-  return (data || []).map(a => ({
-    id: a.id as string,
-    title: a.title as string,
-    storagePath: a.storage_path as string | null,
-    publicUrl: a.public_url as string | null,
-    createdAt: a.created_at as string,
-  }))
+  try {
+    const token = await getToken()
+    const agreements = await agreementsApi.list(token, leadId)
+    return agreements.map((a) => ({
+      id: a.id,
+      title: a.name,
+      storagePath: a.storagePath ?? null,
+      publicUrl: null,
+      createdAt: a.createdAt,
+    }))
+  } catch {
+    return []
+  }
 }
 
 export async function getAgreementDownloadUrl(storagePath: string) {
   const supabase = await createClient()
   const { data } = await supabase.storage
     .from('agreements')
-    .createSignedUrl(storagePath, 60 * 60) // 1-hour download link
+    .createSignedUrl(storagePath, 60 * 60)
   return data?.signedUrl ?? null
 }
 
@@ -160,87 +169,71 @@ export async function uploadLeadVideo(leadId: string, formData: FormData) {
   const file = formData.get('video') as File
   const videoName = formData.get('name') as string
 
-  if (!file || file.size === 0) {
-    return { error: 'Please select a video file' }
-  }
+  if (!file || file.size === 0) return { error: 'Please select a video file' }
 
-  // Generate a unique slug for the public video page
   const slug = `${leadId.slice(0, 8)}-${Date.now()}`
   const filePath = `${leadId}/${slug}-${file.name}`
 
-  // Upload to Supabase Storage
-  const { data: uploadData, error: uploadError } = await supabase.storage
+  // Storage upload stays direct
+  const { error: uploadError } = await supabase.storage
     .from('lead-videos')
-    .upload(filePath, file, {
-      contentType: file.type,
-      upsert: false,
-    })
+    .upload(filePath, file, { contentType: file.type, upsert: false })
 
   if (uploadError) {
     await logAsyncActionFailure({
       action: 'upload_lead_video_storage',
-      payload: { leadId, filePath, contentType: file.type, size: file.size },
+      payload: { leadId, filePath },
       error: new Error(uploadError.message),
       recoverable: true,
     })
     return { error: uploadError.message }
   }
 
-  // Get a signed URL (valid 7 days — can be regenerated)
   const { data: signedUrlData } = await supabase.storage
     .from('lead-videos')
-    .createSignedUrl(filePath, 60 * 60 * 24 * 7) // 7 days
+    .createSignedUrl(filePath, 60 * 60 * 24 * 7)
 
-  // Save asset record
-  const { data: asset, error: assetError } = await supabase
-    .from('lead_assets')
-    .insert({
-      lead_id: leadId,
+  // DB record via .NET API
+  try {
+    const token = await getToken()
+    const asset = await assetsApi.create(token, leadId, {
       name: videoName || file.name,
       type: 'video',
       url: signedUrlData?.signedUrl || '',
-      storage_path: filePath,
+      storagePath: filePath,
       slug,
-      metadata: {
-        uploadedVideo: true,
-        fileName: file.name,
-        contentType: file.type,
-        size: file.size,
-      },
     })
-    .select()
-    .single()
 
-  if (assetError) {
+    await logLeadEvent(leadId, 'Video Uploaded',
+      `Video "${videoName || file.name}" uploaded by ${user.user?.email || 'unknown'}`)
+
+    revalidatePath(`/dashboard/leads/${leadId}`)
+    revalidatePath('/dashboard/videos')
+    return { success: true, asset }
+  } catch (e) {
     await logAsyncActionFailure({
       action: 'upload_lead_video_asset_insert',
-      payload: { leadId, filePath, name: videoName || file.name },
-      error: new Error(assetError.message),
+      payload: { leadId, filePath },
+      error: e,
       recoverable: true,
     })
-    return { error: assetError.message }
+    return { error: (e as Error).message }
   }
-
-  // Log event
-  await logLeadEvent(leadId, 'Video Uploaded', `Video "${videoName || file.name}" uploaded by ${user.user?.email || 'unknown'}`)
-
-  revalidatePath(`/dashboard/leads/${leadId}`)
-  revalidatePath('/dashboard/videos')
-
-  return { success: true, asset }
 }
 
 export async function deleteLeadVideo(assetId: string, leadId: string, storagePath: string) {
   const supabase = await createClient()
 
-  // Delete from storage
   if (storagePath) {
     await supabase.storage.from('lead-videos').remove([storagePath])
   }
 
-  // Delete record
-  const { error } = await supabase.from('lead_assets').delete().eq('id', assetId)
-  if (error) return { error: error.message }
+  try {
+    const token = await getToken()
+    await assetsApi.delete(token, leadId, assetId)
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
 
   revalidatePath('/dashboard/videos')
   revalidatePath(`/dashboard/leads/${leadId}`)
@@ -255,7 +248,7 @@ export async function saveVideoEditorProject(payload: EditorProjectPayload) {
   if (!payload.title.trim()) return { error: 'Give the video project a title.' }
 
   const slug = `${payload.leadId.slice(0, 8)}-editor-${Date.now()}`
-  const projectMetadata = {
+  const projectMetadata = JSON.stringify({
     editorProject: true,
     duration: payload.duration,
     format: payload.format,
@@ -267,57 +260,50 @@ export async function saveVideoEditorProject(payload: EditorProjectPayload) {
     recording: payload.recording || null,
     settings: payload.settings,
     createdBy: user.user?.email || 'unknown',
-  }
-
-  const assetMutation = payload.sourceAssetId
-    ? supabase
-        .from('lead_assets')
-        .update({
-          name: payload.title,
-          metadata: projectMetadata,
-        } as any)
-        .eq('id', payload.sourceAssetId)
-        .eq('lead_id', payload.leadId)
-        .eq('type', 'video')
-        .select()
-        .single()
-    : supabase
-        .from('lead_assets')
-        .insert({
-          lead_id: payload.leadId,
-          name: payload.title,
-          type: 'video',
-          url: '',
-          storage_path: '',
-          slug,
-          metadata: projectMetadata,
-        } as any)
-        .select()
-        .single()
-
-  const { data: asset, error } = await assetMutation
-
-  if (error) {
-    await logAsyncActionFailure({
-      action: 'save_video_editor_project',
-      payload: { leadId: payload.leadId, title: payload.title, sourceAssetId: payload.sourceAssetId || null },
-      error: new Error(error.message),
-      recoverable: true,
-    })
-    return { error: error.message }
-  }
-
-  await logLeadEvent(payload.leadId, 'Video Editor Project Saved', `Video project "${payload.title}" saved by ${user.user?.email || 'unknown'}`, {
-    slug: asset.slug || slug,
-    assetId: asset.id,
-    duration: payload.duration,
-    format: payload.format,
-    sourceAssetId: payload.sourceAssetId || null,
   })
 
-  revalidatePath('/dashboard/videos')
-  revalidatePath('/dashboard/videos/editor')
-  revalidatePath('/dashboard/emails')
-  revalidatePath(`/dashboard/leads/${payload.leadId}`)
-  return { success: true, asset, slug: asset.slug || slug }
+  try {
+    const token = await getToken()
+    let assetId: string = payload.sourceAssetId || ''
+
+    if (payload.sourceAssetId) {
+      // Update existing — fallback to direct since .NET doesn't have a metadata-only update
+      const { error } = await supabase
+        .from('lead_assets')
+        .update({ name: payload.title, metadata: JSON.parse(projectMetadata) } as any)
+        .eq('id', payload.sourceAssetId)
+        .eq('lead_id', payload.leadId)
+
+      if (error) throw new Error(error.message)
+    } else {
+      const created = await assetsApi.create(token, payload.leadId, {
+        name: payload.title,
+        type: 'video',
+        url: '',
+        storagePath: '',
+        slug,
+      })
+      assetId = created.id
+    }
+
+    const asset = { id: assetId, slug, name: payload.title }
+
+    await logLeadEvent(payload.leadId, 'Video Editor Project Saved',
+      `Video project "${payload.title}" saved by ${user.user?.email || 'unknown'}`,
+      { slug, sourceAssetId: payload.sourceAssetId || null, duration: payload.duration, format: payload.format })
+
+    revalidatePath('/dashboard/videos')
+    revalidatePath('/dashboard/videos/editor')
+    revalidatePath('/dashboard/emails')
+    revalidatePath(`/dashboard/leads/${payload.leadId}`)
+    return { success: true, slug, asset, assetId }
+  } catch (e) {
+    await logAsyncActionFailure({
+      action: 'save_video_editor_project',
+      payload: { leadId: payload.leadId, title: payload.title },
+      error: e,
+      recoverable: true,
+    })
+    return { error: (e as Error).message }
+  }
 }

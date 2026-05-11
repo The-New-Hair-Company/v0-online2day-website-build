@@ -3,6 +3,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+// Messages and conversations stay direct-Supabase — they need
+// RLS checks (is_admin()) and real-time features that are better
+// served by the Supabase client directly.
+
 export async function sendConversationReply(conversationId: string, content: string) {
   const trimmed = content.trim()
   if (!trimmed) return { error: 'Message cannot be empty.' }
@@ -22,11 +26,8 @@ export async function sendConversationReply(conversationId: string, content: str
     .eq('id', conversationId)
     .single()
 
-  if (convError || !conversation) {
-    return { error: 'Conversation was not found or is no longer accessible.' }
-  }
+  if (convError || !conversation) return { error: 'Conversation was not found or is no longer accessible.' }
 
-  // Insert message — admin insert is allowed via is_admin() RLS check
   const { error: msgError } = await supabase.from('messages').insert({
     conversation_id: conversationId,
     conversation_user_id: adminId,
@@ -36,12 +37,8 @@ export async function sendConversationReply(conversationId: string, content: str
     message_type: 'text',
   })
 
-  if (msgError) {
-    console.error('sendConversationReply error:', msgError)
-    return { error: msgError.message }
-  }
+  if (msgError) return { error: msgError.message }
 
-  // Update conversation last_message_preview and timestamp
   await supabase
     .from('conversations')
     .update({
@@ -62,13 +59,8 @@ export async function markConversationRead(conversationId: string) {
   if (!userData.user) return { error: 'Not authenticated.' }
   if (!conversationId?.trim()) return { error: 'Conversation is required.' }
 
-  await supabase
-    .from('messages')
-    .update({ is_read: true })
-    .eq('conversation_id', conversationId)
-
-  await supabase
-    .from('conversations')
+  await supabase.from('messages').update({ is_read: true }).eq('conversation_id', conversationId)
+  await supabase.from('conversations')
     .update({ unread_count: 0, updated_at: new Date().toISOString() })
     .eq('id', conversationId)
 
