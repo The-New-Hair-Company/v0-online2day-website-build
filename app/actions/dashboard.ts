@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { leadsApi, activityFeedApi, tasksApi, prefsApi } from '@/lib/api/client'
 import { isFoundingAdminEmail, normalizeEmail } from '@/lib/license'
 import { getEnterpriseStateValue, setEnterpriseStateValue } from '@/lib/actions/enterprise-actions'
 import type {
@@ -10,6 +11,12 @@ import type {
 import type {
   LeadRecord, VideoRecord, EmailRecord, ConversationRecord, SiteRequestRecord, CrmSetupConfig
 } from '@/components/crm-dashboard/types'
+
+async function getToken(): Promise<string | null> {
+  const supabase = await createClient()
+  const { data } = await supabase.auth.getSession()
+  return data.session?.access_token ?? null
+}
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -49,137 +56,113 @@ export async function getCrmSetupConfig(): Promise<CrmSetupConfig> {
     pipelineStages: 'New, Contacted, Qualified, Proposal Sent, Negotiation, Won',
   }
 
-  const supabase = await createClient()
-  const { data: userData } = await supabase.auth.getUser()
-  const user = userData.user
-  if (!user) return defaults
+  const token = await getToken()
+  if (!token) return defaults
 
   const keys = [
-    'config.companyName',
-    'config.defaultSenderName',
-    'config.defaultSenderEmail',
-    'config.bookingUrl',
-    'config.defaultCtaLabel',
-    'config.defaultCtaUrl',
-    'config.timezone',
-    'config.followupHours',
-    'config.hotLeadScore',
-    'config.pipelineStages',
+    'config.companyName', 'config.defaultSenderName', 'config.defaultSenderEmail',
+    'config.bookingUrl', 'config.defaultCtaLabel', 'config.defaultCtaUrl',
+    'config.timezone', 'config.followupHours', 'config.hotLeadScore', 'config.pipelineStages',
   ]
-  const { data } = await supabase
-    .from('admin_preferences')
-    .select('key, value')
-    .eq('user_id', user.id)
-    .in('key', keys)
 
-  const prefs = new Map<string, string>()
-  for (const row of data || []) prefs.set(row.key, row.value)
-  return {
-    companyName: prefs.get('config.companyName') || defaults.companyName,
-    defaultSenderName: prefs.get('config.defaultSenderName') || defaults.defaultSenderName,
-    defaultSenderEmail: prefs.get('config.defaultSenderEmail') || defaults.defaultSenderEmail,
-    bookingUrl: prefs.get('config.bookingUrl') || defaults.bookingUrl,
-    defaultCtaLabel: prefs.get('config.defaultCtaLabel') || defaults.defaultCtaLabel,
-    defaultCtaUrl: prefs.get('config.defaultCtaUrl') || defaults.defaultCtaUrl,
-    timezone: prefs.get('config.timezone') || defaults.timezone,
-    followupHours: prefs.get('config.followupHours') || defaults.followupHours,
-    hotLeadScore: prefs.get('config.hotLeadScore') || defaults.hotLeadScore,
-    pipelineStages: prefs.get('config.pipelineStages') || defaults.pipelineStages,
+  try {
+    const items = await prefsApi.getMany(token, keys)
+    const prefs = new Map(items.map(i => [i.key, i.value]))
+    return {
+      companyName: prefs.get('config.companyName') || defaults.companyName,
+      defaultSenderName: prefs.get('config.defaultSenderName') || defaults.defaultSenderName,
+      defaultSenderEmail: prefs.get('config.defaultSenderEmail') || defaults.defaultSenderEmail,
+      bookingUrl: prefs.get('config.bookingUrl') || defaults.bookingUrl,
+      defaultCtaLabel: prefs.get('config.defaultCtaLabel') || defaults.defaultCtaLabel,
+      defaultCtaUrl: prefs.get('config.defaultCtaUrl') || defaults.defaultCtaUrl,
+      timezone: prefs.get('config.timezone') || defaults.timezone,
+      followupHours: prefs.get('config.followupHours') || defaults.followupHours,
+      hotLeadScore: prefs.get('config.hotLeadScore') || defaults.hotLeadScore,
+      pipelineStages: prefs.get('config.pipelineStages') || defaults.pipelineStages,
+    }
+  } catch {
+    return defaults
   }
 }
 
 // ─── LEADS ────────────────────────────────────────────────────────────────────
 
 export async function getLeads(): Promise<Lead[]> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('leads').select('*').order('created_at', { ascending: false })
-  if (error || !data) return []
-
-  const assignedIds = [...new Set(data.map(l => l.assigned_to).filter(Boolean))] as string[]
-  const profilesMap: Record<string, string> = {}
-  if (assignedIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from('user_profiles').select('user_id, full_name').in('user_id', assignedIds)
-    profiles?.forEach(p => { profilesMap[p.user_id] = p.full_name || 'Unknown' })
-  }
-
-  return data.map((row): Lead => ({
-    id: row.id,
-    contactName: row.name || 'Unknown',
-    role: row.role || 'Contact',
-    company: row.company || 'Private',
-    companyMark: (row.company || 'P').substring(0, 2).toUpperCase(),
-    logoClass: 'logoGeneric',
-    score: row.score || 0,
-    stage: (row.status as LeadStage) || 'New',
-    owner: profilesMap[row.assigned_to || ''] || 'Unassigned',
-    source: (row.source as any) || 'Website',
-    sourceIcon: 'globe',
-    lastActivity: relativeTime(row.last_contacted_at),
-    engagement: row.engagement || 0,
-    value: row.value ? `$${Number(row.value).toLocaleString()}` : '$0',
-    nextAction: row.next_action || 'Follow up',
-    email: row.email || undefined,
-  }))
+  const token = await getToken()
+  if (!token) return []
+  try {
+    const data = await leadsApi.list(token)
+    return data.map((row): Lead => ({
+      id: row.id,
+      contactName: row.name || 'Unknown',
+      role: row.role || 'Contact',
+      company: row.company || 'Private',
+      companyMark: (row.company || 'P').substring(0, 2).toUpperCase(),
+      logoClass: 'logoGeneric',
+      score: row.score || 0,
+      stage: (row.status as LeadStage) || 'New',
+      owner: 'Unassigned',
+      source: (row.source as any) || 'Website',
+      sourceIcon: 'globe',
+      lastActivity: relativeTime(row.lastContactedAt ?? null),
+      engagement: row.engagement || 0,
+      value: row.value ? `£${Number(row.value).toLocaleString()}` : '£0',
+      nextAction: row.nextAction || 'Follow up',
+      email: row.email || undefined,
+    }))
+  } catch { return [] }
 }
+
 export async function getLead(id: string): Promise<Lead | null> {
-  const supabase = await createClient()
-  const { data: row, error } = await supabase
-    .from('leads').select('*').eq('id', id).single()
-  if (error || !row) return null
-
-  let ownerName = 'Unassigned'
-  if (row.assigned_to) {
-    const { data: profile } = await supabase
-      .from('user_profiles').select('full_name').eq('user_id', row.assigned_to).single()
-    if (profile) ownerName = profile.full_name || 'Unknown'
-  }
-
-  return {
-    id: row.id,
-    contactName: row.name || 'Unknown',
-    role: row.role || 'Contact',
-    company: row.company || 'Private',
-    companyMark: (row.company || 'P').substring(0, 2).toUpperCase(),
-    logoClass: 'logoGeneric',
-    score: row.score || 0,
-    stage: (row.status as LeadStage) || 'New',
-    owner: ownerName,
-    source: (row.source as any) || 'Website',
-    sourceIcon: 'globe',
-    lastActivity: relativeTime(row.last_contacted_at),
-    engagement: row.engagement || 0,
-    value: row.value ? `$${Number(row.value).toLocaleString()}` : '$0',
-    nextAction: row.next_action || 'Follow up',
-    email: row.email || undefined,
-    phone: row.phone || undefined,
-    notes: row.notes || undefined,
-    website: row.website || undefined,
-  }
+  const token = await getToken()
+  if (!token) return null
+  try {
+    const row = await leadsApi.get(token, id)
+    return {
+      id: row.id,
+      contactName: row.name || 'Unknown',
+      role: row.role || 'Contact',
+      company: row.company || 'Private',
+      companyMark: (row.company || 'P').substring(0, 2).toUpperCase(),
+      logoClass: 'logoGeneric',
+      score: row.score || 0,
+      stage: (row.status as LeadStage) || 'New',
+      owner: 'Unassigned',
+      source: (row.source as any) || 'Website',
+      sourceIcon: 'globe',
+      lastActivity: relativeTime(row.lastContactedAt ?? null),
+      engagement: row.engagement || 0,
+      value: row.value ? `£${Number(row.value).toLocaleString()}` : '£0',
+      nextAction: row.nextAction || 'Follow up',
+      email: row.email || undefined,
+      phone: row.phone || undefined,
+      notes: row.notes || undefined,
+      website: row.website || undefined,
+    }
+  } catch { return null }
 }
 
 export async function getLeadRecords(): Promise<LeadRecord[]> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('leads').select('*').order('created_at', { ascending: false })
-  if (error || !data) return []
-
-  return data.map((row): LeadRecord => ({
-    id: row.id,
-    contactName: row.name || 'Unknown',
-    role: row.role || 'Contact',
-    company: row.company || 'Private',
-    companyMark: (row.company || 'P').substring(0, 2).toUpperCase(),
-    score: row.score || 0,
-    stage: (row.status as LeadStage) || 'New',
-    owner: row.assigned_to || 'Unassigned',
-    source: row.source || 'Website',
-    lastActivity: relativeTime(row.last_contacted_at),
-    engagement: row.engagement || 0,
-    value: row.value ? `$${Number(row.value).toLocaleString()}` : '$0',
-    nextAction: row.next_action || 'Follow up',
-  }))
+  const token = await getToken()
+  if (!token) return []
+  try {
+    const data = await leadsApi.list(token)
+    return data.map((row): LeadRecord => ({
+      id: row.id,
+      contactName: row.name || 'Unknown',
+      role: row.role || 'Contact',
+      company: row.company || 'Private',
+      companyMark: (row.company || 'P').substring(0, 2).toUpperCase(),
+      score: row.score || 0,
+      stage: (row.status as LeadStage) || 'New',
+      owner: 'Unassigned',
+      source: row.source || 'Website',
+      lastActivity: relativeTime(row.lastContactedAt ?? null),
+      engagement: row.engagement || 0,
+      value: row.value ? `£${Number(row.value).toLocaleString()}` : '£0',
+      nextAction: row.nextAction || 'Follow up',
+    }))
+  } catch { return [] }
 }
 
 // ─── VIDEOS ──────────────────────────────────────────────────────────────────
@@ -356,8 +339,8 @@ export async function getSiteRequests(): Promise<SiteRequestRecord[]> {
 
 export async function getDashboardMetrics() {
   const supabase = await createClient()
-  const { data: allLeads } = await supabase.from('leads').select('*')
-  const leads = allLeads || []
+  const token = await getToken()
+  const leads = token ? await leadsApi.list(token).catch(() => []) : []
 
   // Snapshot data for delta comparison (7 days ago)
   const lastWeekDate = new Date()
@@ -393,7 +376,7 @@ export async function getDashboardMetrics() {
 
   const totalLeads = leads.length
   const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-  const newLeads = leads.filter(l => new Date(l.created_at) >= sevenDaysAgo).length
+  const newLeads = leads.filter(l => new Date(l.createdAt) >= sevenDaysAgo).length
   const qualifiedLeads = leads.filter(l => l.status === 'Qualified').length
 
   // Pipeline value: sum of all non-null deal values
@@ -444,26 +427,19 @@ export async function getDashboardMetrics() {
     .sort((a, b) => b.leads - a.leads)
 
   // Owner performance
-  const assignedIds = [...new Set(leads.map(l => l.assigned_to).filter(Boolean))] as string[]
-  const profilesMap: Record<string, { full_name: string; email: string }> = {}
-  if (assignedIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from('user_profiles').select('user_id, full_name, email').in('user_id', assignedIds)
-    profiles?.forEach(p => { profilesMap[p.user_id] = { full_name: p.full_name || 'Unknown', email: p.email || '' } })
-  }
   const ownerMap = new Map<string, { leads: number; won: number; value: number }>()
   leads.forEach(l => {
-    if (!l.assigned_to) return
-    if (!ownerMap.has(l.assigned_to)) ownerMap.set(l.assigned_to, { leads: 0, won: 0, value: 0 })
-    const c = ownerMap.get(l.assigned_to)!
+    if (!l.assignedTo) return
+    if (!ownerMap.has(l.assignedTo)) ownerMap.set(l.assignedTo, { leads: 0, won: 0, value: 0 })
+    const c = ownerMap.get(l.assignedTo)!
     c.leads += 1; if (l.status === 'Won') c.won += 1; c.value += Number(l.value) || 0
   })
   const ownerPerformance: OwnerPerformance[] = Array.from(ownerMap.entries())
     .map(([id, d]) => ({
-      owner: profilesMap[id]?.full_name || 'Unknown',
+      owner: 'Team member',
       leads: d.leads, response: '—', meetings: d.won,
       revenue: `$${d.value.toLocaleString()}`,
-      avatar: (profilesMap[id]?.full_name || 'UN').substring(0, 2).toUpperCase(),
+      avatar: id.substring(0, 2).toUpperCase(),
     }))
     .sort((a, b) => b.leads - a.leads)
 
@@ -740,51 +716,59 @@ export async function getIntegrationStatus() {
 // ─── TASKS, ACTIVITY, RECOMMENDATIONS, GOALS ─────────────────────────────────
 
 export async function getTasks(): Promise<TaskItem[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('lead_tasks').select('*').order('due_at', { ascending: true }).limit(10)
-  if (!data) return []
-  return data.map((t) => ({
-    id: t.id,
-    label: t.title || 'Task',
-    time: t.due_at ? new Date(t.due_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No due date',
-    checked: t.is_done || false,
-  }))
+  const token = await getToken()
+  if (!token) return []
+  try {
+    const data = await tasksApi.listAll(token, 10)
+    return data.map((t) => ({
+      id: t.id,
+      label: t.title || 'Task',
+      time: t.dueDate
+        ? new Date(t.dueDate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : 'No due date',
+      checked: t.isCompleted || false,
+    }))
+  } catch { return [] }
 }
 
 export async function getRecentActivity(): Promise<ActivityItem[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('activity_feed').select('*').order('created_at', { ascending: false }).limit(10)
-  if (!data) return []
-  return data.map(e => ({
-    title: e.description || 'Activity',
-    time: relativeTime(e.created_at),
-  }))
+  const token = await getToken()
+  if (!token) return []
+  try {
+    const data = await activityFeedApi.list(token, 10)
+    return data.map(e => ({
+      title: e.description || e.type || 'Activity',
+      time: relativeTime(e.createdAt),
+    }))
+  } catch { return [] }
 }
 
 export async function getRecommendations(): Promise<Recommendation[]> {
-  const supabase = await createClient()
-  const { data: leads } = await supabase
-    .from('leads').select('id, name, company, score, engagement').order('score', { ascending: false }).limit(5)
-  if (!leads) return []
-  return leads.map((lead: any) => {
-    if ((lead.score || 0) >= 80) return {
-      title: `Follow up with ${lead.name}`,
-      detail: `High score (${lead.score}) — ready to progress`,
-      action: 'Follow up', icon: 'sparkle' as IconName, tone: 'purple' as const,
-    }
-    if ((lead.engagement || 0) < 50) return {
-      title: `Nudge ${lead.name}`,
-      detail: `Low engagement (${lead.engagement}%) — needs attention`,
-      action: 'Nudge', icon: 'clock' as IconName, tone: 'yellow' as const,
-    }
-    return {
-      title: `Create video for ${lead.company}`,
-      detail: `Score ${lead.score} — good prospect for personalised video`,
-      action: 'Create video', icon: 'video' as IconName, tone: 'blue' as const,
-    }
-  })
+  const token = await getToken()
+  if (!token) return []
+  try {
+    const leads = await leadsApi.list(token)
+    return leads
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .slice(0, 5)
+      .map((lead) => {
+        if ((lead.score || 0) >= 80) return {
+          title: `Follow up with ${lead.name}`,
+          detail: `High score (${lead.score}) — ready to progress`,
+          action: 'Follow up', icon: 'sparkle' as IconName, tone: 'purple' as const,
+        }
+        if ((lead.engagement || 0) < 50) return {
+          title: `Nudge ${lead.name}`,
+          detail: `Low engagement (${lead.engagement}%) — needs attention`,
+          action: 'Nudge', icon: 'clock' as IconName, tone: 'yellow' as const,
+        }
+        return {
+          title: `Create video for ${lead.company}`,
+          detail: `Score ${lead.score} — good prospect for personalised video`,
+          action: 'Create video', icon: 'video' as IconName, tone: 'blue' as const,
+        }
+      })
+  } catch { return [] }
 }
 
 export async function getGoals() {
@@ -815,33 +799,21 @@ export type LeadEventRow = {
 }
 
 export async function getLeadEvents(leadId: string): Promise<LeadEventRow[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('lead_events')
-    .select('id, type, note, created_at, metadata, created_by')
-    .eq('lead_id', leadId)
-    .order('created_at', { ascending: false })
-    .limit(100)
-
-  if (!data || data.length === 0) return []
-
-  const creatorIds = [...new Set(data.map(e => e.created_by).filter(Boolean))] as string[]
-  const namesMap: Record<string, string> = {}
-  if (creatorIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from('user_profiles')
-      .select('user_id, email, full_name')
-      .in('user_id', creatorIds)
-    profiles?.forEach((p: { user_id: string; email: string; full_name?: string }) => {
-      namesMap[p.user_id] = p.full_name || p.email?.split('@')[0] || 'Team member'
-    })
-  }
-
-  return data.map(e => ({
-    ...e,
-    title: null,
-    creator_name: e.created_by ? (namesMap[e.created_by] || 'Team member') : null,
-  })) as LeadEventRow[]
+  const token = await getToken()
+  if (!token) return []
+  try {
+    const data = await leadsApi.listEvents(token, leadId)
+    return data.map(e => ({
+      id: e.id,
+      type: e.type,
+      note: e.note ?? null,
+      title: e.title ?? null,
+      created_at: e.createdAt,
+      metadata: e.metadata ? (() => { try { return JSON.parse(e.metadata!) } catch { return null } })() : null,
+      created_by: e.createdBy ?? null,
+      creator_name: null,
+    }))
+  } catch { return [] }
 }
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────

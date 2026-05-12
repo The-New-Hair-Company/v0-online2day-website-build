@@ -84,6 +84,17 @@ export interface LeadTaskDto {
   updatedAt?: string | null
 }
 
+export interface LeadEventApiDto {
+  id: string
+  leadId: string
+  type: string
+  title?: string | null
+  note?: string | null
+  metadata?: string | null
+  createdBy?: string | null
+  createdAt: string
+}
+
 export interface LeadAgreementDto {
   id: string
   leadId: string
@@ -246,6 +257,10 @@ export const leadsApi = {
     return apiFetch<void>(`/api/v1/leads/${id}`, token, { method: 'DELETE' })
   },
 
+  listEvents(token: string, leadId: string): Promise<LeadEventApiDto[]> {
+    return apiFetch<LeadEventApiDto[]>(`/api/v1/leads/${leadId}/events`, token)
+  },
+
   logEvent(token: string, leadId: string, type: string, note?: string, metadata?: string): Promise<void> {
     return apiFetch<void>(`/api/v1/leads/${leadId}/events`, token, {
       method: 'POST',
@@ -317,6 +332,10 @@ export const tasksApi = {
     assignedTo?: string | null
   }): Promise<LeadTaskDto> {
     return apiFetch<LeadTaskDto>(`/api/v1/leads/${leadId}/tasks`, token, { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  listAll(token: string, limit = 20): Promise<LeadTaskDto[]> {
+    return apiFetch<LeadTaskDto[]>(`/api/v1/tasks/upcoming?limit=${limit}`, token)
   },
 
   complete(token: string, leadId: string, taskId: string): Promise<void> {
