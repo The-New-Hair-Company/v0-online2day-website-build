@@ -3,9 +3,8 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
-import { Badge } from '@/components/ui/badge'
 import { ArrowRight, Calendar, Clock } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { blogPublicApi, type BlogPostDto } from '@/lib/api/client'
 
 export const metadata: Metadata = {
   title: 'Blog & Insights | online2day',
@@ -19,28 +18,13 @@ export const metadata: Metadata = {
   alternates: { canonical: 'https://www.online2day.com/blog' },
 }
 
-type Post = {
-  id: string
-  slug: string
-  title: string
-  excerpt: string | null
-  category: string | null
-  cover_url: string | null
-  author_name: string
-  published_at: string
-  read_time: number | null
-  tags: string[]
-}
-
 function fmt(date: string) {
   return new Date(date).toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
+    day: 'numeric', month: 'short', year: 'numeric',
   })
 }
 
-function CategoryBadge({ category }: { category: string | null }) {
+function CategoryBadge({ category }: { category: string | null | undefined }) {
   if (!category) return null
   return (
     <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/15 text-primary border border-primary/20">
@@ -49,19 +33,13 @@ function CategoryBadge({ category }: { category: string | null }) {
   )
 }
 
-function FeaturedPost({ post }: { post: Post }) {
+function FeaturedPost({ post }: { post: BlogPostDto }) {
   return (
     <Link href={`/blog/${post.slug}`} className="group block">
       <div className="relative rounded-2xl overflow-hidden border border-border bg-card hover:border-primary/40 transition-colors duration-300">
-        {post.cover_url ? (
+        {post.coverUrl ? (
           <div className="relative h-72 md:h-96 w-full">
-            <Image
-              src={post.cover_url}
-              alt={post.title}
-              fill
-              className="object-cover"
-              priority
-            />
+            <Image src={post.coverUrl} alt={post.title} fill className="object-cover" priority />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
             <div className="absolute bottom-0 left-0 right-0 p-6 md:p-10">
               <CategoryBadge category={post.category} />
@@ -74,8 +52,8 @@ function FeaturedPost({ post }: { post: Post }) {
                 </p>
               )}
               <div className="mt-4 flex items-center gap-4 text-white/60 text-sm">
-                <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{fmt(post.published_at)}</span>
-                {post.read_time && <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{post.read_time} min read</span>}
+                {post.publishedAt && <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{fmt(post.publishedAt)}</span>}
+                {post.readTime && <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{post.readTime} min read</span>}
                 <span className="ml-auto flex items-center gap-1 text-primary font-medium">Read article <ArrowRight className="h-4 w-4" /></span>
               </div>
             </div>
@@ -83,8 +61,7 @@ function FeaturedPost({ post }: { post: Post }) {
         ) : (
           <div className="relative p-8 md:p-12 bg-gradient-to-br from-card to-primary/5">
             <div className="absolute inset-0 opacity-5"
-              style={{ backgroundImage: 'radial-gradient(circle at 70% 30%, var(--primary) 0%, transparent 60%)' }}
-            />
+              style={{ backgroundImage: 'radial-gradient(circle at 70% 30%, var(--primary) 0%, transparent 60%)' }} />
             <CategoryBadge category={post.category} />
             <h2 className="mt-4 text-3xl md:text-5xl font-bold text-balance leading-tight group-hover:text-primary transition-colors max-w-3xl">
               {post.title}
@@ -95,8 +72,8 @@ function FeaturedPost({ post }: { post: Post }) {
               </p>
             )}
             <div className="mt-6 flex items-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{fmt(post.published_at)}</span>
-              {post.read_time && <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{post.read_time} min read</span>}
+              {post.publishedAt && <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{fmt(post.publishedAt)}</span>}
+              {post.readTime && <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{post.readTime} min read</span>}
               <span className="ml-auto flex items-center gap-1 text-primary font-medium">Read article <ArrowRight className="h-4 w-4" /></span>
             </div>
           </div>
@@ -106,17 +83,12 @@ function FeaturedPost({ post }: { post: Post }) {
   )
 }
 
-function PostCard({ post }: { post: Post }) {
+function PostCard({ post }: { post: BlogPostDto }) {
   return (
-    <Link href={`/blog/${post.slug}`} className="group flex flex-col rounded-xl border border-border bg-card overflow-hidden hover:border-primary/40 transition-colors duration-300 hover:-translate-y-0.5 transform-gpu">
-      {post.cover_url ? (
+    <Link href={`/blog/${post.slug}`} className="group flex flex-col rounded-xl border border-border bg-card overflow-hidden hover:border-primary/40 transition-all duration-300 hover:-translate-y-0.5 transform-gpu">
+      {post.coverUrl ? (
         <div className="relative h-44 w-full overflow-hidden flex-shrink-0">
-          <Image
-            src={post.cover_url}
-            alt={post.title}
-            fill
-            className="object-cover group-hover:scale-105 transition-transform duration-500"
-          />
+          <Image src={post.coverUrl} alt={post.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
         </div>
       ) : (
         <div className="h-44 bg-gradient-to-br from-primary/10 to-primary/5 flex-shrink-0 flex items-center justify-center">
@@ -125,31 +97,19 @@ function PostCard({ post }: { post: Post }) {
           </span>
         </div>
       )}
-
       <div className="flex flex-col flex-1 p-5 gap-3">
         <CategoryBadge category={post.category} />
-
         <h3 className="font-bold text-lg leading-snug text-balance line-clamp-2 group-hover:text-primary transition-colors">
           {post.title}
         </h3>
-
         {post.excerpt && (
           <p className="text-muted-foreground text-sm leading-relaxed line-clamp-3 flex-1">
             {post.excerpt}
           </p>
         )}
-
         <div className="flex items-center justify-between text-xs text-muted-foreground pt-3 border-t border-border mt-auto">
-          <span className="flex items-center gap-1.5">
-            <Calendar className="h-3 w-3" />
-            {fmt(post.published_at)}
-          </span>
-          {post.read_time && (
-            <span className="flex items-center gap-1.5">
-              <Clock className="h-3 w-3" />
-              {post.read_time} min
-            </span>
-          )}
+          {post.publishedAt && <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" />{fmt(post.publishedAt)}</span>}
+          {post.readTime && <span className="flex items-center gap-1.5"><Clock className="h-3 w-3" />{post.readTime} min</span>}
         </div>
       </div>
     </Link>
@@ -157,27 +117,16 @@ function PostCard({ post }: { post: Post }) {
 }
 
 export default async function BlogPage() {
-  const supabase = await createClient()
-
-  const { data } = await supabase
-    .from('blog_posts')
-    .select('id, slug, title, excerpt, category, cover_url, author_name, published_at, read_time, tags')
-    .eq('published', true)
-    .order('published_at', { ascending: false })
-
-  const posts: Post[] = (data || []).map(p => ({ ...p, tags: p.tags ?? [], author_name: p.author_name ?? 'Online2Day Team' }))
+  const posts = await blogPublicApi.listPublished().catch(() => [])
   const [featured, ...rest] = posts
 
   return (
     <>
       <Header />
       <main className="min-h-screen pt-24">
-        {/* ── Page header ────────────────────────────────────────────── */}
         <section className="px-4 pt-10 pb-12">
           <div className="mx-auto max-w-5xl">
-            <p className="text-sm font-semibold tracking-widest uppercase text-primary mb-3">
-              Insights & ideas
-            </p>
+            <p className="text-sm font-semibold tracking-widest uppercase text-primary mb-3">Insights & ideas</p>
             <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-balance">
               From the <span className="text-primary">online2day</span> team
             </h1>
@@ -187,7 +136,6 @@ export default async function BlogPage() {
           </div>
         </section>
 
-        {/* ── Content ────────────────────────────────────────────────── */}
         <section className="px-4 pb-24">
           <div className="mx-auto max-w-5xl">
             {posts.length === 0 ? (
@@ -197,15 +145,10 @@ export default async function BlogPage() {
               </div>
             ) : (
               <>
-                {/* Featured */}
                 {featured && <FeaturedPost post={featured} />}
-
-                {/* Grid */}
                 {rest.length > 0 && (
                   <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                    {rest.map(post => (
-                      <PostCard key={post.id} post={post} />
-                    ))}
+                    {rest.map(post => <PostCard key={post.id} post={post} />)}
                   </div>
                 )}
               </>

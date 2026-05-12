@@ -1,6 +1,6 @@
 const API_BASE = process.env.DOTNET_API_URL ?? 'https://online2dayapi.fly.dev'
 
-// ── Shared fetch helper ───────────────────────────────────────────────────────
+// ── Shared fetch helpers ──────────────────────────────────────────────────────
 
 interface ApiResponse<T> {
   success: boolean
@@ -21,6 +21,21 @@ async function apiFetch<T>(
       ...options.headers,
     },
     cache: 'no-store',
+  })
+
+  const body: ApiResponse<T> = await res.json()
+  if (!res.ok || !body.success) {
+    throw new Error(body.error ?? `API error ${res.status}`)
+  }
+  return body.data as T
+}
+
+// Public endpoints — no auth token required
+async function publicFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+    next: { revalidate: 300 }, // cache public blog for 5 minutes on the edge
   })
 
   const body: ApiResponse<T> = await res.json()
@@ -486,6 +501,90 @@ export const licensedUsersApi = {
 
   remove(token: string, email: string): Promise<void> {
     return apiFetch<void>(`/api/v1/admin/licensed-users/${encodeURIComponent(email)}`, token, { method: 'DELETE' })
+  },
+}
+
+// ── Blog API ──────────────────────────────────────────────────────────────────
+
+export interface BlogPostDto {
+  id: string
+  slug: string
+  title: string
+  excerpt?: string | null
+  content?: string | null
+  category?: string | null
+  coverUrl?: string | null
+  authorName: string
+  authorRole: string
+  tags: string[]
+  readTime?: number | null
+  isPublished: boolean
+  publishedAt?: string | null
+  seoTitle?: string | null
+  seoDesc?: string | null
+  createdAt: string
+  updatedAt?: string | null
+}
+
+export interface BlogPostWriteDto {
+  slug: string
+  title: string
+  excerpt?: string | null
+  content?: string | null
+  category?: string | null
+  coverUrl?: string | null
+  authorName?: string | null
+  authorRole?: string | null
+  tags?: string[]
+  readTime?: number | null
+  seoTitle?: string | null
+  seoDesc?: string | null
+}
+
+// Public — no token, cached at edge for 5 min
+export const blogPublicApi = {
+  listPublished(): Promise<BlogPostDto[]> {
+    return publicFetch<BlogPostDto[]>('/api/v1/blog')
+  },
+
+  getBySlug(slug: string): Promise<BlogPostDto> {
+    return publicFetch<BlogPostDto>(`/api/v1/blog/${slug}`)
+  },
+}
+
+// Admin — requires bearer token (AdminOnly policy on .NET side)
+export const blogAdminApi = {
+  listAll(token: string): Promise<BlogPostDto[]> {
+    return apiFetch<BlogPostDto[]>('/api/v1/admin/blog', token)
+  },
+
+  getById(token: string, id: string): Promise<BlogPostDto> {
+    return apiFetch<BlogPostDto>(`/api/v1/admin/blog/${id}`, token)
+  },
+
+  create(token: string, data: BlogPostWriteDto): Promise<BlogPostDto> {
+    return apiFetch<BlogPostDto>('/api/v1/admin/blog', token, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  update(token: string, id: string, data: BlogPostWriteDto): Promise<void> {
+    return apiFetch<void>(`/api/v1/admin/blog/${id}`, token, {
+      method: 'PUT',
+      body: JSON.stringify({ ...data, id }),
+    })
+  },
+
+  togglePublish(token: string, id: string, publish: boolean): Promise<void> {
+    return apiFetch<void>(`/api/v1/admin/blog/${id}/publish`, token, {
+      method: 'PATCH',
+      body: JSON.stringify({ publish }),
+    })
+  },
+
+  delete(token: string, id: string): Promise<void> {
+    return apiFetch<void>(`/api/v1/admin/blog/${id}`, token, { method: 'DELETE' })
   },
 }
 
