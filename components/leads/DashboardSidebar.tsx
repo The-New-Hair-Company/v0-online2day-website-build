@@ -11,6 +11,7 @@ import {
   LogOut,
   Mail,
   MessageCircle,
+  Newspaper,
   Plug,
   RefreshCw,
   Settings,
@@ -32,7 +33,7 @@ type NavItem = {
   badge?: string
 }
 
-type ActiveDashboardSection = 'overview' | 'leads' | 'videos' | 'emails' | 'messages' | 'site-requests' | 'integrations' | 'settings' | 'enterprise' | 'reports'
+type ActiveDashboardSection = 'overview' | 'leads' | 'videos' | 'emails' | 'messages' | 'site-requests' | 'integrations' | 'settings' | 'enterprise' | 'reports' | 'blog'
 
 const defaultAccess: DashboardAccessProfile = {
   isAdmin: false,
@@ -48,6 +49,7 @@ const defaultAccess: DashboardAccessProfile = {
     siteRequests: true,
     integrations: false,
     settings: false,
+    blog: false,
   },
 }
 
@@ -94,6 +96,7 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
     { label: 'Emails', href: '/dashboard/emails', icon: Mail, active: active === 'emails' },
     { label: 'Messages', href: '/dashboard/messages', icon: MessageCircle, badge: unread ? String(unread) : undefined, active: active === 'messages' },
     { label: 'Enterprise', href: '/dashboard/enterprise', icon: LayoutDashboard, active: active === 'enterprise' },
+    { label: 'Blog', href: '/dashboard/blog', icon: Newspaper, active: active === 'blog' },
     { label: 'Reports', href: '/dashboard/reports', icon: ShieldCheck, active: active === 'reports' },
     { label: 'Site Requests', href: '/dashboard/site-requests', icon: FileInput, active: active === 'site-requests' },
     { label: 'Integrations', href: '/dashboard/integrations', icon: Plug, active: active === 'integrations' },
@@ -107,6 +110,7 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
     if (item.href.endsWith('/emails')) return access.modules.emails
     if (item.href.endsWith('/messages')) return access.modules.messages
     if (item.href.endsWith('/enterprise')) return access.modules.enterprise
+    if (item.href.endsWith('/blog')) return access.modules.blog
     if (item.href.endsWith('/reports')) return access.modules.reports
     if (item.href.endsWith('/site-requests')) return access.modules.siteRequests
     if (item.href.endsWith('/integrations')) return access.modules.integrations

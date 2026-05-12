@@ -880,6 +880,7 @@ export type DashboardAccessProfile = {
     siteRequests: boolean
     integrations: boolean
     settings: boolean
+    blog: boolean
   }
 }
 
@@ -918,6 +919,7 @@ export async function getDashboardAccessProfile(): Promise<DashboardAccessProfil
     siteRequests: licensed,
     integrations: admin,
     settings: admin,
+    blog: admin,
   }
   if (!user || !licensed) {
     return { isAdmin: admin, canUseSystem: licensed, modules: fallbackModules }
@@ -938,6 +940,7 @@ export async function getDashboardAccessProfile(): Promise<DashboardAccessProfil
         siteRequests: true,
         integrations: true,
         settings: true,
+        blog: true,
       },
     }
   }
@@ -967,6 +970,7 @@ export async function getDashboardAccessProfile(): Promise<DashboardAccessProfil
       siteRequests: Boolean(row.canManageLeads),
       integrations: Boolean(row.canManageUsers || row.canManageBilling),
       settings: Boolean(row.canManageUsers || row.canManageBilling),
+      blog: false,
     },
   }
 }
