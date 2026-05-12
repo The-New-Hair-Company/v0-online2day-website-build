@@ -267,14 +267,10 @@ export async function saveVideoEditorProject(payload: EditorProjectPayload) {
     let assetId: string = payload.sourceAssetId || ''
 
     if (payload.sourceAssetId) {
-      // Update existing — fallback to direct since .NET doesn't have a metadata-only update
-      const { error } = await supabase
-        .from('lead_assets')
-        .update({ name: payload.title, metadata: JSON.parse(projectMetadata) } as any)
-        .eq('id', payload.sourceAssetId)
-        .eq('lead_id', payload.leadId)
-
-      if (error) throw new Error(error.message)
+      await assetsApi.update(token, payload.leadId, payload.sourceAssetId, {
+        name: payload.title,
+        metadata: projectMetadata,
+      })
     } else {
       const created = await assetsApi.create(token, payload.leadId, {
         name: payload.title,

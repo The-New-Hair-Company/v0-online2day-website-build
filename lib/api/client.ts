@@ -171,6 +171,19 @@ export interface BulkImportResultDto {
   importId: string
 }
 
+export interface LicensedUserApiDto {
+  id: string
+  email: string
+  fullName?: string | null
+  role: string
+  status: string
+  seatType?: string | null
+  invitedBy?: string | null
+  lastSeenAt?: string | null
+  createdAt: string
+  updatedAt?: string | null
+}
+
 // ── Leads API ─────────────────────────────────────────────────────────────────
 
 export const leadsApi = {
@@ -275,6 +288,10 @@ export const assetsApi = {
     slug?: string | null
   }): Promise<LeadAssetDto> {
     return apiFetch<LeadAssetDto>(`/api/v1/leads/${leadId}/assets`, token, { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  update(token: string, leadId: string, assetId: string, data: { name: string; metadata?: string | null }): Promise<void> {
+    return apiFetch<void>(`/api/v1/leads/${leadId}/assets/${assetId}`, token, { method: 'PATCH', body: JSON.stringify(data) })
   },
 
   delete(token: string, leadId: string, assetId: string): Promise<void> {
@@ -427,6 +444,29 @@ export const siteBuildApi = {
       method: 'PATCH',
       body: JSON.stringify({ status, stagingUrl: stagingUrl ?? null }),
     })
+  },
+}
+
+// ── Licensed Users API ────────────────────────────────────────────────────────
+
+export const licensedUsersApi = {
+  list(token: string): Promise<LicensedUserApiDto[]> {
+    return apiFetch<LicensedUserApiDto[]>('/api/v1/admin/licensed-users', token)
+  },
+
+  add(token: string, data: { email: string; role: string; fullName?: string | null; seatType?: string | null }): Promise<LicensedUserApiDto> {
+    return apiFetch<LicensedUserApiDto>('/api/v1/admin/licensed-users', token, { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  updateRole(token: string, email: string, role: string): Promise<void> {
+    return apiFetch<void>(`/api/v1/admin/licensed-users/${encodeURIComponent(email)}/role`, token, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    })
+  },
+
+  remove(token: string, email: string): Promise<void> {
+    return apiFetch<void>(`/api/v1/admin/licensed-users/${encodeURIComponent(email)}`, token, { method: 'DELETE' })
   },
 }
 
