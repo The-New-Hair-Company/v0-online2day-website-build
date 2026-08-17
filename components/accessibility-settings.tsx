@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Eye, Settings, Type } from 'lucide-react'
+import { Check, Eye, RotateCcw, Settings, Type, X } from 'lucide-react'
 
 type AccessibilitySettings = {
   theme: 'dark' | 'light'
@@ -100,6 +100,11 @@ export function AccessibilitySettingsButton() {
     })
   }
 
+  function reset() {
+    setSettings(defaults)
+    applySettings(defaults)
+  }
+
   const rows = useMemo(() => [
     {
       label: 'Theme',
@@ -121,7 +126,7 @@ export function AccessibilitySettingsButton() {
               <strong>Accessibility</strong>
               <span>Make Online2Day easier to use.</span>
             </div>
-            <button type="button" onClick={() => setOpen(false)} aria-label="Close accessibility settings">x</button>
+            <button type="button" onClick={() => setOpen(false)} aria-label="Close accessibility settings"><X size={15} /></button>
           </header>
 
           {rows.map((row) => (
@@ -189,6 +194,10 @@ export function AccessibilitySettingsButton() {
                 Reduce motion
               </button>
             </div>
+          </div>
+
+          <div className="accessibility-group accessibility-reset">
+            <button type="button" onClick={reset}><RotateCcw size={13} /> Reset settings</button>
           </div>
         </section>
       ) : null}

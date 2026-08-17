@@ -148,12 +148,16 @@
 }
 
 @layer base {
+  html {
+    font-size: calc(16px * var(--accessibility-text-scale));
+    scroll-behavior: smooth;
+  }
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
-    font-size: calc(16px * var(--accessibility-text-scale));
+    font-size: 1rem;
     line-height: var(--accessibility-line-height);
     text-rendering: optimizeLegibility;
   }
@@ -180,17 +184,21 @@
 }
 
 .accessibility-trigger {
-  width: 48px;
-  height: 48px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in oklch, var(--border), var(--primary) 40%);
-  background: var(--primary);
-  color: var(--primary-foreground);
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  background: #11182c;
+  color: #f8fafc;
   display: grid;
   place-items: center;
-  box-shadow: 0 14px 34px rgb(0 0 0 / 0.34);
+  box-shadow: 0 16px 42px rgb(11 16 32 / 0.28), inset 0 1px rgb(255 255 255 / 0.08);
   cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
 }
+
+.accessibility-trigger:hover { transform: translateY(-2px); background: #18213a; box-shadow: 0 20px 48px rgb(11 16 32 / 0.34); }
+.accessibility-trigger:active { transform: translateY(0) scale(0.97); }
 
 .accessibility-trigger svg {
   display: block;
@@ -202,7 +210,7 @@
 .accessibility-panel {
   width: min(360px, calc(100vw - 28px));
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 20px;
   background: color-mix(in oklch, var(--card), black 4%);
   color: var(--card-foreground);
   box-shadow: 0 24px 60px rgb(0 0 0 / 0.42);
@@ -299,6 +307,11 @@
   border-color: var(--primary);
   background: color-mix(in oklch, var(--primary), transparent 82%);
   color: var(--primary);
+}
+
+.accessibility-reset button {
+  width: 100%;
+  justify-content: center;
 }
 
 /* ── Blog prose content ──────────────────────────────────────────────────── */

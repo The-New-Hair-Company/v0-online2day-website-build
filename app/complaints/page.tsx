@@ -1,105 +1,19 @@
-import type { Metadata } from 'next'
-import { LegalPage, type LegalSection } from '@/components/legal/legal-page'
+import type { Metadata } from "next";
+import { site } from "@/lib/site";
 
-export const metadata: Metadata = {
-  title: 'Complaints Charter | Online2Day',
-  description: 'How Online2Day handles complaints, escalation, consumer rights, and UK dispute resolution references.',
-}
-
-const sections: LegalSection[] = [
-  {
-    title: 'Our Promise',
-    body: [
-      'We want complaints to be easy to raise, carefully reviewed, and resolved without defensiveness. This charter applies to complaints about Online2Day projects, support, billing, dashboard access, CRM workflows, video tools, hosted video pages, privacy handling, or website content.',
-      'We will treat a complaint as an opportunity to fix the issue, explain our decision clearly, and improve the service.',
-    ],
-  },
-  {
-    title: 'How To Complain',
-    items: [
-      'Email info@online2day.com with the subject line "Complaint".',
-      'Call +44 333 050 6098 and ask for the complaint to be logged.',
-      'Include your name, company if relevant, contact details, project or account reference, what happened, what outcome you want, and any useful evidence.',
-    ],
-  },
-  {
-    title: 'What Happens Next',
-    table: {
-      columns: ['Stage', 'Target timing', 'What we do'],
-      rows: [
-        ['Acknowledgement', 'Within 2 working days', 'Confirm receipt, log the complaint, and identify who owns the response.'],
-        ['Initial review', 'Within 10 working days', 'Review the facts, speak to the relevant team, and propose a fix, explanation, or next step.'],
-        ['Escalation', 'Within 20 working days', 'If you disagree, a senior reviewer will reconsider the complaint and issue a final response where possible.'],
-        ['Deadlock or external route', 'After final response or unresolved delay', 'Where applicable, we will explain external options such as ICO complaints, Citizens Advice, ADR signposting, or court routes.'],
-      ],
-    },
-  },
-  {
-    title: 'Remedies We May Offer',
-    items: [
-      'A clear explanation, apology, correction, rework, replacement, support intervention, service credit, refund, or cancellation route where appropriate.',
-      'A privacy response, data correction, access support, deletion review, or restriction review where the complaint concerns personal data.',
-      'A process change, security action, audit note, or staff guidance where the complaint shows something operational needs to improve.',
-    ],
-  },
-  {
-    title: 'UK Consumer Law Reference',
-    body: [
-      'If you are a UK consumer, we handle service complaints with reference to the Consumer Rights Act 2015, including the requirement that services are performed with reasonable care and skill. Digital content and unfair terms rules may also be relevant depending on what was bought.',
-      'Where distance selling rules apply, the Consumer Contracts Regulations 2013 may require specific pre-contract and cancellation information. Bespoke or fully performed services may have different cancellation treatment.',
-    ],
-    links: [
-      { label: 'GOV.UK: Consumer Rights Act 2015', href: 'https://www.gov.uk/government/publications/consumer-rights-act-2015/consumer-rights-act-2015' },
-      { label: 'Consumer Contracts Regulations 2013', href: 'https://www.legislation.gov.uk/uksi/2013/3134/contents/made' },
-    ],
-  },
-  {
-    title: 'Alternative Dispute Resolution',
-    body: [
-      'Alternative dispute resolution, or ADR, is a way to resolve disputes without going to court. As at 5 May 2026, GOV.UK states that 2026 ADR instruments under the Digital Markets, Competition and Consumers Act 2024 implement Chapter 4 of Part 4 and replace the older voluntary ADR accreditation framework with a mandatory accreditation framework for ADR providers for consumer contract disputes.',
-      'If we cannot resolve a consumer complaint in-house, we will identify a relevant accredited ADR provider or advice route where one is available and tell you whether we agree to use that process.',
-    ],
-    links: [
-      { label: 'GOV.UK: ADR reforms 2026', href: 'https://www.gov.uk/government/publications/the-digital-markets-competition-and-consumers-act-2024-alternative-dispute-regulations-2026' },
-      { label: 'Citizens Advice consumer service', href: 'https://www.citizensadvice.org.uk/consumer/' },
-      { label: 'CTSI ADR providers', href: 'https://www.tradingstandards.uk/consumer-help/adr-approved-bodies/' },
-    ],
-  },
-  {
-    title: 'Data Protection Complaints',
-    body: [
-      'If your complaint is about personal data, privacy, cookies, tracking, marketing emails, recording consent, or data rights, we will handle it under our Privacy Policy and applicable UK data protection law.',
-      'You can complain to the Information Commissioner\'s Office if you are unhappy with our response or how we handle personal data.',
-    ],
-    links: [
-      { label: 'Online2Day Privacy Policy', href: '/privacy' },
-      { label: 'ICO: make a complaint', href: 'https://ico.org.uk/make-a-complaint/' },
-      { label: 'GOV.UK: UK data protection law', href: 'https://www.gov.uk/data-protection/the-data-protection-act' },
-    ],
-  },
-  {
-    title: 'What We Need From You',
-    items: [
-      'Raise the complaint as soon as reasonably possible so evidence is easier to review.',
-      'Keep communications factual and provide screenshots, emails, recordings, invoices, or account details where relevant.',
-      'Tell us what outcome you want, even if we cannot always provide that exact remedy.',
-    ],
-  },
-  {
-    title: 'No Retaliation',
-    body: [
-      'We will not treat you unfairly for raising a complaint. We may still need to pause work or restrict access for security, non-payment, unlawful content, or misuse, but we will separate those issues from the complaint review.',
-    ],
-  },
-]
+export const metadata: Metadata = { title: "Complaints charter", description: "How online2day.com receives, investigates and responds to complaints." };
 
 export default function ComplaintsPage() {
   return (
-    <LegalPage
-      title="Complaints Charter"
-      description="A clear route for raising concerns and getting a fair, documented response from Online2Day."
-      lastUpdated="5 May 2026"
-      sections={sections}
-    />
-  )
+    <article className="legal-page cream-section"><div className="shell legal-shell">
+      <header><span className="kicker dark">Customer care</span><h1>Complaints charter</h1><p>Our aim is to resolve problems early, fairly and in plain English.</p></header>
+      <section><h2>1. Tell us what went wrong</h2><p>Email <a href={`mailto:${site.email}`}>{site.email}</a> with the subject “Complaint”. Include your name, project or account reference where available, what happened, the outcome you are seeking and any relevant evidence.</p></section>
+      <section><h2>2. We will acknowledge it</h2><p>We aim to acknowledge a formal complaint within two working days. If the issue can be fixed immediately, we may resolve it at the same time.</p></section>
+      <section><h2>3. A fair review</h2><p>The complaint will be reviewed against the agreed scope, communications, service records and any relevant technical information. Where practical, a person not responsible for the disputed decision will review the complaint or its proposed resolution.</p></section>
+      <section><h2>4. Our response</h2><p>We aim to provide a substantive written response within 10 working days. If the issue is unusually complex or depends on a third party, we will explain the reason for delay and provide an updated position rather than leaving you without information.</p></section>
+      <section><h2>5. Possible outcomes</h2><p>Depending on the circumstances, an outcome may include an explanation, correction, re-performance of work, practical remediation, service credit, refund where appropriate, or confirmation that the original position is maintained with reasons.</p></section>
+      <section><h2>6. Escalation</h2><p>If you remain dissatisfied, reply and request an internal escalation. We will review the unresolved points and provide a final response. Any statutory or contractual rights you may have are unaffected by this process.</p></section>
+      <section><h2>7. Learning from complaints</h2><p>We use complaint themes to improve specifications, communication, testing and support processes. A complaint is not treated as an inconvenience; it is evidence that something deserves examination.</p></section>
+    </div></article>
+  );
 }

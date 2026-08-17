@@ -15,6 +15,7 @@ async function apiFetch<T>(
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    signal: options.signal ?? AbortSignal.timeout(8_000),
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
@@ -34,6 +35,7 @@ async function apiFetch<T>(
 async function publicFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    signal: options.signal ?? AbortSignal.timeout(8_000),
     headers: { 'Content-Type': 'application/json', ...options.headers },
     next: { revalidate: 300 }, // cache public blog for 5 minutes on the edge
   })
