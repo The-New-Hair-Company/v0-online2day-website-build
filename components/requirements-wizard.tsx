@@ -59,7 +59,15 @@ export function RequirementsWizard() {
       const response = await fetch("/api/requirements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, website, startedAt }),
+        body: JSON.stringify({
+          ...data,
+          website,
+          startedAt,
+          utmSource: params.get("utm_source") || "",
+          utmMedium: params.get("utm_medium") || "",
+          utmCampaign: params.get("utm_campaign") || "",
+          referrer: typeof document === "undefined" ? "" : document.referrer,
+        }),
       });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error || "We could not send your brief.");

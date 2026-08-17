@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createHubSpotContact, createHubSpotNote } from '@/app/actions/hubspot'
+import { syncOnline2DayBrief } from '@/lib/hubspot/online2day'
 import { enforceRateLimit, getClientIp } from '@/lib/security/rate-limit'
 import { createClient } from '@/lib/supabase/server'
 
@@ -16,6 +16,10 @@ const requestSchema = z.object({
   company: z.string().trim().max(160),
   notes: z.string().trim().max(3000),
   website: z.string().max(200).default(''),
+  utmSource: z.string().trim().max(160).optional().default(''),
+  utmMedium: z.string().trim().max(160).optional().default(''),
+  utmCampaign: z.string().trim().max(200).optional().default(''),
+  referrer: z.string().trim().max(500).optional().default(''),
   startedAt: z.number().int().positive(),
 })
 
@@ -73,13 +77,12 @@ export async function POST(request: Request) {
   }
 
   const data = parsed.data
+  const submissionId = crypto.randomUUID()
   const formAge = Date.now() - data.startedAt
   if (data.website || formAge < 1_200 || formAge > 2 * 60 * 60 * 1000) {
     return NextResponse.json({ ok: true }, { status: 202 })
   }
 
-  const [firstname = '', ...surnameParts] = data.name.split(/\s+/)
-  const lastname = surnameParts.join(' ')
   const [budgetMin, budgetMax] = budgets[data.budget]
   const summary = [
     `Project type: ${data.projectType}`,
@@ -94,6 +97,7 @@ export async function POST(request: Request) {
   const supabaseWrite = async () => {
     const supabase = await createClient()
     const { error } = await supabase.from('site_requests').insert({
+      id: submissionId,
       title: `${data.projectType.replaceAll('-', ' ')} — ${data.plan}`,
       company: data.company || 'Individual enquiry',
       type: data.projectType === 'webapp' ? 'Web application' : data.projectType === 'marketing' ? 'Marketing' : 'Website',
@@ -111,17 +115,18 @@ export async function POST(request: Request) {
   }
 
   const hubspotWrite = async () => {
-    await createHubSpotContact({
+    await syncOnline2DayBrief({
+      ...data,
+      submissionId,
       email: data.email.toLowerCase(),
-      firstname,
-      lastname,
-      company: data.company || undefined,
-      lifecyclestage: 'lead',
     })
-    await createHubSpotNote(data.email.toLowerCase(), `Online2Day project brief\n\n${summary}`)
   }
 
   const results = await Promise.allSettled([supabaseWrite(), hubspotWrite()])
+  const hubspotResult = results[1]
+  if (hubspotResult.status === 'rejected') {
+    console.error('HubSpot brief sync failed', hubspotResult.reason instanceof Error ? hubspotResult.reason.message : 'Unknown error')
+  }
   if (results.every((result) => result.status === 'rejected')) {
     return NextResponse.json({ error: 'We could not send your brief. Please email hello@online2day.com.' }, { status: 503 })
   }

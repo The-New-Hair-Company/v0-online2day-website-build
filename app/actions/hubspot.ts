@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { syncOnline2DayBrief } from '@/lib/hubspot/online2day'
 
 /// <reference types="node" />
 
@@ -159,20 +160,20 @@ export async function submitContactForm(data: {
         throw new Error('HUBSPOT_ACCESS_TOKEN is not configured')
     }
 
-    const [firstname = '', lastname = ''] = data.name.trim().split(/\s+/, 2)
-
-    // 1. Create or update the contact
-    const contact = await createHubSpotContact({
-        email: data.email,
-        firstname,
-        lastname: lastname || firstname,
-        company: data.company,
-        lifecyclestage: 'subscriber',
-        lead_source: 'online2day website contact form',
+    const submissionId = crypto.randomUUID()
+    const contact = await syncOnline2DayBrief({
+        submissionId,
+        plan: 'not-sure',
+        projectType: 'website-enquiry',
+        pages: 'not-supplied',
+        features: [],
+        timeline: 'flexible',
+        budget: 'not-sure',
+        name: data.name,
+        email: data.email.toLowerCase(),
+        company: data.company || '',
+        notes: data.message,
     })
-
-    // 2. Add a note with their message
-    await createHubSpotNote(data.email, `Contact Form Message:\n\n${data.message}`)
 
     // 3. Save to Supabase Leads Table for the Dashboard
     const supabase = await createClient()
@@ -202,7 +203,7 @@ export async function submitContactForm(data: {
         })
     }
 
-    return { success: true, contactId: contact.vid }
+    return { success: true, contactId: contact.contactId }
 }
 
 /**
@@ -222,7 +223,6 @@ export async function createHubSpotContactFromSignUp(data: {
         const contact = await createHubSpotContact({
             email: data.email,
             lifecyclestage: 'lead',
-            lead_source: data.source || 'online2day website sign-up',
         })
 
         return { success: true, contactId: contact.vid }
