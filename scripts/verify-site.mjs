@@ -66,7 +66,13 @@ check('Checkout rejects non-allowlisted plans', response.status === 400, `status
 response = await post('/api/checkout', { plan: 'launch', billing: 'monthly' }, { origin: 'https://attacker.invalid' })
 check('Checkout blocks cross-origin requests', response.status === 403, `status=${response.status}`)
 response = await post('/api/checkout', { plan: 'launch', billing: 'monthly' })
-check('Checkout fails closed when secrets are absent', response.status === 503, `status=${response.status}`)
+if (new URL(base).hostname === 'www.online2day.com') {
+  const checkoutPayload = await response.json().catch(() => ({}))
+  check('Checkout creates a live Stripe session', response.status === 201, `status=${response.status}`)
+  check('Checkout returns a Stripe-hosted URL', /^https:\/\/checkout\.stripe\.com\//.test(checkoutPayload.url || ''))
+} else {
+  check('Checkout fails closed when secrets are absent', response.status === 503, `status=${response.status}`)
+}
 check('API responses are never cacheable', response.headers.get('cache-control')?.includes('no-store'))
 
 response = await post('/api/requirements', '{')
