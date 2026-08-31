@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { syncOnline2DayBrief } from '@/lib/hubspot/online2day'
 import { enforceRateLimit, getClientIp } from '@/lib/security/rate-limit'
-import { createClient } from '@/lib/supabase/server'
+import { platformServerFetch } from '@/lib/api/platform-server'
 
 const requestSchema = z.object({
   plan: z.enum(['not-sure', 'launch', 'growth', 'bespoke']),
@@ -95,30 +94,32 @@ export async function POST(request: Request) {
   ].join('\n')
 
   const supabaseWrite = async () => {
-    const supabase = await createClient()
-    const { error } = await supabase.from('site_requests').insert({
-      id: submissionId,
-      title: `${data.projectType.replaceAll('-', ' ')} — ${data.plan}`,
-      company: data.company || 'Individual enquiry',
-      type: data.projectType === 'webapp' ? 'Web application' : data.projectType === 'marketing' ? 'Marketing' : 'Website',
-      priority: data.timeline === 'asap' ? 'High' : 'Medium',
-      stage: 'New',
-      contact_name: data.name,
-      contact_email: data.email.toLowerCase(),
-      description: summary,
-      budget_min: budgetMin,
-      budget_max: budgetMax,
-      timeline_weeks: timelineWeeks[data.timeline],
-      next_action: 'Review project brief',
-    } as never)
-    if (error) throw error
+    await platformServerFetch('/api/v1/online2day/site-requests', {
+      method: 'POST',
+      serviceRequest: true,
+      body: JSON.stringify({
+        id: submissionId,
+        title: `${data.projectType.replaceAll('-', ' ')} — ${data.plan}`,
+        company: data.company || 'Individual enquiry',
+        type: data.projectType === 'webapp' ? 'Web application' : data.projectType === 'marketing' ? 'Marketing' : 'Website',
+        priority: data.timeline === 'asap' ? 'High' : 'Medium',
+        stage: 'New',
+        contact_name: data.name,
+        contact_email: data.email.toLowerCase(),
+        description: summary,
+        budget_min: budgetMin,
+        budget_max: budgetMax,
+        timeline_weeks: timelineWeeks[data.timeline],
+        next_action: 'Review project brief',
+      }),
+    })
   }
 
   const hubspotWrite = async () => {
-    await syncOnline2DayBrief({
-      ...data,
-      submissionId,
-      email: data.email.toLowerCase(),
+    await platformServerFetch('/api/v1/integrations/hubspot/enquiries', {
+      method: 'POST',
+      serviceRequest: true,
+      body: JSON.stringify({ ...data, submissionId, email: data.email.toLowerCase() }),
     })
   }
 
