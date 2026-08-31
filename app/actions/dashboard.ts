@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { leadsApi, activityFeedApi, tasksApi, prefsApi } from '@/lib/api/client'
+import { platformServerFetch } from '@/lib/api/platform-server'
 import { isFoundingAdminEmail, normalizeEmail } from '@/lib/license'
 import { getEnterpriseStateValue, setEnterpriseStateValue } from '@/lib/actions/enterprise-actions'
 import type {
@@ -645,14 +646,29 @@ export async function getIntegrationStatus() {
     detail: resendKey ? 'API key configured in environment.' : 'Missing RESEND_API_KEY.',
   })
 
-  const hubspotToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN || ''
-  checks.push({
-    provider: 'HubSpot',
-    status: hubspotToken ? 'healthy' : 'degraded',
-    latencyMs: null,
-    checkedAt: nowIso,
-    detail: hubspotToken ? 'Private app token configured.' : 'Missing HUBSPOT_PRIVATE_APP_TOKEN.',
-  })
+  const { data: sessionData } = await supabase.auth.getSession()
+  const hubspotStarted = Date.now()
+  try {
+    if (!sessionData.session?.access_token) throw new Error('No authenticated API session')
+    await platformServerFetch<{ results: unknown[] }>('/api/v1/integrations/hubspot/contacts?limit=1', {
+      accessToken: sessionData.session.access_token,
+    })
+    checks.push({
+      provider: 'HubSpot',
+      status: 'healthy',
+      latencyMs: Date.now() - hubspotStarted,
+      checkedAt: nowIso,
+      detail: 'Authenticated HubSpot API probe completed successfully.',
+    })
+  } catch (error) {
+    checks.push({
+      provider: 'HubSpot',
+      status: 'down',
+      latencyMs: Date.now() - hubspotStarted,
+      checkedAt: nowIso,
+      detail: error instanceof Error ? error.message : 'HubSpot API probe failed.',
+    })
+  }
 
   const { data: persistedChecks } = await supabase
     .from('integration_health_checks')
