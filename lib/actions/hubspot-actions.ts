@@ -3,36 +3,21 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { logAsyncActionFailure, withRetry } from './reliability-actions'
+import { platformServerFetch } from '@/lib/api/platform-server'
 
 export async function fetchHubspotContacts() {
-  const token = process.env.HUBSPOT_ACCESS_TOKEN
-  if (!token) return { error: 'No Hubspot token found' }
-
   try {
-    const response = await withRetry(
+    const supabase = await createClient()
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData.session?.access_token
+    if (!token) return { error: 'Not authenticated' }
+    const data = await withRetry(
       'hubspot_fetch_contacts',
-      () => fetch('https://api.hubapi.com/crm/v3/objects/contacts?properties=firstname,lastname,email,phone,company', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        next: { revalidate: 60 },
+      () => platformServerFetch<{ results: unknown[] }>('/api/v1/integrations/hubspot/contacts?limit=100', {
+        accessToken: token,
       }),
-      { attempts: 3, payload: { endpoint: 'crm/v3/objects/contacts' } },
+      { attempts: 3, payload: { endpoint: 'api/v1/integrations/hubspot/contacts' } },
     )
-
-    if (!response.ok) {
-      const detail = await response.text()
-      await logAsyncActionFailure({
-        action: 'hubspot_fetch_contacts',
-        payload: { endpoint: 'crm/v3/objects/contacts' },
-        error: new Error(`HubSpot status ${response.status}: ${detail}`),
-        recoverable: true,
-      })
-      return { error: 'Failed to fetch Hubspot contacts' }
-    }
-
-    const data = await response.json()
     return { data: data.results }
   } catch (err) {
     await logAsyncActionFailure({
