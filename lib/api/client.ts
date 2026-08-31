@@ -8,6 +8,41 @@ interface ApiResponse<T> {
   error?: string
 }
 
+interface ProblemDetails {
+  error?: string
+  detail?: string
+  title?: string
+}
+
+async function readApiResponse<T>(res: Response): Promise<T> {
+  if (res.status === 204) return undefined as T
+
+  const raw = await res.text()
+  let body: unknown = null
+  try {
+    body = raw ? JSON.parse(raw) : null
+  } catch {
+    // A non-JSON upstream response is handled as an invalid/error response below.
+  }
+
+  if (!res.ok) {
+    const problem = body && typeof body === 'object' ? body as ProblemDetails : null
+    throw new Error(problem?.error ?? problem?.detail ?? problem?.title ?? `API error ${res.status}`)
+  }
+
+  // The legacy Online2Day API wraps payloads in { success, data }. The Company
+  // Platform API follows normal ASP.NET Core conventions and returns the payload
+  // directly. Supporting both makes migrations endpoint-by-endpoint safe.
+  if (body && typeof body === 'object' && 'success' in body) {
+    const envelope = body as ApiResponse<T>
+    if (!envelope.success) throw new Error(envelope.error ?? `API error ${res.status}`)
+    return envelope.data as T
+  }
+
+  if (body === null && raw) throw new Error('API returned an invalid response')
+  return body as T
+}
+
 async function apiFetch<T>(
   path: string,
   token: string,
@@ -24,11 +59,7 @@ async function apiFetch<T>(
     cache: 'no-store',
   })
 
-  const body: ApiResponse<T> = await res.json()
-  if (!res.ok || !body.success) {
-    throw new Error(body.error ?? `API error ${res.status}`)
-  }
-  return body.data as T
+  return readApiResponse<T>(res)
 }
 
 // Public endpoints — no auth token required
@@ -40,11 +71,7 @@ async function publicFetch<T>(path: string, options: RequestInit = {}): Promise<
     next: { revalidate: 300 }, // cache public blog for 5 minutes on the edge
   })
 
-  const body: ApiResponse<T> = await res.json()
-  if (!res.ok || !body.success) {
-    throw new Error(body.error ?? `API error ${res.status}`)
-  }
-  return body.data as T
+  return readApiResponse<T>(res)
 }
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
