@@ -1,6 +1,5 @@
 'use client'
 
-import { createClient } from '@/lib/supabase/client'
 import { getPostLoginRedirect } from '@/app/actions/dashboard'
 import { Button } from '@/components/ui/button'
 import {
@@ -25,13 +24,17 @@ export default function Page() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
     setIsLoading(true)
     setError(null)
 
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-      if (signInError) throw signInError
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const result = await response.json().catch(() => ({})) as { error?: string }
+      if (!response.ok) throw new Error(result.error || 'Login failed.')
 
       // Role check runs server-side — no admin emails exposed in the client bundle
       const destination = await getPostLoginRedirect()
@@ -39,7 +42,7 @@ export default function Page() {
       if (destination) {
         router.push(destination)
       } else {
-        await supabase.auth.signOut()
+        await fetch('/auth/signout', { method: 'POST' })
         setError('This account is not licensed. Ask an admin to add your email in Settings › License.')
       }
     } catch (err: unknown) {
