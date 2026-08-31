@@ -45,6 +45,9 @@ export function SiteHeader() {
               {label}
             </Link>
           ))}
+          <Link className="button button-small button-outline" href="/auth/login" onClick={() => setOpen(false)}>
+            Login
+          </Link>
           <Link className="button button-small button-lime" href="/start" onClick={() => setOpen(false)}>
             Start a project <span aria-hidden="true">↗</span>
           </Link>
