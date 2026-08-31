@@ -1,6 +1,5 @@
 'use client'
 
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -35,21 +34,22 @@ export default function ResetPasswordPage() {
     setStatus('loading')
     setErrorMessage('')
 
-    const supabase = createClient()
-    
-    const { error } = await supabase.auth.updateUser({
-      password: password
+    const response = await fetch('/api/auth/password-reset/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
     })
+    const result = await response.json().catch(() => ({})) as { error?: string }
 
-    if (error) {
+    if (!response.ok) {
       setStatus('error')
-      setErrorMessage(error.message)
+      setErrorMessage(result.error || 'The password could not be updated.')
     } else {
       toast({
         title: 'Password updated',
         description: 'Your password has been successfully reset.',
       })
-      router.push('/dashboard')
+      router.push('/protected')
     }
   }
 
