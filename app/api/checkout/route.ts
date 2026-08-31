@@ -7,18 +7,35 @@ const checkoutSchema = z.object({
   billing: z.enum(['monthly', 'annual']),
 })
 
-const priceEnvironmentKeys = {
-  launch: {
-    monthly: 'STRIPE_PRICE_LAUNCH_MONTHLY',
-    annual: 'STRIPE_PRICE_LAUNCH_ANNUAL',
-    setup: 'STRIPE_PRICE_LAUNCH_SETUP',
-  },
-  growth: {
-    monthly: 'STRIPE_PRICE_GROWTH_MONTHLY',
-    annual: 'STRIPE_PRICE_GROWTH_ANNUAL',
-    setup: 'STRIPE_PRICE_GROWTH_SETUP',
-  },
-} as const
+const checkoutResponseSchema = z.object({
+  id: z.string().min(1),
+  url: z.string().url().refine((value) => {
+    try {
+      return new URL(value).hostname === 'checkout.stripe.com'
+    } catch {
+      return false
+    }
+  }),
+})
+
+function getCompanyPlatformApiUrl() {
+  const value = process.env.COMPANY_PLATFORM_API_URL || process.env.DOTNET_API_URL
+  if (!value) return null
+
+  try {
+    const url = new URL(value)
+    if (process.env.NODE_ENV === 'production' && url.protocol !== 'https:') return null
+    return url
+  } catch {
+    return null
+  }
+}
+
+function getIdempotencyKey(request: Request) {
+  const supplied = request.headers.get('idempotency-key')
+  if (supplied && /^[A-Za-z0-9._:-]{8,200}$/.test(supplied)) return supplied
+  return `online2day-${crypto.randomUUID()}`
+}
 
 function isSameOrigin(request: Request) {
   const origin = request.headers.get('origin')
@@ -53,46 +70,40 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unknown package selection.' }, { status: 400 })
   }
 
-  const secretKey = process.env.STRIPE_SECRET_KEY
-  const keys = priceEnvironmentKeys[parsed.data.plan]
-  const recurringPrice = process.env[keys[parsed.data.billing]]
-  const setupPrice = process.env[keys.setup]
-  if (!secretKey || !recurringPrice || !setupPrice || !recurringPrice.startsWith('price_') || !setupPrice.startsWith('price_')) {
+  const apiUrl = getCompanyPlatformApiUrl()
+  if (!apiUrl) {
     return NextResponse.json({ error: 'Checkout is temporarily unavailable. Please use the project brief instead.' }, { status: 503 })
   }
 
-  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin
-  const siteUrl = configuredSiteUrl.replace(/\/$/, '')
-  const body = new URLSearchParams({
-    mode: 'subscription',
-    'line_items[0][price]': recurringPrice,
-    'line_items[0][quantity]': '1',
-    'line_items[1][price]': setupPrice,
-    'line_items[1][quantity]': '1',
-    success_url: `${siteUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${siteUrl}/pricing?checkout=cancelled`,
-    billing_address_collection: 'required',
-    allow_promotion_codes: 'true',
-    'metadata[plan_id]': parsed.data.plan,
-    'metadata[billing_period]': parsed.data.billing,
-    'subscription_data[metadata][plan_id]': parsed.data.plan,
-    'subscription_data[metadata][billing_period]': parsed.data.billing,
-  })
-
-  const stripeResponse = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body,
-    cache: 'no-store',
-  })
-  const session = await stripeResponse.json() as { url?: string }
-
-  if (!stripeResponse.ok || !session.url?.startsWith('https://checkout.stripe.com/')) {
-    return NextResponse.json({ error: 'Stripe could not start checkout. Please try again.' }, { status: 502 })
+  let apiResponse: Response
+  try {
+    apiResponse = await fetch(new URL('/api/v1/billing/public-checkout-sessions', apiUrl), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': getIdempotencyKey(request),
+      },
+      body: JSON.stringify({
+        plan: parsed.data.plan,
+        billingPeriod: parsed.data.billing,
+      }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8_000),
+    })
+  } catch (error) {
+    console.error('Company Platform checkout request failed', error instanceof Error ? error.message : 'Unknown error')
+    return NextResponse.json({ error: 'Checkout is temporarily unavailable. Please try again.' }, { status: 502 })
   }
 
-  return NextResponse.json({ url: session.url }, { status: 201 })
+  const responseBody: unknown = await apiResponse.json().catch(() => null)
+  const session = checkoutResponseSchema.safeParse(responseBody)
+  if (!apiResponse.ok || !session.success) {
+    console.error('Company Platform checkout returned an invalid response', {
+      status: apiResponse.status,
+      responseValid: session.success,
+    })
+    return NextResponse.json({ error: 'Checkout is temporarily unavailable. Please try again.' }, { status: 502 })
+  }
+
+  return NextResponse.json({ url: session.data.url }, { status: 201 })
 }
