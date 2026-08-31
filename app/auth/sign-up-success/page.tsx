@@ -45,12 +45,13 @@ export default function Page() {
       <div className="w-full max-w-sm">
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">Confirm your email</CardTitle>
-            <CardDescription>Open the confirmation link before signing in.</CardDescription>
+            <CardTitle className="text-2xl">Check your account</CardTitle>
+            <CardDescription>New accounts require email confirmation.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <p className="text-sm text-muted-foreground">
-              Check your inbox and spam folder. Delivery can take a few minutes.
+              If this is a new account, check your inbox and spam folder for a confirmation link.
+              If you have used this email before, sign in or reset your password instead.
             </p>
             <form onSubmit={resend} className="space-y-3">
               <Label htmlFor="resend-email">Didn&apos;t receive it?</Label>
@@ -74,6 +75,9 @@ export default function Page() {
             </form>
             <Button className="w-full" asChild>
               <Link href="/auth/login">Return to login</Link>
+            </Button>
+            <Button variant="ghost" className="w-full" asChild>
+              <Link href="/auth/forgot-password">Reset password</Link>
             </Button>
           </CardContent>
         </Card>
