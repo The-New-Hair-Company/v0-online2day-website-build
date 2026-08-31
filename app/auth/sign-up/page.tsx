@@ -1,6 +1,5 @@
 'use client'
 
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -14,7 +13,6 @@ import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { createHubSpotContactFromSignUp } from '@/app/actions/hubspot'
 
 export default function Page() {
   const [email, setEmail] = useState('')
@@ -26,7 +24,6 @@ export default function Page() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
     setIsLoading(true)
     setError(null)
 
@@ -37,21 +34,13 @@ export default function Page() {
     }
 
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo:
-            process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ||
-            `${window.location.origin}/protected`,
-        },
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       })
-      if (error) throw error
-
-      // Create HubSpot contact in background — don't block redirect on failure
-      createHubSpotContactFromSignUp({ email }).catch(() => {
-        // Silently ignore HubSpot errors so sign-up flow is never broken
-      })
+      const result = await response.json().catch(() => ({})) as { error?: string }
+      if (!response.ok) throw new Error(result.error || 'Account creation failed.')
 
       router.push('/auth/sign-up-success')
     } catch (error: unknown) {
