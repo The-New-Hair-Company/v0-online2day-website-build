@@ -26,7 +26,7 @@ export async function POST(request: Request) {
 
   const email = input.data.email.toLowerCase()
   const supabase = await createClient()
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password: input.data.password,
     options: { emailRedirectTo: authRedirectUrl(request) },
@@ -42,6 +42,10 @@ export async function POST(request: Request) {
     }, rateLimited ? 429 : 503)
   }
 
-  await Promise.allSettled([createHubSpotContactFromSignUp({ email })])
+  // Supabase intentionally returns an obfuscated user with no identities when
+  // the address already exists. Do not create duplicate CRM activity in that case.
+  if (data.user?.identities?.length) {
+    await Promise.allSettled([createHubSpotContactFromSignUp({ email })])
+  }
   return authJson({ ok: true }, 201)
 }
