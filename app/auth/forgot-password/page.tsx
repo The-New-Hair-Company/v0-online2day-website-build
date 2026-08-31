@@ -1,6 +1,5 @@
 'use client'
 
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -24,18 +23,16 @@ export default function ForgotPasswordPage() {
     setStatus('loading')
     setErrorMessage('')
 
-    const supabase = createClient()
-    
-    // Use the explicit site URL if available, otherwise fallback to window.location.origin
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin
-
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${siteUrl}/auth/reset-password`,
+    const response = await fetch('/api/auth/password-reset/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
     })
+    const result = await response.json().catch(() => ({})) as { error?: string }
 
-    if (error) {
+    if (!response.ok) {
       setStatus('error')
-      setErrorMessage(error.message)
+      setErrorMessage(result.error || 'The password reset email could not be sent.')
     } else {
       setStatus('success')
     }
