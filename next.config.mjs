@@ -16,7 +16,7 @@ const nextConfig = {
       "font-src 'self' data: https:",
       "style-src 'self' 'unsafe-inline'",
       "script-src 'self' https://va.vercel-scripts.com",
-      "connect-src 'self' https://*.supabase.co https://api.resend.com https://api.hubapi.com https://vitals.vercel-insights.com",
+      "connect-src 'self' https://*.supabase.co https://api.resend.com https://vitals.vercel-insights.com",
       "form-action 'self'",
       'report-uri /api/security/csp-report',
       'upgrade-insecure-requests',

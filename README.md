@@ -61,8 +61,9 @@ Required in Vercel (or `.env.local`):
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=       # server-side only
+COMPANY_PLATFORM_API_URL=        # Azure API gateway base URL
+GATEWAY_SERVER_KEY=              # server-to-server workflow authentication
 RESEND_API_KEY=                  # email sends
-HUBSPOT_PRIVATE_APP_TOKEN=       # contact sync
 NEXT_PUBLIC_SITE_URL=https://www.online2day.com
 ```
 
@@ -158,9 +159,10 @@ No implementation yet. Plan: call `logLeadEvent(leadId, 'Lead Viewed', ...)` in 
 ### Remaining / Not Yet Built
 
 #### 1. HubSpot contact sync
-`lib/actions/hubspot-actions.ts` posts contacts to HubSpot on form submit. Requires:
-- `HUBSPOT_PRIVATE_APP_TOKEN` env var set in Vercel
-- A HubSpot Private App created with `crm.objects.contacts.write` scope
+HubSpot requests are routed through the Azure API gateway. The browser and Vercel
+application never receive the HubSpot private-app token. Dashboard requests use the
+signed-in user's Supabase access token; public form workflows use `GATEWAY_SERVER_KEY`
+between Vercel and the gateway.
 
 #### 2. Rich text / data input editor
 Lead notes, email compose, and data entry fields use plain `<textarea>` inputs. A rich editor (e.g. Tiptap or Lexical) would enable formatting, mentions, and embeds across the CRM.
