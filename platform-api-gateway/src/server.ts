@@ -508,6 +508,18 @@ app.post('/api/v1/online2day/contact-leads', {
   return reply.code(201).send({ id: inserted[0]?.id })
 })
 
+app.get('/api/v1/online2day/crm-leads', {
+  preHandler: requireSupabaseAdmin,
+}, async () => supabaseFetch<Array<{
+  id: string
+  name: string | null
+  company: string | null
+  email: string | null
+  status: string | null
+}>>('leads?select=id,name,company,email,status&order=created_at.desc&limit=500', {
+  headers: { Accept: 'application/json' },
+}))
+
 app.get('/api/v1/online2day/video-assets', {
   preHandler: requireSupabaseAdmin,
 }, async (request) => {
