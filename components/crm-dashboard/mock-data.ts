@@ -97,7 +97,14 @@ export const videos: VideoRecord[] = [
   { id: 'video-4', title: 'Case Study Results', company: 'Growth Labs', duration: '02:05', funnelStage: 'Prospecting', owner: 'Michael B.', channel: 'Link', cta: 'Download case study', status: 'Viewed', watchRate: 71, lastViewed: 'May 16, 2025 11:03 AM', replies: 0, nextAction: 'Add to campaign' },
   { id: 'video-5', title: 'Product Demo Overview', company: 'Nimbus Solutions', duration: '01:30', funnelStage: 'Qualified', owner: 'Jessica L.', channel: 'Email', cta: 'Book demo', status: 'Draft', watchRate: 0, lastViewed: '—', replies: 0, nextAction: 'Finish & send' },
   { id: 'video-6', title: 'Customer Success Story', company: 'Velocity Partners', duration: '02:36', funnelStage: 'Prospecting', owner: 'Daniel K.', channel: 'Link', cta: 'Learn more', status: 'Ready', watchRate: 23, lastViewed: 'May 15, 2025 6:20 PM', replies: 0, nextAction: 'Share via email' },
-]
+].map((video) => ({
+  ...video,
+  leadId: null,
+  slug: '',
+  createdAt: '2025-05-17T00:00:00.000Z',
+  viewCount: 0,
+  hasMedia: true,
+}))
 
 export const emailMetrics: MetricItem[] = [
   { label: 'Emails sent', value: '1,842', delta: '+18.5% vs May 4 – May 10', icon: Mail, sparkline: [42, 44, 43, 46, 47, 45, 48, 46, 47, 46, 49, 50] },
