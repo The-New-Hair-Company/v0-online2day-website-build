@@ -541,7 +541,6 @@ export async function getEmailMetrics() {
   const totalOpen = sends.filter((send) => Boolean(send.opened_at)).length
   const totalClick = sends.filter((send) => Boolean(send.clicked_at)).length
   const totalReply = sends.filter((send) => Boolean(send.replied_at)).length
-  const meetingsBooked = tmpl.reduce((sum, template) => sum + Math.max(0, template.meetings_booked || 0), 0)
   const openRate = totalSent > 0 ? Math.round((totalOpen / totalSent) * 100) : 0
   const clickRate = totalSent > 0 ? Math.round((totalClick / totalSent) * 100) : 0
   const replyRate = totalSent > 0 ? Math.round((totalReply / totalSent) * 100) : 0
@@ -552,7 +551,6 @@ export async function getEmailMetrics() {
     { label: 'Open rate', value: `${openRate}%`, delta: totalSent ? 'Measured events' : 'No sends yet' },
     { label: 'Click rate', value: `${clickRate}%`, delta: totalSent ? 'Measured events' : 'No sends yet' },
     { label: 'Reply rate', value: `${replyRate}%`, delta: totalSent ? 'Recorded replies' : 'No sends yet' },
-    { label: 'Meetings booked', value: `${meetingsBooked}`, delta: 'Attributed' },
   ]
 }
 
