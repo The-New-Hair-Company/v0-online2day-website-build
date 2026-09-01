@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 
-export default function VideoTracker({ leadId }: { leadId: string }) {
+export default function VideoTracker({ assetId }: { assetId: string }) {
   const tracked = useRef(false)
 
   useEffect(() => {
@@ -13,9 +13,9 @@ export default function VideoTracker({ leadId }: { leadId: string }) {
     fetch('/api/track/view', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ leadId })
+      body: JSON.stringify({ assetId })
     }).catch(console.error)
-  }, [leadId])
+  }, [assetId])
 
   return null
 }
