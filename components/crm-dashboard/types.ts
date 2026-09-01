@@ -48,6 +48,8 @@ export type LeadRecord = {
 
 export type VideoRecord = {
   id: string
+  leadId: string | null
+  slug: string
   title: string
   company: string
   duration: string
@@ -60,6 +62,9 @@ export type VideoRecord = {
   lastViewed: string
   replies: number
   nextAction: string
+  createdAt: string
+  viewCount: number
+  hasMedia: boolean
 }
 
 export type EmailRecord = {
@@ -87,10 +92,13 @@ export type EmailComposerLead = {
 
 export type EmailComposerVideo = {
   id: string
-  leadId: string
+  leadId: string | null
   name: string
   slug: string
   createdAt: string
+  storagePath: string
+  previewUrl: string
+  metadata: Record<string, unknown> | null
 }
 
 export type ConversationRecord = {
