@@ -209,7 +209,7 @@ const videoAssetMetadataSchema = z.record(z.string(), z.unknown()).refine(
 const videoAssetCreateSchema = z.object({
   leadId: z.string().uuid().nullable(),
   name: z.string().trim().min(1).max(160),
-  url: z.string().trim().url().max(2_000).optional().default(''),
+  url: z.string().trim().url().max(2_000).optional(),
   storagePath: z.string().trim().max(700).optional().default(''),
   publicUrl: z.string().trim().url().max(2_000).nullable().optional(),
   slug: z.string().trim().regex(/^[a-z0-9][a-z0-9-]{2,159}$/),
@@ -546,7 +546,7 @@ app.post('/api/v1/online2day/video-assets', {
       name: body.name,
       type: 'video',
       url: body.url,
-      storage_path: body.storagePath || null,
+      storage_path: body.storagePath,
       public_url: body.publicUrl ?? null,
       slug: body.slug,
       metadata: body.metadata,
