@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { enforceRateLimit, getClientIp } from '@/lib/security/rate-limit'
 import { recordSecurityEvent } from '@/lib/security/security-events'
+import { platformServerFetch } from '@/lib/api/platform-server'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -18,25 +18,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
     }
 
-    const { leadId } = await request.json()
+    const { assetId } = await request.json()
     
-    if (!leadId || typeof leadId !== 'string' || !UUID_RE.test(leadId)) {
-      await recordSecurityEvent({ type: 'invalid_uuid', route: '/api/track/view', ip, detail: `leadId=${String(leadId)}` })
-      return NextResponse.json({ error: 'Missing leadId' }, { status: 400 })
+    if (!assetId || typeof assetId !== 'string' || !UUID_RE.test(assetId)) {
+      await recordSecurityEvent({ type: 'invalid_uuid', route: '/api/track/view', ip, detail: `assetId=${String(assetId)}` })
+      return NextResponse.json({ error: 'Missing assetId' }, { status: 400 })
     }
 
-    const supabase = await createClient()
-
-    const { error } = await supabase.from('lead_events').insert({
-      lead_id: leadId,
-      type: 'Video View',
-      note: 'Client viewed the personalized video page',
+    await platformServerFetch(`/api/v1/online2day/video-assets/${assetId}/view`, {
+      method: 'POST', serviceRequest: true, body: '{}',
     })
-
-    if (error) {
-      console.error('Error logging video view:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
 
     return NextResponse.json(
       { success: true },
