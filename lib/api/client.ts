@@ -115,6 +115,27 @@ export interface LeadAssetDto {
   updatedAt?: string | null
 }
 
+export interface VideoAssetDto {
+  id: string
+  lead_id: string | null
+  name: string
+  type: 'video'
+  url: string | null
+  storage_path: string | null
+  public_url: string | null
+  slug: string | null
+  metadata: Record<string, unknown> | string | null
+  view_count: number | null
+  created_at: string
+  lead?: {
+    id: string
+    name: string | null
+    company: string | null
+    status: string | null
+    email: string | null
+  } | null
+}
+
 export interface LeadTaskDto {
   id: string
   leadId: string
@@ -359,6 +380,55 @@ export const assetsApi = {
 
   recordView(token: string, leadId: string, assetId: string): Promise<void> {
     return apiFetch<void>(`/api/v1/leads/${leadId}/assets/${assetId}/view`, token, { method: 'POST' })
+  },
+}
+
+// ── Online2Day video library (Azure gateway → Supabase) ─────────────────────
+
+export const videoAssetsApi = {
+  list(token: string, options?: { leadId?: string; limit?: number }): Promise<VideoAssetDto[]> {
+    const params = new URLSearchParams()
+    if (options?.leadId) params.set('leadId', options.leadId)
+    if (options?.limit) params.set('limit', String(options.limit))
+    const query = params.toString()
+    return apiFetch<VideoAssetDto[]>(`/api/v1/online2day/video-assets${query ? `?${query}` : ''}`, token)
+  },
+
+  create(token: string, data: {
+    leadId: string | null
+    name: string
+    url?: string
+    storagePath?: string
+    publicUrl?: string | null
+    slug: string
+    metadata?: Record<string, unknown>
+  }): Promise<VideoAssetDto> {
+    return apiFetch<VideoAssetDto>('/api/v1/online2day/video-assets', token, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  update(token: string, assetId: string, data: {
+    name?: string
+    url?: string
+    storagePath?: string
+    publicUrl?: string | null
+    slug?: string
+    metadata?: Record<string, unknown>
+  }): Promise<VideoAssetDto> {
+    return apiFetch<VideoAssetDto>(`/api/v1/online2day/video-assets/${assetId}`, token, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+
+  playback(token: string, assetId: string): Promise<{ url: string | null; expiresIn: number | null }> {
+    return apiFetch<{ url: string | null; expiresIn: number | null }>(`/api/v1/online2day/video-assets/${assetId}/playback`, token)
+  },
+
+  delete(token: string, assetId: string): Promise<void> {
+    return apiFetch<void>(`/api/v1/online2day/video-assets/${assetId}`, token, { method: 'DELETE' })
   },
 }
 
