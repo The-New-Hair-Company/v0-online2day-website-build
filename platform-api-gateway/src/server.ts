@@ -5,6 +5,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { z } from 'zod'
 import { registerPlatformRoutes } from './platform-routes.js'
 import { registerMediaRoutes } from './media-routes.js'
+import { registerCompatRoutes } from './compat-routes.js'
 
 const required = (name: string) => {
   const value = process.env[name]?.trim()
@@ -594,6 +595,11 @@ registerMediaRoutes(app, {
   requireAdmin: requireSupabaseAdmin,
   supabaseFetch,
   supabaseStorageFetch,
+})
+
+registerCompatRoutes(app, {
+  requireAdmin: requireSupabaseAdmin,
+  supabaseFetch,
 })
 
 app.get('/health/live', async () => ({ status: 'Healthy' }))
@@ -1212,18 +1218,31 @@ app.post('/api/v1/online2day/integration-health-checks', {
     checkedAt: z.string().datetime(),
     detail: z.string().trim().max(1_000),
   })).min(1).max(12) }).parse(request.body)
-  await supabaseFetch('integration_health_checks', {
-    method: 'POST',
-    headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify(body.checks.map((check) => ({
-      provider: check.provider,
-      status: check.status,
-      latency_ms: check.latencyMs,
-      checked_at: check.checkedAt,
-      detail: check.detail,
-    }))),
-  })
-  return reply.code(201).send({ success: true })
+  try {
+    await supabaseFetch('integration_health_checks', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify(body.checks.map((check) => ({
+        provider: check.provider,
+        status: check.status,
+        latency_ms: check.latencyMs,
+        checked_at: check.checkedAt,
+        detail: check.detail,
+      }))),
+    })
+    return reply.code(201).send({ success: true, persisted: 'history' })
+  } catch (error) {
+    if (!(error instanceof Error) || !/integration_health_checks|PGRST205/i.test(error.message)) throw error
+    // Older projects have the durable integrations table but not the optional
+    // append-only history table. Keep their current status accurate instead of
+    // turning a successful provider check into a dashboard error.
+    await Promise.all(body.checks.map((check) => supabaseFetch(
+      `integrations?name=ilike.${encodeURIComponent(check.provider)}`,
+      { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: check.status, last_synced_at: check.checkedAt, updated_at: check.checkedAt }) },
+    )))
+    request.log.warn('Integration health history table is unavailable; current integration status was updated instead')
+    return reply.code(201).send({ success: true, persisted: 'current-status' })
+  }
 })
 
 app.route({

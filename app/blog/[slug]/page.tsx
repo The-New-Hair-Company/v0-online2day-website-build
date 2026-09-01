@@ -8,6 +8,7 @@ import { ArrowLeft, Calendar, Clock, Tag } from 'lucide-react'
 import { blogPublicApi } from '@/lib/api/client'
 
 const SITE_URL = 'https://www.online2day.com'
+export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({
   params,

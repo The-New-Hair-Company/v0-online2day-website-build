@@ -367,7 +367,7 @@ export function SettingsClient() {
         <div className={styles.titleRow}>
           <h1>Settings</h1>
         </div>
-        <p className={styles.subtle}>Preferences are saved locally and applied across the website, dashboard, editor and video pages.</p>
+        <p className={styles.subtle}>Preferences are securely synced through the Online2Day API and applied across the website, dashboard, editor and video pages.</p>
 
         <div className={styles.settingsTabs} role="tablist">
           <button className={`${styles.settingsTab} ${activeTab === 'setup' ? styles.settingsTabActive : ''}`} onClick={() => setActiveTab('setup')}>Setup Center</button>

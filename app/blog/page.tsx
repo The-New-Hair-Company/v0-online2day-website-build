@@ -6,6 +6,8 @@ import { Footer } from '@/components/footer'
 import { ArrowRight, Calendar, Clock } from 'lucide-react'
 import { blogPublicApi, type BlogPostDto } from '@/lib/api/client'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: 'Blog & Insights | online2day',
   description: 'Practical articles on web development, CRM systems, digital strategy and running an efficient online business. Written by the Online2Day team.',
