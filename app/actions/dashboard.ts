@@ -615,13 +615,13 @@ export async function getIntegrationStatus() {
     detail: support ? 'Authenticated Azure API database probe completed successfully.' : 'Authenticated database probe failed.',
   })
 
-  const resendKey = process.env.RESEND_API_KEY || ''
+  const resendConfigured = Boolean(support?.capabilities?.resend)
   checks.push({
     provider: 'Resend',
-    status: resendKey ? 'healthy' : 'down',
+    status: resendConfigured ? 'healthy' : 'down',
     latencyMs: null,
     checkedAt: nowIso,
-    detail: resendKey ? 'API key configured in environment.' : 'Missing RESEND_API_KEY.',
+    detail: resendConfigured ? 'Sending is configured in the authenticated Azure API.' : 'Azure API email delivery is not configured.',
   })
 
   const hubspotStarted = Date.now()

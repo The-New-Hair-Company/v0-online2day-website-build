@@ -222,6 +222,7 @@ export interface DashboardSupportDto {
   integrations: Array<{ id: string; name: string; type: string; status: string | null; last_synced_at: string | null; updated_at: string | null }>
   goals: Array<{ id: string; label: string; target_value: number | string; current_value: number | string; unit: string; period_start: string; period_end: string; created_at: string; updated_at: string | null }>
   healthChecks: Array<{ provider: string; status: 'healthy' | 'degraded' | 'down' | 'unknown'; latency_ms: number | null; checked_at: string; detail: string | null }>
+  capabilities?: { resend?: boolean }
 }
 
 export interface LeadTaskDto {
@@ -571,6 +572,24 @@ export const emailWorkspaceApi = {
 
   listSends(token: string, limit = 50): Promise<EmailSendDto[]> {
     return apiFetch<EmailSendDto[]>(`/api/v1/online2day/email-sends?limit=${limit}`, token)
+  },
+
+  sendEmail(token: string, data: {
+    leadId?: string | null
+    templateId?: string | null
+    to: string
+    recipientName?: string
+    subject: string
+    body: string
+    templateName?: string
+    videoAssetId?: string
+    videoSlug?: string
+    ctaLabel?: string
+    idempotencyKey: string
+  }): Promise<{ success: boolean; id: string; warning?: string }> {
+    return apiFetch<{ success: boolean; id: string; warning?: string }>('/api/v1/online2day/send-email', token, {
+      method: 'POST', body: JSON.stringify(data),
+    })
   },
 
   logSend(token: string, data: {

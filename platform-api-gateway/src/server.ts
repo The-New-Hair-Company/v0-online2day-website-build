@@ -19,6 +19,10 @@ const config = {
   supabaseServiceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
   hubspotAccessToken: required('HUBSPOT_ACCESS_TOKEN'),
   gatewayServerKey: required('GATEWAY_SERVER_KEY'),
+  resendApiKey: process.env.RESEND_API_KEY?.trim() || '',
+  siteUrl: (process.env.SITE_URL || 'https://www.online2day.com').replace(/\/$/, ''),
+  emailFrom: process.env.EMAIL_FROM?.trim() || 'Online2Day <hello@online2day.com>',
+  emailReplyTo: process.env.EMAIL_REPLY_TO?.trim() || 'hello@online2day.com',
   hubspotOwnerEmail: process.env.HUBSPOT_OWNER_EMAIL?.trim().toLowerCase(),
   hubspotDealPipeline: process.env.HUBSPOT_DEAL_PIPELINE || 'default',
   hubspotNewEnquiryStage: process.env.HUBSPOT_NEW_ENQUIRY_STAGE || 'appointmentscheduled',
@@ -249,6 +253,20 @@ const emailSendSchema = z.object({
   resendId: z.string().trim().min(1).max(160),
 })
 
+const sendEmailSchema = z.object({
+  leadId: z.string().uuid().nullable().optional(),
+  templateId: z.string().uuid().nullable().optional(),
+  to: z.string().trim().email().max(254),
+  recipientName: z.string().trim().max(160).optional(),
+  subject: z.string().trim().min(1).max(180),
+  body: z.string().trim().min(1).max(20_000),
+  templateName: z.string().trim().max(120).optional(),
+  videoAssetId: z.string().uuid().optional(),
+  videoSlug: z.string().trim().max(180).optional(),
+  ctaLabel: z.string().trim().max(100).optional(),
+  idempotencyKey: z.string().trim().min(8).max(180),
+})
+
 const emailEventSchema = z.object({
   eventId: z.string().trim().min(1).max(200),
   emailId: z.string().trim().min(1).max(160),
@@ -281,6 +299,123 @@ type VideoAssetRow = {
 }
 
 const videoAssetSelect = 'id,lead_id,name,type,url,storage_path,public_url,slug,metadata,view_count,created_at,lead:leads(id,name,company,status,email)'
+
+function escapeEmailHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function renderEmailHtml(input: {
+  recipientName?: string
+  body: string
+  videoUrl?: string | null
+  videoTitle?: string | null
+  ctaLabel?: string
+}) {
+  const paragraphs = input.body
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p style="margin:0 0 16px;color:#d6deea;line-height:1.65">${escapeEmailHtml(paragraph).replaceAll('\n', '<br/>')}</p>`)
+    .join('')
+  const safeVideoUrl = input.videoUrl ? escapeEmailHtml(input.videoUrl) : ''
+
+  return `
+    <div style="margin:0;padding:0;background:#05070b;font-family:Inter,Arial,sans-serif;color:#f7f9ff">
+      <table width="100%" role="presentation" cellspacing="0" cellpadding="0" style="background:#05070b;padding:32px 16px">
+        <tr><td align="center">
+          <table width="100%" role="presentation" cellspacing="0" cellpadding="0" style="max-width:680px;border:1px solid #20304f;border-radius:16px;overflow:hidden;background:#0c121d">
+            <tr><td style="padding:24px 28px;border-bottom:1px solid #20304f">
+              <div style="font-size:24px;font-weight:800;color:#4d86ff">Online2Day</div>
+              <div style="margin-top:6px;color:#8f9caf;font-size:13px">Personalised client communication</div>
+            </td></tr>
+            <tr><td style="padding:28px">
+              ${input.recipientName ? `<p style="margin:0 0 16px;color:#f7f9ff;font-size:18px;font-weight:700">Hi ${escapeEmailHtml(input.recipientName)},</p>` : ''}
+              ${paragraphs}
+              ${safeVideoUrl ? `<a href="${safeVideoUrl}" style="display:block;margin:24px 0;padding:20px;border:1px solid #2f6bff;border-radius:12px;background:#08152d;text-decoration:none"><span style="display:block;color:#72aeff;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em">Personalised video</span><strong style="display:block;margin-top:8px;color:#fff;font-size:18px">${escapeEmailHtml(input.videoTitle || 'Watch your video')}</strong><span style="display:inline-block;margin-top:14px;padding:10px 16px;border-radius:8px;background:#2f6bff;color:#fff;font-weight:800">${escapeEmailHtml(input.ctaLabel || 'Watch video')}</span></a>` : ''}
+              <p style="margin:22px 0 0;color:#8f9caf;font-size:12px;line-height:1.6">Sent securely from the Online2Day CRM. Engagement is recorded through the authenticated Online2Day API.</p>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </div>
+  `
+}
+
+async function resolveEmailVideo(videoAssetId?: string, videoSlug?: string) {
+  if (videoSlug) return { url: `${config.siteUrl}/v/${encodeURIComponent(videoSlug)}`, title: 'Personalised video' }
+  if (!videoAssetId) return { url: null, title: null }
+  const rows = await supabaseFetch<Array<Pick<VideoAssetRow, 'id' | 'name' | 'slug' | 'url' | 'storage_path'>>>(
+    `lead_assets?id=eq.${encodeURIComponent(videoAssetId)}&type=eq.video&select=id,name,slug,url,storage_path&limit=1`,
+    { headers: { Accept: 'application/json' } },
+  )
+  const asset = rows[0]
+  if (!asset) throw Object.assign(new Error('Video asset not found.'), { statusCode: 404 })
+  if (asset.slug) return { url: `${config.siteUrl}/v/${encodeURIComponent(asset.slug)}`, title: asset.name }
+  if (!asset.storage_path) return { url: asset.url || null, title: asset.name }
+  const objectPath = asset.storage_path.split('/').map(encodeURIComponent).join('/')
+  const signed = await supabaseStorageFetch<{ signedURL?: string; signedUrl?: string }>(
+    `object/sign/lead-videos/${objectPath}`,
+    { method: 'POST', body: JSON.stringify({ expiresIn: 60 * 60 * 24 * 14 }) },
+  )
+  const signedPath = signed.signedURL || signed.signedUrl
+  return { url: signedPath ? `${config.supabaseUrl}/storage/v1${signedPath}` : asset.url || null, title: asset.name }
+}
+
+async function recordEmailSend(userId: string, body: z.infer<typeof emailSendSchema>) {
+  const rows = await supabaseFetch<Array<Record<string, unknown>>>(
+    'emails?select=id,lead_id,template_id,subject,body,status,sent_at,opened_at,clicked_at,replied_at,created_at',
+    {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        lead_id: body.leadId || null,
+        sender_id: userId,
+        template_id: body.templateId || null,
+        subject: body.subject,
+        body: body.body,
+        status: `sent:${body.resendId}`,
+        sent_at: new Date().toISOString(),
+      }),
+    },
+  )
+  const emailRecord = rows[0]
+  if (!emailRecord) throw new Error('Email send could not be recorded.')
+
+  if (body.templateId) {
+    const templates = await supabaseFetch<Array<{ sent_count: number | null }>>(
+      `email_templates?id=eq.${encodeURIComponent(body.templateId)}&select=sent_count&limit=1`,
+      { headers: { Accept: 'application/json' } },
+    )
+    await supabaseFetch(`email_templates?id=eq.${encodeURIComponent(body.templateId)}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({
+        sent_count: Math.max(0, templates[0]?.sent_count || 0) + 1,
+        updated_at: new Date().toISOString(),
+      }),
+    })
+  }
+
+  if (body.leadId) {
+    await supabaseFetch('lead_events', {
+      method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({
+        lead_id: body.leadId,
+        type: 'Email Sent',
+        title: body.subject,
+        note: `Email sent to ${body.to}`,
+        created_by: userId,
+        metadata: {
+          resendId: body.resendId,
+          emailRecordId: emailRecord.id,
+          templateId: body.templateId || null,
+          recipient: body.to,
+        },
+      }),
+    })
+  }
+  return emailRecord
+}
 
 type Enquiry = z.infer<typeof enquirySchema>
 const publicEmailDomains = new Set([
@@ -759,65 +894,79 @@ app.get('/api/v1/online2day/email-sends', {
   )
 })
 
+app.post('/api/v1/online2day/send-email', {
+  preHandler: requireSupabaseAdmin,
+  config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+}, async (request, reply) => {
+  const user = await requireSupabaseAdmin(request)
+  const body = sendEmailSchema.parse(request.body)
+  if (!config.resendApiKey) {
+    return reply.code(503).send({ error: 'Email delivery is not configured in the Online2Day API.' })
+  }
+
+  let recipientName = body.recipientName
+  if (body.leadId) {
+    const leads = await supabaseFetch<Array<{ name: string | null }>>(
+      `leads?id=eq.${encodeURIComponent(body.leadId)}&select=name&limit=1`,
+      { headers: { Accept: 'application/json' } },
+    )
+    if (!leads[0]) return reply.code(404).send({ error: 'The selected lead is no longer available.' })
+    recipientName ||= leads[0].name || undefined
+  }
+
+  const video = await resolveEmailVideo(body.videoAssetId, body.videoSlug)
+  const html = renderEmailHtml({
+    recipientName,
+    body: body.body,
+    videoUrl: video.url,
+    videoTitle: video.title,
+    ctaLabel: body.ctaLabel,
+  })
+  const plainText = `${recipientName ? `Hi ${recipientName},\n\n` : ''}${body.body}${video.url ? `\n\nWatch video: ${video.url}` : ''}`
+  const sent = await requestJson<{ id: string }>('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.resendApiKey}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': body.idempotencyKey,
+    },
+    body: JSON.stringify({
+      from: config.emailFrom,
+      reply_to: config.emailReplyTo,
+      to: [body.to.toLowerCase()],
+      subject: body.subject,
+      html,
+      text: plainText,
+      tags: [
+        { name: 'system', value: 'crm' },
+        { name: 'template', value: (body.templateName || 'custom').toLowerCase().replace(/[^a-z0-9_-]/g, '-').slice(0, 256) || 'custom' },
+      ],
+    }),
+  })
+
+  let warning: string | undefined
+  try {
+    await recordEmailSend(String(user.sub), {
+      leadId: body.leadId,
+      templateId: body.templateId,
+      to: body.to.toLowerCase(),
+      subject: body.subject,
+      body: body.body,
+      resendId: sent.id,
+    })
+  } catch (error) {
+    request.log.error({ err: error, resendId: sent.id }, 'Email delivered but CRM logging failed')
+    warning = 'The email was delivered, but its CRM activity record could not be saved.'
+  }
+  return reply.code(201).send({ success: true, id: sent.id, warning })
+})
+
 app.post('/api/v1/online2day/email-sends', {
   preHandler: requireSupabaseAdmin,
 }, async (request, reply) => {
   const user = await requireSupabaseAdmin(request)
   const body = emailSendSchema.parse(request.body)
-  const rows = await supabaseFetch<Array<Record<string, unknown>>>(
-    'emails?select=id,lead_id,template_id,subject,body,status,sent_at,opened_at,clicked_at,replied_at,created_at',
-    {
-      method: 'POST',
-      headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({
-        lead_id: body.leadId || null,
-        sender_id: String(user.sub),
-        template_id: body.templateId || null,
-        subject: body.subject,
-        body: body.body,
-        status: `sent:${body.resendId}`,
-        sent_at: new Date().toISOString(),
-      }),
-    },
-  )
-  const emailRecord = rows[0]
-  if (!emailRecord) throw new Error('Email send could not be recorded.')
-
-  if (body.templateId) {
-    const templates = await supabaseFetch<Array<{ sent_count: number | null }>>(
-      `email_templates?id=eq.${encodeURIComponent(body.templateId)}&select=sent_count&limit=1`,
-      { headers: { Accept: 'application/json' } },
-    )
-    await supabaseFetch(`email_templates?id=eq.${encodeURIComponent(body.templateId)}`, {
-      method: 'PATCH',
-      headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        sent_count: Math.max(0, templates[0]?.sent_count || 0) + 1,
-        updated_at: new Date().toISOString(),
-      }),
-    })
-  }
-
-  if (body.leadId) {
-    await supabaseFetch('lead_events', {
-      method: 'POST',
-      headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        lead_id: body.leadId,
-        type: 'Email Sent',
-        title: body.subject,
-        note: `Email sent to ${body.to}`,
-        created_by: String(user.sub),
-        metadata: {
-          resendId: body.resendId,
-          emailRecordId: emailRecord.id,
-          templateId: body.templateId || null,
-          recipient: body.to,
-        },
-      }),
-    })
-  }
-
+  const emailRecord = await recordEmailSend(String(user.sub), body)
   return reply.code(201).send(emailRecord)
 })
 
@@ -996,7 +1145,13 @@ app.get('/api/v1/online2day/dashboard-support', {
       { headers: { Accept: 'application/json' } },
     ).catch(() => []),
   ])
-  return { snapshots, integrations, goals, healthChecks }
+  return {
+    snapshots,
+    integrations,
+    goals,
+    healthChecks,
+    capabilities: { resend: Boolean(config.resendApiKey) },
+  }
 })
 
 app.post('/api/v1/online2day/integration-health-checks', {
