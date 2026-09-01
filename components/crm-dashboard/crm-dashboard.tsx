@@ -2,34 +2,25 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import type { ComponentType, MouseEvent, ReactNode } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import type { ComponentType, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Activity,
   ArrowRight,
   BarChart3,
-  Bot,
   CalendarDays,
-  Check,
   ChevronDown,
   ChevronRight,
-  CircleDot,
   Columns3,
-  Crown,
   DollarSign,
   Download,
   ExternalLink,
-  Filter,
-  Grid2x2,
   Inbox,
   Link2,
-  LogOut,
   Mail,
   MessageSquare,
   MonitorPlay,
-  MoreHorizontal,
   PenSquare,
-  Phone,
   Plus,
   Search,
   Send,
@@ -44,18 +35,22 @@ import {
   Users,
   Video,
   WandSparkles,
+  X,
 } from 'lucide-react'
 import styles from './dashboard.module.css'
-import { sendEnterpriseEmail } from '@/lib/actions/email-actions'
-import { sendConversationReply } from '@/lib/actions/message-actions'
+import { createEmailTemplate, deleteEmailTemplate, sendEnterpriseEmail, updateEmailTemplate } from '@/lib/actions/email-actions'
+import { markConversationRead, sendConversationReply } from '@/lib/actions/message-actions'
 import { deleteVideoAsset } from '@/lib/actions/video-actions'
+import { updateSiteRequest } from '@/lib/actions/site-request-actions'
 import { openExternalSafely } from '@/lib/security/external-links'
+import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import type {
   CrmSetupConfig,
   ConversationRecord,
   CrmDashboardProps,
   DashboardSection,
   EmailRecord,
+  EmailSendRecord,
   EmailComposerLead,
   EmailComposerVideo,
   IntegrationStatus,
@@ -85,14 +80,6 @@ const LEAD_PROCESS: ProcessStep[] = [
   { step: 7, label: 'Close' },
 ]
 
-function currentDateRangeLabel() {
-  const end = new Date()
-  const start = new Date(end)
-  start.setDate(start.getDate() - 7)
-  const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-  return `${fmt(start)} – ${fmt(end)}`
-}
-
 function computeLeadTabs(leads: LeadRecord[]) {
   return [
     { label: 'All leads', count: leads.length },
@@ -120,6 +107,7 @@ function enrichMetrics(raw: RawMetric[], section: 'leads' | 'video' | 'email' | 
       'Draft projects': PenSquare,
     },
     email: {
+      'Templates': Mail,
       'Emails sent': Mail,
       'Open rate': Target,
       'Click rate': BarChart3,
@@ -153,18 +141,6 @@ type MenuItem = {
 }
 
 const cx = (...classes: Array<string | false | undefined>) => classes.filter(Boolean).join(' ')
-
-const NAV_ITEMS: Array<{ label: string; href: string; section?: DashboardSection; icon: ComponentType<{ size?: number }>; badge?: string; group: string }> = [
-  { label: 'Overview', href: '/dashboard/overview', section: 'overview', icon: Grid2x2, group: 'MAIN' },
-  { label: 'Leads', href: '/dashboard/leads', section: 'leads', icon: Users, group: 'MAIN' },
-  { label: 'Videos', href: '/dashboard/videos', section: 'videos', icon: Video, group: 'MAIN' },
-  { label: 'Emails', href: '/dashboard/emails', section: 'emails', icon: Mail, group: 'MAIN' },
-  { label: 'Messages', href: '/dashboard/messages', section: 'messages', icon: MessageSquare, badge: '4', group: 'MAIN' },
-  { label: 'Enterprise', href: '/dashboard/enterprise', icon: Columns3, group: 'MAIN' },
-  { label: 'Site Requests', href: '/dashboard/site-requests', section: 'site-requests', icon: Inbox, group: 'REQUESTS' },
-  { label: 'Integrations', href: '/dashboard/integrations', section: 'integrations', icon: Settings2, group: 'TOOLS' },
-  { label: 'Settings', href: '/dashboard/settings', icon: Settings2, group: 'TOOLS' },
-]
 
 const PAGE_META: Record<DashboardSection, { title: string; description: string; searchPlaceholder: string; createLabel: string; createItems: MenuItem[] }> = {
   overview: {
@@ -200,12 +176,8 @@ const PAGE_META: Record<DashboardSection, { title: string; description: string; 
     searchPlaceholder: 'Search videos, leads, companies...',
     createLabel: 'Create / Upload Video',
     createItems: [
-      { label: 'Open video editor', icon: WandSparkles, href: '/dashboard/videos/editor' },
-      { label: 'Record new video', icon: Video, href: '/dashboard/videos/editor?mode=record' },
+      { label: 'Build or record video', icon: WandSparkles, href: '/dashboard/videos/editor' },
       { label: 'Upload existing video', icon: Upload, href: '/dashboard/videos/upload' },
-      { label: 'Use template', icon: Grid2x2, href: '/dashboard/videos/editor?mode=template' },
-      { label: 'Create AI intro', icon: Bot, href: '/dashboard/videos/editor?mode=ai-intro' },
-      { label: 'Import from library', icon: Download },
     ],
   },
   emails: {
@@ -213,54 +185,28 @@ const PAGE_META: Record<DashboardSection, { title: string; description: string; 
     description: 'Send, test and track emails that move leads closer to sale.',
     searchPlaceholder: 'Search leads, templates, campaigns...',
     createLabel: 'Create / Add',
-    createItems: [
-      { label: 'New campaign', icon: Mail },
-      { label: 'Create template', icon: PenSquare },
-      { label: 'Start sequence', icon: Send },
-      { label: 'Send test email', icon: ExternalLink },
-      { label: 'Import contacts', icon: Upload },
-      { label: 'Log activity', icon: Sparkles },
-    ],
+    createItems: [],
   },
   messages: {
     title: 'Messages',
     description: 'Manage live conversations, qualify leads, and convert chat into revenue.',
     searchPlaceholder: 'Search conversations, leads, companies...',
     createLabel: 'Create / Add',
-    createItems: [
-      { label: 'New conversation', icon: MessageSquare },
-      { label: 'Assign owner', icon: Users },
-      { label: 'Create task', icon: PenSquare },
-      { label: 'Create canned reply', icon: WandSparkles },
-      { label: 'Send email', icon: Mail },
-      { label: 'Log activity', icon: Sparkles },
-    ],
+    createItems: [],
   },
   'site-requests': {
     title: 'Site Requests',
     description: 'Manage incoming website and web app requests from enquiry to launch.',
     searchPlaceholder: 'Search requests, companies, owners...',
     createLabel: 'Create / Add',
-    createItems: [
-      { label: 'New request', icon: Inbox },
-      { label: 'Create task', icon: PenSquare },
-      { label: 'Assign owner', icon: Users },
-      { label: 'Create proposal', icon: Mail },
-      { label: 'Schedule discovery call', icon: CalendarDays },
-      { label: 'Log activity', icon: Sparkles },
-    ],
+    createItems: [],
   },
   integrations: {
     title: 'Integrations',
     description: 'Connect your CRM workflows to email, automation, analytics, and storage.',
     searchPlaceholder: 'Search integrations, apps...',
     createLabel: 'Add Integration',
-    createItems: [
-      { label: 'Connect Supabase', icon: DatabaseIcon },
-      { label: 'Connect Resend', icon: Mail },
-      { label: 'Connect HubSpot', icon: Users },
-      { label: 'Connect Calendar', icon: CalendarDays },
-    ],
+    createItems: [],
   },
 }
 
@@ -269,6 +215,7 @@ export function CrmDashboard({
   initialLeads = [],
   initialVideos = [],
   initialEmails = [],
+  recentEmailSends = [],
   initialConversations = [],
   initialSiteRequests = [],
   leadMetrics: rawLeadMetrics,
@@ -281,10 +228,7 @@ export function CrmDashboard({
   setupConfig,
 }: CrmDashboardProps) {
   const meta = PAGE_META[section]
-  const router = useRouter()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [dateRange, setDateRange] = useState(currentDateRangeLabel())
-  const [globalSearch, setGlobalSearch] = useState('')
   const [notice, setNotice] = useState<{ title: string; detail: string } | null>(null)
 
   const resolvedLeadMetrics = rawLeadMetrics ? enrichMetrics(rawLeadMetrics, 'leads') : []
@@ -329,62 +273,9 @@ export function CrmDashboard({
     showNotice('Export ready', `${rows.length} ${section.replace('-', ' ')} records downloaded.`)
   }
 
-  function contactSales() {
-    showNotice('Contact sales to add this', 'This feature is on our enterprise roadmap. Email sales@online2day.com to get early access.')
-  }
-
-  function handleCommand(label: string) {
-    const normalized = label.replace(/\s+/g, ' ').trim()
-    if (!normalized) return
-
-    if (/export/i.test(normalized)) return exportSectionCsv()
-    if (/view plan/i.test(normalized)) return router.push('/pricing')
-    if (/create video|send video|record new video|upload existing video|use template|create ai intro/i.test(normalized)) return router.push('/dashboard/videos/editor')
-    if (/open lead/i.test(normalized)) return router.push('/dashboard/leads')
-    if (/^send email$/i.test(normalized)) return router.push('/dashboard/emails')
-    if (/book call|calendly|schedule call/i.test(normalized)) return router.push('/contact')
-
-    // Features not yet built — direct to sales
-    if (/new campaign|create template|start sequence|create sequence|import contacts|upload contact list/i.test(normalized)) return contactSales()
-    if (/new conversation|create canned reply/i.test(normalized)) return contactSales()
-    if (/connect provider|open automations|open email settings|review mapping|manage connection|open library/i.test(normalized)) return contactSales()
-    if (/new request|create proposal/i.test(normalized)) return contactSales()
-    if (/assign owner/i.test(normalized)) return contactSales()
-
-    if (/send proposal|share resource|convert to project|mark as scoped/i.test(normalized)) return showNotice(normalized, 'Workflow state recorded for the selected CRM item.')
-    if (/filters|status|owner|source|audience|channel|score|budget|priority|type|goal|more filters/i.test(normalized)) return showNotice('Filter control active', 'Use the table controls and stage menus to narrow this workspace.')
-    if (/columns/i.test(normalized)) return showNotice('Columns saved', 'Column preferences saved.')
-    if (/sort|latest|last edited|last activity/i.test(normalized)) return showNotice('Sort applied', 'The table is now using the selected ordering preference.')
-    if (/preview/i.test(normalized)) return showNotice('Preview opened', 'Preview mode is ready for review before sending.')
-    if (/campaign|sequence|template|send test|send email/i.test(normalized)) return router.push('/dashboard/emails')
-    if (/reply|note|attach|internal note|schedule send|send update/i.test(normalized)) return showNotice('Conversation action queued', 'The selected conversation action is ready in this workspace.')
-    if (/clear filters/i.test(normalized)) return showNotice('Filters cleared', 'The current table filters have been reset.')
-    if (/may|calendar|date/i.test(normalized)) {
-      setDateRange((current) => current === currentDateRangeLabel() ? 'This month' : currentDateRangeLabel())
-      return showNotice('Date range updated', 'Dashboard metrics and tables will use the selected range.')
-    }
-    if (/^\d+$|<|>/.test(normalized)) return showNotice('Page changed', 'Pagination state updated for this table.')
-
-    showNotice(normalized, 'Action noted.')
-  }
-
-  function handleShellClick(event: MouseEvent<HTMLDivElement>) {
-    const target = event.target as HTMLElement
-    const actionable = target.closest('button, a') as HTMLButtonElement | HTMLAnchorElement | null
-    if (!actionable || actionable.closest('[data-dashboard-native="true"]')) return
-    if ('disabled' in actionable && actionable.disabled) return
-
-    const href = actionable instanceof HTMLAnchorElement ? actionable.getAttribute('href') : null
-    if (href === '#') event.preventDefault()
-
-    const label = actionable.getAttribute('aria-label') || actionable.getAttribute('title') || actionable.textContent || ''
-    if (href && href !== '#') return
-    handleCommand(label)
-  }
-
   return (
-    <div className={styles.shell} onClick={handleShellClick}>
-      <Sidebar currentSection={section} />
+    <div className={styles.shell}>
+      <DashboardSidebar active={section} />
       <main className={styles.main}>
         <header className={styles.pageHeader}>
           <div>
@@ -393,25 +284,11 @@ export function CrmDashboard({
           </div>
 
           <div className={styles.headerTools}>
-            <label className={styles.searchBox}>
-              <Search size={16} />
-              <input value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} placeholder={meta.searchPlaceholder} aria-label={meta.searchPlaceholder} />
-              <span className={styles.shortcut}>⌘ K</span>
-            </label>
-            <button className={styles.button}>
-              <CalendarDays size={16} />
-              {dateRange}
-              <ChevronDown size={16} />
-            </button>
-            <button className={styles.button}>
-              <Filter size={16} />
-              Filters
-            </button>
-            <button className={styles.button}>
+            {section !== 'integrations' ? <button className={styles.button} onClick={exportSectionCsv}>
               <Download size={16} />
               Export
-            </button>
-            <div className={styles.menuWrap}>
+            </button> : null}
+            {meta.createItems.length > 0 ? <div className={styles.menuWrap}>
               <button className={styles.buttonPrimary} data-dashboard-native="true" onClick={() => setIsCreateOpen((value) => !value)}>
                 <Plus size={16} />
                 {meta.createLabel}
@@ -428,7 +305,7 @@ export function CrmDashboard({
                           {item.label}
                         </Link>
                       ) : (
-                        <button key={item.label} type="button" onClick={() => handleCommand(item.label)}>
+                        <button key={item.label} type="button" disabled>
                           <Icon size={16} />
                           {item.label}
                         </button>
@@ -437,7 +314,7 @@ export function CrmDashboard({
                   })}
                 </div>
               ) : null}
-            </div>
+            </div> : null}
           </div>
         </header>
 
@@ -445,6 +322,7 @@ export function CrmDashboard({
           initialLeads,
           initialVideos,
           initialEmails,
+          recentEmailSends,
           initialConversations,
           initialSiteRequests,
           resolvedLeadMetrics,
@@ -491,56 +369,6 @@ function getRowsForSection(section: DashboardSection, data: {
   }
 }
 
-function Sidebar({ currentSection }: { currentSection: DashboardSection }) {
-  const pathname = usePathname()
-  const groups = ['MAIN', 'REQUESTS', 'TOOLS']
-
-  return (
-    <aside className={styles.sidebar}>
-      <div className={styles.brand}>
-        <h2 className={styles.brandTitle}>Online2Day</h2>
-        <p className={styles.brandText}>CRM Dashboard</p>
-      </div>
-
-      {groups.map((group) => (
-        <div className={styles.navGroup} key={group}>
-          <p className={styles.navLabel}>{group}</p>
-          {NAV_ITEMS.filter((item) => item.group === group).map((item) => {
-            const Icon = item.icon
-            const isActive = currentSection === item.section || pathname === item.href
-            return (
-              <Link key={item.href} href={item.href} className={cx(styles.navItem, isActive && styles.navItemActive)}>
-                <Icon size={17} />
-                <span>{item.label}</span>
-                {item.badge ? <span className={styles.navBadge}>{item.badge}</span> : null}
-                {isActive && !item.badge ? <span className={styles.navDot} /> : null}
-              </Link>
-            )
-          })}
-        </div>
-      ))}
-
-      <div className={styles.sidebarSpacer} />
-
-      <div className={styles.planCard}>
-        <div className={styles.planIcon}>
-          <Crown size={18} />
-        </div>
-        <h3>Pro Plan</h3>
-        <p>You have unlimited videos and advanced analytics.</p>
-        <Link href="/pricing" className={cx(styles.buttonPrimary, styles.planButton)}>View Plan</Link>
-      </div>
-
-      <form action="/auth/signout" method="post" style={{ display: 'contents' }}>
-        <button type="submit" className={styles.signOut}>
-          <LogOut size={17} />
-          Sign Out
-        </button>
-      </form>
-    </aside>
-  )
-}
-
 type ResolvedSectionProps = Omit<CrmDashboardProps, 'section' | 'leadMetrics' | 'videoMetrics' | 'emailMetrics' | 'siteRequestMetrics' | 'integrationStatus'> & {
   resolvedLeadMetrics: MetricItem[]
   resolvedVideoMetrics: MetricItem[]
@@ -558,7 +386,7 @@ function renderSection(section: DashboardSection, props: ResolvedSectionProps) {
     case 'videos':
       return <VideosSection initialVideos={props.initialVideos} metrics={props.resolvedVideoMetrics} setupConfig={props.setupConfig} />
     case 'emails':
-      return <EmailsSection initialEmails={props.initialEmails} metrics={props.resolvedEmailMetrics} composerData={props.emailComposerData} setupConfig={props.setupConfig} />
+      return <EmailsSection initialEmails={props.initialEmails} recentEmailSends={props.recentEmailSends} metrics={props.resolvedEmailMetrics} composerData={props.emailComposerData} setupConfig={props.setupConfig} />
     case 'messages':
       return <MessagesSection initialConversations={props.initialConversations} messageStats={props.messageStats} />
     case 'site-requests':
@@ -856,20 +684,27 @@ function VideosSection({ initialVideos = [], metrics = [] }: { initialVideos?: V
 
 function EmailsSection({
   initialEmails = [],
+  recentEmailSends = [],
   metrics = [],
   composerData = { leads: [], videos: [] },
   setupConfig,
 }: {
   initialEmails?: EmailRecord[]
+  recentEmailSends?: EmailSendRecord[]
   metrics?: MetricItem[]
   composerData?: { leads: EmailComposerLead[]; videos: EmailComposerVideo[] }
   setupConfig?: CrmSetupConfig
 }) {
+  const router = useRouter()
   const [query, setQuery] = useState('')
-  const [selectedId, setSelectedId] = useState(initialEmails[1]?.id || initialEmails[0]?.id || '')
+  const [selectedId, setSelectedId] = useState(initialEmails[0]?.id || '')
   const [stage, setStage] = useState('All stages')
-  const [showStageMenu, setShowStageMenu] = useState(true)
   const [isComposerOpen, setIsComposerOpen] = useState(false)
+  const [isTemplateEditorOpen, setIsTemplateEditorOpen] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<EmailRecord | undefined>()
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState('')
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [feedback, setFeedback] = useState('')
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
@@ -882,103 +717,149 @@ function EmailsSection({
     })
   }, [query, stage, initialEmails])
   const selectedEmail = initialEmails.find((email) => email.id === selectedId) ?? initialEmails[0]
+  const stages = useMemo(() => ['All stages', ...Array.from(new Set(initialEmails.map((email) => email.stage)))], [initialEmails])
+
+  function openNewTemplate() {
+    setEditingTemplate(undefined)
+    setIsTemplateEditorOpen(true)
+  }
+
+  function openEditTemplate() {
+    if (!selectedEmail) return
+    setEditingTemplate(selectedEmail)
+    setIsTemplateEditorOpen(true)
+  }
+
+  async function removeTemplate() {
+    if (!selectedEmail) return
+    if (deleteConfirmationId !== selectedEmail.id) {
+      setDeleteConfirmationId(selectedEmail.id)
+      setFeedback('Select “Confirm delete” to permanently remove this template. Sent email records will be kept.')
+      return
+    }
+    setIsDeleting(true)
+    const result = await deleteEmailTemplate(selectedEmail.id)
+    setIsDeleting(false)
+    if ('error' in result && result.error) {
+      setFeedback(String(result.error))
+      return
+    }
+    setDeleteConfirmationId('')
+    setSelectedId('')
+    setFeedback('Template deleted. Sent email records were kept for reporting.')
+    router.refresh()
+  }
 
   return (
     <>
+      <section className={styles.workspaceIntro}>
+        <div>
+          <h2>Email workspace</h2>
+          <p>Create reusable templates, send personalised messages, and review delivery activity recorded by the Online2Day API.</p>
+        </div>
+        <div className={styles.workspaceActions}>
+          <button className={styles.button} onClick={openNewTemplate} data-dashboard-native="true"><Plus size={16} /> New template</button>
+          <button className={styles.buttonPrimary} onClick={() => setIsComposerOpen(true)} data-dashboard-native="true"><Send size={16} /> New email</button>
+        </div>
+      </section>
       <MetricGrid items={metrics} />
-
-      <div className={styles.emailTop}>
-        <div className={styles.twoUp}>
-          <LineChartPanel title="Campaign performance" legend={['Opens', 'Clicks', 'Replies']} />
-          <SimpleTablePanel title="Template performance" rows={[
-            ['Initial outreach', '324', '52%', '14%', '6'],
-            ['Video follow-up', '198', '61%', '18%', '5'],
-            ['Proposal sent', '84', '69%', '21%', '4'],
-            ['Chase-up 1', '276', '41%', '9%', '3'],
-            ['Chase-up 2', '122', '33%', '6%', '2'],
-          ]} headers={['Template', 'Sent', 'Open rate', 'Reply rate', 'Meetings']} linkLabel="View all templates" />
-        </div>
-        <div className={styles.rightRail}>
-          <TasksPanel title="Today's priorities" />
-          <RecommendationsPanel title="AI recommendations" />
-        </div>
-      </div>
-
-      <div className={styles.panelGrid}>
+      <div className={styles.emailWorkspaceGrid}>
         <div className={cx(styles.panel, styles.tablePanel)}>
-          <Tabs tabs={[{ label: 'Templates' }, { label: 'Sequences' }, { label: 'Campaigns' }, { label: 'A/B Tests' }, { label: 'Analytics' }]} activeTab="Templates" onChange={() => undefined} />
+          <div className={styles.panelHeaderPadded}>
+            <div>
+              <h3>Templates</h3>
+              <p>{initialEmails.length} reusable template{initialEmails.length === 1 ? '' : 's'}</p>
+            </div>
+          </div>
           <div className={styles.toolbar}>
             <label className={styles.smallSearch}>
               <Search size={14} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search emails..." />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search templates..." aria-label="Search email templates" />
             </label>
-            <button className={styles.chipButton}>Status</button>
-            <button className={styles.chipButton}>Owner</button>
-            <button className={styles.chipButton}>Audience</button>
-            <div className={styles.dropdownWrap}>
-              <button className={styles.chipButton} onClick={() => setShowStageMenu((value) => !value)}>
-                Stage
-                <ChevronDown size={14} />
-              </button>
-              {showStageMenu ? (
-                <div className={styles.dropdown}>
-                  {['All stages', 'Initial outreach', 'Follow-up', 'Proposal', 'Re-engagement', 'Closed won/lost'].map((item) => (
-                    <button key={item} className={cx(stage === item && styles.dropdownActive)} onClick={() => setStage(item)}>
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+            <label className={styles.compactSelectLabel}>
+              <span>Stage</span>
+              <select value={stage} onChange={(event) => setStage(event.target.value)} aria-label="Filter templates by stage">
+                {stages.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+          </div>
+          {filtered.length ? <EmailTable rows={filtered} selectedId={selectedId} onSelect={setSelectedId} /> : (
+            <div className={styles.emptyWorkspace}>
+              <Mail size={28} />
+              <strong>{initialEmails.length ? 'No templates match these filters' : 'Create your first email template'}</strong>
+              <p>{initialEmails.length ? 'Change the search or stage filter.' : 'Save a subject and message once, then personalise it for each lead.'}</p>
+              {!initialEmails.length ? <button className={styles.buttonPrimary} onClick={openNewTemplate}><Plus size={16} /> New template</button> : null}
             </div>
-            <button className={styles.chipButton}>Goal</button>
-            <button className={styles.chipButton}>More filters</button>
-            <div className={styles.toolbarRight}>
-              <button className={styles.chipButton}><Columns3 size={14} /> Columns</button>
-              <button className={styles.chipButton}>Sort: Last edited <ChevronDown size={14} /></button>
+          )}
+        </div>
+        <aside className={styles.recentSendsPanel}>
+          <div className={styles.panelHeaderPadded}>
+            <div>
+              <h3>Recent sends</h3>
+              <p>Latest API-recorded email activity</p>
             </div>
           </div>
-          <EmailTable rows={filtered} selectedId={selectedId} onSelect={setSelectedId} />
-        </div>
-
-        <div className={styles.rightRail}>
-          <ActivityPanel title="Recent email activity" />
-        </div>
+          <div className={styles.recentSendsList}>
+            {recentEmailSends.length ? recentEmailSends.slice(0, 10).map((send) => (
+              <article key={send.id} className={styles.recentSendCard}>
+                <div className={styles.recentSendHead}>
+                  <strong>{send.recipientName}</strong>
+                  <span className={cx(styles.deliveryStatus, styles[`delivery${send.status.replace(/\s+/g, '')}` as keyof typeof styles])}>{send.status}</span>
+                </div>
+                <p>{send.subject}</p>
+                <div><span>{send.templateName}</span><time dateTime={send.sentAt}>{relativeDisplayTime(send.sentAt)}</time></div>
+              </article>
+            )) : (
+              <div className={styles.emptyWorkspaceCompact}>
+                <Send size={24} />
+                <strong>No emails sent yet</strong>
+                <p>Sent messages will appear here with their latest delivery state.</p>
+              </div>
+            )}
+          </div>
+        </aside>
       </div>
 
       {selectedEmail && (
-        <div className={styles.bottomBar}>
-          <div className={styles.identity}>
-            <div className={styles.logoMark}><Video size={14} /></div>
+        <section className={styles.templateDetailCard}>
+          <div className={styles.templateDetailMain}>
+            <div className={styles.logoMark}><Mail size={14} /></div>
             <div>
               <strong>{selectedEmail.template}</strong>
-              <div className={styles.subtle}>Used for warm prospects after first contact</div>
+              <div className={styles.subtle}>{selectedEmail.subject}</div>
             </div>
           </div>
-          <div>
-            <div className={styles.subtle}>Owner</div>
-            <strong>{selectedEmail.owner}</strong>
+          <div className={styles.templateDetailMeta}>
+            <span><small>Audience</small><strong>{selectedEmail.audience}</strong></span>
+            <span><small>Stage</small><strong>{selectedEmail.stage}</strong></span>
+            <span><small>Last edited</small><strong>{selectedEmail.lastEdited}</strong></span>
           </div>
-          <div>
-            <div className={styles.subtle}>Audience</div>
-            <strong>{selectedEmail.audience}</strong>
+          <div className={styles.templateBodyPreview}>
+            <small>Message preview</small>
+            <p>{selectedEmail.body}</p>
           </div>
-          <div>
-            <div className={styles.subtle}>Last edited</div>
-            <strong>{selectedEmail.lastEdited}</strong>
+          <div className={styles.templateActions}>
+            <button className={styles.button} onClick={openEditTemplate}><PenSquare size={15} /> Edit</button>
+            <button className={styles.buttonPrimary} onClick={() => setIsComposerOpen(true)}><Send size={15} /> Send</button>
+            <button className={styles.buttonGhost} onClick={removeTemplate} disabled={isDeleting}>
+              <Trash2 size={15} /> {isDeleting ? 'Deleting…' : deleteConfirmationId === selectedEmail.id ? 'Confirm delete' : 'Delete'}
+            </button>
+            {deleteConfirmationId === selectedEmail.id ? <button className={styles.buttonGhost} onClick={() => { setDeleteConfirmationId(''); setFeedback('') }}>Cancel</button> : null}
           </div>
-          <div className={styles.ctaCard}>
-            <strong>Recommended CTA</strong>
-            <div className={styles.subtle}>Pair this email with a personalised video to lift reply rate and move leads to meeting booked.</div>
-          </div>
-          <div className={styles.actionGroup}>
-            <button className={styles.button} onClick={() => setIsComposerOpen(true)}>Preview email</button>
-            <button className={styles.button} onClick={() => setIsComposerOpen(true)}>Send test</button>
-            <button className={styles.buttonPrimary} onClick={() => setIsComposerOpen(true)}>Launch campaign</button>
-            <button className={styles.button}>Create sequence</button>
-            <button className={styles.button}><MoreHorizontal size={16} /></button>
-          </div>
-        </div>
+        </section>
       )}
+      {feedback ? <div className={styles.inlineFeedback} role="status">{feedback}</div> : null}
+      {isTemplateEditorOpen ? (
+        <EmailTemplateEditor
+          template={editingTemplate}
+          onClose={() => setIsTemplateEditorOpen(false)}
+          onSaved={(message) => {
+            setIsTemplateEditorOpen(false)
+            setFeedback(message)
+            router.refresh()
+          }}
+        />
+      ) : null}
       {isComposerOpen ? (
         <EnterpriseEmailComposer
           selectedTemplate={selectedEmail}
@@ -989,6 +870,90 @@ function EmailsSection({
         />
       ) : null}
     </>
+  )
+}
+
+function relativeDisplayTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Unknown time'
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60_000)
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
+function EmailTemplateEditor({
+  template,
+  onClose,
+  onSaved,
+}: {
+  template?: EmailRecord
+  onClose: () => void
+  onSaved: (message: string) => void
+}) {
+  const [name, setName] = useState(template?.template || '')
+  const [subject, setSubject] = useState(template?.subject || '')
+  const [body, setBody] = useState(template?.body || '')
+  const [category, setCategory] = useState(template?.category || 'Outreach')
+  const [audience, setAudience] = useState(template?.audience || 'All leads')
+  const [stage, setStage] = useState(template?.stage || 'Outreach')
+  const [ctaLabel, setCtaLabel] = useState(template?.cta || 'Reply now')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+
+  async function handleSave() {
+    setSaving(true)
+    setError('')
+    const input = { name, subject, body, category, audience, stage, ctaLabel }
+    const result = template ? await updateEmailTemplate(template.id, input) : await createEmailTemplate(input)
+    setSaving(false)
+    if ('error' in result && result.error) {
+      setError(String(result.error))
+      return
+    }
+    onSaved(template ? 'Template updated through the Online2Day API.' : 'Template created through the Online2Day API.')
+  }
+
+  return (
+    <div className={styles.modalOverlay} onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <section className={styles.templateEditorModal} role="dialog" aria-modal="true" aria-labelledby="template-editor-title">
+        <header className={styles.emailComposerHeader}>
+          <div>
+            <h2 id="template-editor-title">{template ? 'Edit email template' : 'New email template'}</h2>
+            <p>Reusable copy is stored securely through the authenticated Online2Day API.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close template editor"><X size={18} /></button>
+        </header>
+        <div className={styles.templateEditorForm}>
+          <label><span>Template name</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={120} /></label>
+          <div className={styles.formRowTwo}>
+            <label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} maxLength={120} /></label>
+            <label><span>Stage</span><input value={stage} onChange={(event) => setStage(event.target.value)} maxLength={80} /></label>
+          </div>
+          <div className={styles.formRowTwo}>
+            <label><span>Category</span><input value={category} onChange={(event) => setCategory(event.target.value)} maxLength={80} /></label>
+            <label><span>CTA label</span><input value={ctaLabel} onChange={(event) => setCtaLabel(event.target.value)} maxLength={80} /></label>
+          </div>
+          <label><span>Subject</span><input value={subject} onChange={(event) => setSubject(event.target.value)} maxLength={180} /></label>
+          <label><span>Message</span><textarea value={body} onChange={(event) => setBody(event.target.value)} rows={11} maxLength={20_000} /></label>
+          {error ? <div className={styles.sendError} role="alert">{error}</div> : null}
+          <div className={styles.emailComposerActions}>
+            <button className={styles.button} onClick={onClose}>Cancel</button>
+            <button className={styles.buttonPrimary} onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : template ? 'Save changes' : 'Create template'}</button>
+          </div>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -1012,9 +977,17 @@ function EnterpriseEmailComposer({
   const [videoAssetId, setVideoAssetId] = useState(leadVideos[0]?.id || '')
   const [to, setTo] = useState(firstLead?.email || '')
   const [subject, setSubject] = useState(selectedTemplate?.subject || `A quick personalised video from ${setupConfig?.companyName || 'Online2Day'}`)
-  const [body, setBody] = useState(`I wanted to send over a focused follow-up for ${firstLead?.company || 'your team'}.\n\nThe video below walks through the most relevant next step and gives you a simple way to ${setupConfig?.defaultCtaLabel?.toLowerCase() || 'book a call'} if it is useful.`)
+  const [body, setBody] = useState(selectedTemplate?.body || `I wanted to send over a focused follow-up for ${firstLead?.company || 'your team'}.\n\nThe video below walks through the most relevant next step and gives you a simple way to ${setupConfig?.defaultCtaLabel?.toLowerCase() || 'book a call'} if it is useful.`)
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && !sending) onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose, sending])
 
   function handleLeadChange(nextLeadId: string) {
     const nextLead = leads.find((lead) => lead.id === nextLeadId)
@@ -1033,6 +1006,7 @@ function EnterpriseEmailComposer({
       recipientName: selectedLead?.name,
       subject,
       body,
+      templateId: selectedTemplate?.id,
       templateName: selectedTemplate?.template,
       videoAssetId: videoAssetId || undefined,
       ctaLabel: selectedTemplate?.cta || setupConfig?.defaultCtaLabel || 'Watch video',
@@ -1042,18 +1016,18 @@ function EnterpriseEmailComposer({
       setStatus({ type: 'error', message: String(result.error) })
       return
     }
-    setStatus({ type: 'success', message: 'Email sent and logged against the lead timeline.' })
+    setStatus({ type: 'success', message: 'warning' in result && result.warning ? String(result.warning) : 'Email sent and logged against the lead timeline.' })
   }
 
   return (
     <div className={styles.modalOverlay} onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <section className={styles.emailComposerModal} aria-label="Enterprise email composer">
+      <section className={styles.emailComposerModal} role="dialog" aria-modal="true" aria-label="Email composer">
         <header className={styles.emailComposerHeader}>
           <div>
-            <h2>Enterprise email send</h2>
-            <p>Send via Resend, stream attached videos from Supabase, and log the activity for audit.</p>
+            <h2>Send email</h2>
+            <p>Resend delivers the message; the authenticated Online2Day API records the send and engagement.</p>
           </div>
-          <button type="button" onClick={onClose}>x</button>
+          <button type="button" onClick={onClose} aria-label="Close email composer"><X size={18} /></button>
         </header>
         <div className={styles.emailComposerGrid}>
           <div className={styles.emailComposerForm}>
@@ -1090,7 +1064,7 @@ function EnterpriseEmailComposer({
             {status ? <div className={status.type === 'success' ? styles.sendSuccess : styles.sendError}>{status.message}</div> : null}
             <div className={styles.emailComposerActions}>
               <button className={styles.button} onClick={onClose}>Cancel</button>
-              <button className={styles.buttonPrimary} onClick={handleSend} disabled={sending}>{sending ? 'Sending...' : 'Send email'}</button>
+              <button className={styles.buttonPrimary} onClick={handleSend} disabled={sending || !to.trim() || !subject.trim() || !body.trim()}>{sending ? 'Sending…' : 'Send email'}</button>
             </div>
           </div>
           <aside className={styles.emailPreview}>
@@ -1118,6 +1092,7 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
   const [selectedId, setSelectedId] = useState(initialConversations[0]?.id || '')
   const [query, setQuery] = useState('')
   const [replyText, setReplyText] = useState('')
+  const [messageFeedback, setMessageFeedback] = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -1138,10 +1113,27 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
     const text = replyText.trim()
     if (!text || !selectedConversation || isPending) return
     startTransition(async () => {
-      await sendConversationReply(selectedConversation.id, text)
+      setMessageFeedback('')
+      const result = await sendConversationReply(selectedConversation.id, text)
+      if ('error' in result && result.error) {
+        setMessageFeedback(String(result.error))
+        return
+      }
       setReplyText('')
+      setMessageFeedback('Reply sent through the Online2Day API.')
       router.refresh()
     })
+  }
+
+  function selectConversation(conversation: ConversationRecord) {
+    setSelectedId(conversation.id)
+    setMessageFeedback('')
+    if (conversation.unread) {
+      startTransition(async () => {
+        await markConversationRead(conversation.id)
+        router.refresh()
+      })
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -1193,7 +1185,7 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
               key={c.id}
               type="button"
               className={cx(styles.conversationRow, selectedId === c.id && styles.conversationRowActive)}
-              onClick={() => setSelectedId(c.id)}
+              onClick={() => selectConversation(c)}
             >
               <div className={styles.convAvatar}>{initials(c.name)}</div>
               <div className={styles.convBody}>
@@ -1228,11 +1220,6 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
                 {selectedConversation.status && (
                   <span className={cx(styles.pill, styles.pillBlue)}>{selectedConversation.status}</span>
                 )}
-              </div>
-              <div className={styles.chatHeaderActions}>
-                <button className={styles.buttonGhost} title="Email"><Mail size={15} /></button>
-                <button className={styles.buttonGhost} title="Schedule call"><CalendarDays size={15} /></button>
-                <button className={styles.buttonGhost} title="Call"><Phone size={15} /></button>
               </div>
             </div>
 
@@ -1288,6 +1275,7 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
                   <Send size={14} />{isPending ? 'Sending...' : 'Send'}
                 </button>
               </div>
+              {messageFeedback ? <div className={styles.inlineFeedback} role="status">{messageFeedback}</div> : null}
             </div>
           </>
         ) : (
@@ -1301,7 +1289,7 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
       {/* ── RIGHT: contact + timeline ───────────────────────── */}
       {selectedConversation && (
         <div className={styles.rightRail}>
-          <RightPanel title="Contact info" actionLabel="Open in CRM">
+          <RightPanel title="Contact info">
             <div className={styles.contactCardRow}>
               <div className={styles.avatar}>{initials(selectedConversation.name)}</div>
               <div>
@@ -1347,196 +1335,111 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
 }
 
 function SiteRequestsSection({ initialSiteRequests = [], metrics = [] }: { initialSiteRequests?: SiteRequestRecord[]; metrics?: MetricItem[] }) {
+  const router = useRouter()
   const [selectedId, setSelectedId] = useState(initialSiteRequests[0]?.id || '')
   const [query, setQuery] = useState('')
-  const [showStageMenu, setShowStageMenu] = useState(false)
   const [stage, setStage] = useState('All stages')
+  const [editStage, setEditStage] = useState(initialSiteRequests[0]?.stage || 'New')
+  const [editPriority, setEditPriority] = useState<'Low' | 'Medium' | 'High'>(initialSiteRequests[0]?.priority || 'Medium')
+  const [nextAction, setNextAction] = useState(initialSiteRequests[0]?.nextAction || '')
+  const [saving, setSaving] = useState(false)
+  const [feedback, setFeedback] = useState('')
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return initialSiteRequests.filter((req) =>
-      normalized
+    return initialSiteRequests.filter((req) => {
+      const matchesQuery = normalized
         ? `${req.request} ${req.company} ${req.owner}`.toLowerCase().includes(normalized)
         : true
-    )
-  }, [query, initialSiteRequests])
+      return matchesQuery && (stage === 'All stages' || req.stage === stage)
+    })
+  }, [query, stage, initialSiteRequests])
   const selected = initialSiteRequests.find((item) => item.id === selectedId) ?? initialSiteRequests[0]
+  const stages = ['New', 'Qualified', 'Discovery', 'Scoping', 'In Build', 'QA', 'Approval', 'Launched']
+
+  useEffect(() => {
+    if (!selected) return
+    setEditStage(selected.stage)
+    setEditPriority(selected.priority)
+    setNextAction(selected.nextAction)
+    setFeedback('')
+  }, [selected?.id])
+
+  async function saveRequest() {
+    if (!selected) return
+    setSaving(true)
+    setFeedback('')
+    const result = await updateSiteRequest(selected.id, { stage: editStage, priority: editPriority, nextAction })
+    setSaving(false)
+    if ('error' in result && result.error) {
+      setFeedback(String(result.error))
+      return
+    }
+    setFeedback('Request updated through the Online2Day API.')
+    router.refresh()
+  }
 
   return (
     <>
       <MetricGrid items={metrics} />
-
-      <div className={styles.requestColumns}>
+      <div className={styles.siteRequestWorkspace}>
         <div className={cx(styles.panel, styles.tablePanel)}>
-          <Tabs tabs={[{ label: 'All requests', count: 36 }, { label: 'Qualified', count: 18 }, { label: 'In scoping', count: 7 }, { label: 'Build in progress', count: 5 }, { label: 'Awaiting approval', count: 4 }, { label: 'Launched', count: 2 }]} activeTab="All requests" onChange={() => undefined} />
+          <div className={styles.panelHeaderPadded}>
+            <div><h3>Requests</h3><p>{initialSiteRequests.length} live request{initialSiteRequests.length === 1 ? '' : 's'}</p></div>
+          </div>
           <div className={styles.toolbar}>
             <label className={styles.smallSearch}>
               <Search size={14} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search requests..." />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search requests..." aria-label="Search site requests" />
             </label>
-            <button className={styles.chipButton}>Type</button>
-            <button className={styles.chipButton}>Owner</button>
-            <button className={styles.chipButton}>Priority</button>
-            <div className={styles.dropdownWrap}>
-              <button className={styles.chipButton} onClick={() => setShowStageMenu((value) => !value)}>
-                Stage
-                <ChevronDown size={14} />
-              </button>
-              {showStageMenu ? (
-                <div className={styles.dropdown}>
-                  {['All stages', 'New', 'Qualified', 'Discovery', 'Scoping', 'In Build', 'QA', 'Approval', 'Launched'].map((item) => (
-                    <button key={item} className={cx(stage === item && styles.dropdownActive)} onClick={() => setStage(item)}>
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <button className={styles.chipButton}>Budget</button>
-            <button className={styles.chipButton}>More filters</button>
+            <label className={styles.compactSelectLabel}><span>Stage</span><select value={stage} onChange={(event) => setStage(event.target.value)}><option>All stages</option>{stages.map((item) => <option key={item}>{item}</option>)}</select></label>
           </div>
-          <SiteRequestTable rows={filtered} selectedId={selectedId} onSelect={setSelectedId} />
+          {filtered.length ? <SiteRequestTable rows={filtered} selectedId={selectedId} onSelect={setSelectedId} /> : <div className={styles.emptyWorkspace}><Inbox size={28} /><strong>No requests found</strong><p>Change the search or stage filter.</p></div>}
         </div>
 
         {selected && (
-        <div className={styles.detailCard}>
+        <div className={cx(styles.detailCard, styles.siteRequestDetail)}>
           <div className={styles.panelHeader}>
             <div>
               <h3 className={styles.panelTitle}>{selected.request}</h3>
               <div className={styles.detailMeta}>
                 <strong>{selected.company}</strong>
                 <span className={styles.subtle}>{selected.type}</span>
-                <span className={cx(styles.pill, styles.pillGreen)}>Qualified</span>
-                <span className={cx(styles.pill, styles.pillYellow)}>High value</span>
-              </div>
-            </div>
-            <button className={styles.buttonGhost}><MoreHorizontal size={16} /></button>
-          </div>
-          <div className={styles.statusLine}>
-            {['Discovery complete', 'Requirements captured', 'Proposal in draft', 'Tech review pending'].map((item, index) => (
-              <div key={item} className={styles.statusStep}>
-                <div className={styles.identity}>
-                  {index < 3 ? <Check size={14} color="#22c55e" /> : <CircleDot size={14} color="#60a5fa" />}
-                  <span>{item}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className={styles.panel}>
-            <div className={styles.panelTitle}>Project summary</div>
-            <p className={styles.pageDescription}>Modern marketing website to showcase services, build trust, and convert visitors.</p>
-            <div className={styles.checkLine}>
-              {['12-page marketing site', 'CMS integration', 'Blog', 'Lead capture forms', 'Case studies', 'SEO setup', 'Analytics', 'Video section'].map((item) => (
-                <div key={item} className={styles.checkItem}>
-                  <Check size={14} color="#22c55e" />
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className={styles.threeUp}>
-            <div className={styles.panel}>
-              <div className={styles.panelTitle}>Key requirements</div>
-              <div className={styles.checkLine}>
-                {['Responsive & mobile-first', 'Fast performance (90+ score)', 'SEO best practices', 'Easy content management', 'Integration with CRM forms'].map((item) => (
-                  <div key={item} className={styles.checkItem}>
-                    <Check size={14} color="#22c55e" />
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className={styles.panel}>
-              <div className={styles.panelTitle}>Attached brief</div>
-              <div className={styles.estimationBox}>
-                <strong>Acme_CRM_Website_Brief.pdf</strong>
-                <div className={styles.subtle}>PDF · 1.8 MB · Uploaded May 15</div>
-              </div>
-              <div className={styles.estimationBox} style={{ marginTop: 10 }}>
-                <strong>Sarah Johnson</strong>
-                <div className={styles.subtle}>Marketing Director</div>
-              </div>
-            </div>
-            <div className={styles.panel}>
-              <div className={styles.panelTitle}>Estimate</div>
-              <div className={styles.estimationBox}>
-                <strong style={{ color: '#4ade80' }}>$20K – $35K</strong>
-                <div className={styles.subtle}>Estimated budget</div>
-              </div>
-              <div className={styles.estimationBox} style={{ marginTop: 10 }}>
-                <strong>May 26 – Jul 4, 2025</strong>
-                <div className={styles.subtle}>Estimated delivery (6 weeks)</div>
+                <span className={cx(styles.pill, stagePill(selected.stage))}>{selected.stage}</span>
+                <span className={cx(styles.pill, priorityTone(selected.priority))}>{selected.priority}</span>
               </div>
             </div>
           </div>
-          <div className={styles.threeUp}>
-            <div className={styles.ctaCard}>
-              <strong>1. Send proposal draft</strong>
-              <div className={styles.subtle}>Proposal is 70% complete and ready to share for feedback.</div>
-              <button className={styles.buttonPrimary} style={{ marginTop: 10 }}>Send proposal</button>
-            </div>
-            <div className={styles.panel}>
-              <strong>2. Schedule technical scoping call</strong>
-              <div className={styles.subtle}>Align on technical scope and integrations.</div>
-              <button className={styles.button} style={{ marginTop: 10 }}>Book call</button>
-            </div>
-            <div className={styles.panel}>
-              <strong>3. Share example case study</strong>
-              <div className={styles.subtle}>Acme-like project could help build confidence.</div>
-              <button className={styles.button} style={{ marginTop: 10 }}>Share resource</button>
-            </div>
+          <dl className={styles.requestFacts}>
+            <div><dt>Contact</dt><dd>{selected.owner}</dd></div>
+            <div><dt>Email</dt><dd>{selected.contactEmail || 'Not provided'}</dd></div>
+            <div><dt>Budget</dt><dd>{selected.value}</dd></div>
+            <div><dt>Timeline</dt><dd>{selected.timelineWeeks ? `${selected.timelineWeeks} weeks` : 'Not provided'}</dd></div>
+            <div><dt>Last activity</dt><dd>{selected.lastActivity}</dd></div>
+          </dl>
+          <div className={styles.requestDescription}>
+            <small>Request summary</small>
+            <p>{selected.description || 'No project description was supplied.'}</p>
           </div>
-          <div className={styles.replyActions}>
-            <button className={styles.chipButton}>Reply</button>
-            <button className={styles.chipButton}>Note</button>
-            <button className={styles.chipButton}>Email</button>
-            <button className={styles.chipButton}>Template</button>
-            <button className={styles.chipButton}>Attach</button>
-            <button className={styles.chipButton}>Internal note</button>
-            <button className={styles.chipButton}>Send video</button>
-            <button className={styles.chipButton}>Schedule send</button>
-            <button className={styles.buttonPrimary}>Send update</button>
+          <div className={styles.requestEditGrid}>
+            <label><span>Stage</span><select value={editStage} onChange={(event) => setEditStage(event.target.value)}>{stages.map((item) => <option key={item}>{item}</option>)}</select></label>
+            <label><span>Priority</span><select value={editPriority} onChange={(event) => setEditPriority(event.target.value as 'Low' | 'Medium' | 'High')}><option>Low</option><option>Medium</option><option>High</option></select></label>
+            <label className={styles.requestNextAction}><span>Next action</span><input value={nextAction} onChange={(event) => setNextAction(event.target.value)} maxLength={240} /></label>
           </div>
+          {feedback ? <div className={styles.inlineFeedback} role="status">{feedback}</div> : null}
           <div className={styles.detailActions}>
-            <button className={styles.button}>Mark as scoped</button>
-            <button className={styles.button}>Convert to project</button>
-            <button className={styles.button}><MoreHorizontal size={16} /></button>
+            <button className={styles.buttonPrimary} onClick={saveRequest} disabled={saving}>{saving ? 'Saving…' : 'Save request'}</button>
+            {selected.leadId ? <Link className={styles.button} href={`/dashboard/leads/${selected.leadId}`}>Open lead</Link> : null}
+            {selected.contactEmail ? <Link className={styles.button} href="/dashboard/emails"><Mail size={15} /> Email contact</Link> : null}
           </div>
         </div>
         )}
-
-        <div className={styles.rightRail}>
-          <RightPanel title="Request snapshot" actionLabel="View in CRM">
-            <div className={styles.listRow}>
-              <div className={styles.identity}>
-                <div className={styles.logoMark}>ACME</div>
-                <div>
-                  <strong>Acme Corp</strong>
-                  <div className={styles.subtle}>Lead score 92</div>
-                </div>
-              </div>
-              <strong style={{ color: '#4ade80' }}>$28K</strong>
-            </div>
-            <div className={styles.list}>
-              <div className={styles.listRow}><span>Source</span><strong>Website</strong></div>
-              <div className={styles.listRow}><span>Contact</span><strong>Sarah Johnson</strong></div>
-              <div className={styles.listRow}><span>Owner</span><strong>Sarah M.</strong></div>
-              <div className={styles.listRow}><span>Timeline</span><strong>6 weeks</strong></div>
-            </div>
-          </RightPanel>
-          <RightPanel title="AI recommendations">
-            <div className={styles.recommendationList}>
-              <RecommendationAction title="Send scope summary" subtitle="Keep momentum with a concise proposal recap." actionLabel="Send" />
-              <RecommendationAction title="Book technical scoping call" subtitle="Lock the scope while intent is strong." actionLabel="Book" />
-              <RecommendationAction title="Share relevant case study" subtitle="Reinforce confidence with proof." actionLabel="Share" />
-            </div>
-          </RightPanel>
-        </div>
       </div>
     </>
   )
 }
 
 function IntegrationStatusBar({ status }: { status: IntegrationStatus }) {
+  const latestCheck = status.healthChecks?.[0]
   return (
     <div className={styles.statusBar}>
       <div className={styles.statusStat}>
@@ -1555,7 +1458,7 @@ function IntegrationStatusBar({ status }: { status: IntegrationStatus }) {
         <strong>{status.pending}</strong>
       </div>
       <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 14 }}>
-        Last synced: 2 minutes ago
+        {latestCheck ? `Last checked ${new Date(latestCheck.checkedAt).toLocaleString('en-GB')}` : 'No health check recorded'}
       </span>
     </div>
   )
@@ -1564,6 +1467,8 @@ function IntegrationStatusBar({ status }: { status: IntegrationStatus }) {
 function IntegrationsSection({ integrationStatus = { connected: 0, suggested: 0, pending: 0 } }: { integrationStatus?: IntegrationStatus }) {
   const checks = integrationStatus.healthChecks || []
   const toneFor = (status: string) => status === 'healthy' ? styles.pillGreen : status === 'degraded' ? styles.pillYellow : status === 'down' ? styles.pillRed : styles.pill
+  const latestFor = (provider: string) => checks.find((check) => check.provider.toLowerCase() === provider.toLowerCase())
+  const statusFor = (provider: string) => latestFor(provider)?.status || 'unknown'
   return (
     <>
       <IntegrationStatusBar status={integrationStatus} />
@@ -1572,45 +1477,29 @@ function IntegrationsSection({ integrationStatus = { connected: 0, suggested: 0,
           icon={<DatabaseIcon size={18} />}
           title="Supabase"
           description="Primary source of truth for leads, assets, events, chat, and request data."
-          status="Connected"
-          action="Manage connection"
+          status={statusFor('Supabase')}
         />
         <IntegrationCard
           icon={<Mail size={18} />}
           title="Resend"
-          description="Transactional email delivery for outreach, follow-ups, and campaign sends."
-          status="Configured"
-          action="Open email settings"
+          description="Transactional delivery for personalised messages and engagement webhooks."
+          status={statusFor('Resend')}
+          action="Open email workspace"
+          href="/dashboard/emails"
         />
         <IntegrationCard
           icon={<Users size={18} />}
           title="HubSpot"
           description="Contact sync and note creation for inbound submissions and sales touchpoints."
-          status="Connected"
-          action="Review mapping"
+          status={statusFor('HubSpot')}
         />
-      </div>
-      <div className={styles.integrationsGrid} style={{ marginTop: 10 }}>
         <IntegrationCard
           icon={<Video size={18} />}
           title="Video Library"
           description="Upload, categorize, and reuse personalised videos across campaigns and conversations."
-          status="Ready"
+          status="ready"
           action="Open library"
-        />
-        <IntegrationCard
-          icon={<CalendarDays size={18} />}
-          title="Calendar Booking"
-          description="Drive meetings from video CTAs, email campaigns, and live chat recommendations."
-          status="Not configured"
-          action="Contact sales to add this"
-        />
-        <IntegrationCard
-          icon={<ShieldCheck size={18} />}
-          title="Automation Rules"
-          description="Create engagement-based follow-up rules that scale cleanly when live data arrives."
-          status="Not configured"
-          action="Contact sales to add this"
+          href="/dashboard/videos"
         />
       </div>
       <div className={styles.panel} style={{ marginTop: 10 }}>
@@ -1777,7 +1666,7 @@ function LeadToolbar({
 function LeadTable({ leads, selectedId, onSelect }: { leads: LeadRecord[]; selectedId: string; onSelect: (value: string) => void }) {
   const router = useRouter()
 
-  function handleRowClick(e: MouseEvent<HTMLTableRowElement>, lead: LeadRecord) {
+  function handleRowClick(e: ReactMouseEvent<HTMLTableRowElement>, lead: LeadRecord) {
     // checkbox click → select only, name link handles navigation
     if ((e.target as HTMLElement).closest('input[type="checkbox"]')) {
       onSelect(lead.id)
@@ -1945,40 +1834,35 @@ function EmailTable({ rows, selectedId, onSelect }: { rows: EmailRecord[]; selec
               <th>Owner</th>
               <th>Subject line</th>
               <th>Sent</th>
-              <th>Opens</th>
-              <th>Replies</th>
+              <th>Open rate</th>
+              <th>Click rate</th>
+              <th>Reply rate</th>
               <th>CTA</th>
-              <th>Next action</th>
+              <th>Last edited</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((email) => (
               <tr key={email.id} className={cx(selectedId === email.id && styles.tableRowSelected)} onClick={() => onSelect(email.id)}>
-                <td><input type="checkbox" checked={selectedId === email.id} readOnly /></td>
-                <td><strong>{email.template}</strong></td>
+                <td><input type="radio" name="selected-email-template" aria-label={`Select ${email.template}`} checked={selectedId === email.id} readOnly /></td>
+                <td><button className={styles.tableRowButton} onClick={() => onSelect(email.id)}>{email.template}</button></td>
                 <td>{email.audience}</td>
                 <td><span className={cx(styles.pill, stagePill(email.stage))}>{email.stage}</span></td>
                 <td>{email.owner}</td>
                 <td>{email.subject}</td>
                 <td>{email.sent}</td>
                 <td>{email.opens}%</td>
+                <td>{email.clicks}%</td>
                 <td>{email.replies}%</td>
                 <td style={{ color: '#60a5fa' }}>{email.cta}</td>
-                <td style={{ color: '#60a5fa' }}>{email.nextAction}</td>
+                <td>{email.lastEdited}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <div className={styles.tableFooter}>
-        Showing 1 to {rows.length} of 42 templates
-        <div className={styles.pagination}>
-          <button>{'<'}</button>
-          <button>1</button>
-          <button>2</button>
-          <button>3</button>
-          <button>{'>'}</button>
-        </div>
+        Showing {rows.length} template{rows.length === 1 ? '' : 's'}
       </div>
     </>
   )
@@ -2022,14 +1906,7 @@ function SiteRequestTable({ rows, selectedId, onSelect }: { rows: SiteRequestRec
         </table>
       </div>
       <div className={styles.tableFooter}>
-        Showing 1 to {rows.length} of 36 requests
-        <div className={styles.pagination}>
-          <button>{'<'}</button>
-          <button>1</button>
-          <button>2</button>
-          <button>3</button>
-          <button>{'>'}</button>
-        </div>
+        Showing {rows.length} request{rows.length === 1 ? '' : 's'}
       </div>
     </>
   )
@@ -2291,16 +2168,15 @@ function LeadBottomBar({ lead }: { lead?: LeadRecord }) {
         <Link href="/dashboard/emails" className={styles.button} data-dashboard-native="true"><Mail size={15} /> Send email</Link>
         <Link href="/dashboard/videos/editor" className={styles.button} data-dashboard-native="true"><Video size={15} /> Create video</Link>
         <Link href="/contact" className={styles.button} data-dashboard-native="true"><CalendarDays size={15} /> Book call</Link>
-        <button className={styles.button}><MoreHorizontal size={16} /></button>
       </div>
     </div>
   )
 }
 
 function integrationStatusPill(status: string) {
-  if (status === 'Connected' || status === 'Configured' || status === 'Ready') return styles.pillGreen
-  if (status === 'Enabled') return styles.pillBlue
-  if (status === 'Not configured') return styles.pillRed
+  if (status === 'healthy' || status === 'ready') return styles.pillGreen
+  if (status === 'degraded') return styles.pillYellow
+  if (status === 'down') return styles.pillRed
   return styles.pillYellow
 }
 
@@ -2310,12 +2186,14 @@ function IntegrationCard({
   description,
   status,
   action,
+  href,
 }: {
   icon: ReactNode
   title: string
   description: string
   status: string
-  action: string
+  action?: string
+  href?: string
 }) {
   return (
     <div className={styles.integrationCard}>
@@ -2324,7 +2202,7 @@ function IntegrationCard({
       <p>{description}</p>
       <div className={styles.listRow}>
         <span className={cx(styles.pill, integrationStatusPill(status))}>{status}</span>
-        <button className={action.toLowerCase().includes('contact sales') ? styles.buttonGhost : styles.button}>{action}</button>
+        {action && href ? <Link className={styles.button} href={href}>{action}</Link> : null}
       </div>
     </div>
   )

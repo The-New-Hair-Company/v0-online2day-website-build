@@ -1,10 +1,10 @@
 'use server'
 
 import { Resend } from 'resend'
-import { logLeadEvent } from './lead-actions'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { logAsyncActionFailure, withRetry } from './reliability-actions'
+import { emailWorkspaceApi, leadsApi, videoAssetsApi } from '@/lib/api/client'
 
 type SendEnterpriseEmailInput = {
   leadId?: string
@@ -12,6 +12,7 @@ type SendEnterpriseEmailInput = {
   recipientName?: string
   subject: string
   body: string
+  templateId?: string
   templateName?: string
   videoAssetId?: string
   videoSlug?: string
@@ -22,6 +23,12 @@ const getResend = () => {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return null
   return new Resend(apiKey)
+}
+
+async function getToken() {
+  const supabase = await createClient()
+  const { data } = await supabase.auth.getSession()
+  return data.session?.access_token || null
 }
 
 function escapeHtml(value: string) {
@@ -105,38 +112,32 @@ export async function sendEnterpriseEmail(input: SendEnterpriseEmailInput) {
   if (!input.subject.trim() || !input.body.trim()) {
     return { error: 'Subject and message body are required.' }
   }
+  if (input.subject.trim().length > 180) return { error: 'Keep the subject under 180 characters.' }
+  if (input.body.trim().length > 20_000) return { error: 'Keep the message under 20,000 characters.' }
 
-  const supabase = await createClient()
-  const { data: userData } = await supabase.auth.getUser()
+  const token = await getToken()
+  if (!token) return { error: 'Your session has expired. Sign in and try again.' }
 
   let lead: any = null
   if (input.leadId) {
-    const { data } = await supabase
-      .from('leads')
-      .select('id, name, company, email')
-      .eq('id', input.leadId)
-      .single()
-    lead = data
+    try {
+      lead = await leadsApi.get(token, input.leadId)
+    } catch {
+      return { error: 'The selected lead is no longer available.' }
+    }
   }
 
   let video: any = null
   if (input.videoAssetId) {
-    const { data } = await supabase
-      .from('lead_assets')
-      .select('id, lead_id, name, slug, url, storage_path')
-      .eq('id', input.videoAssetId)
-      .eq('type', 'video')
-      .single()
-    video = data
+    const videos = await videoAssetsApi.list(token, { limit: 250 }).catch(() => [])
+    video = videos.find((asset) => asset.id === input.videoAssetId) || null
   }
 
   let videoUrl = input.videoSlug ? `${siteUrl()}/v/${input.videoSlug}` : video?.slug ? `${siteUrl()}/v/${video.slug}` : video?.url
 
   if (video?.storage_path && !video?.slug) {
-    const { data } = await supabase.storage
-      .from('lead-videos')
-      .createSignedUrl(video.storage_path, 60 * 60 * 24 * 14)
-    videoUrl = data?.signedUrl || videoUrl
+    const playback = await videoAssetsApi.playback(token, video.id).catch(() => null)
+    videoUrl = playback?.url || videoUrl
   }
 
   const html = renderEmailHtml({
@@ -179,20 +180,93 @@ export async function sendEnterpriseEmail(input: SendEnterpriseEmailInput) {
     return { error: error instanceof Error ? error.message : 'Resend rejected the message.' }
   }
 
-  if (input.leadId) {
-    await logLeadEvent(input.leadId, 'Email Sent', `Email "${input.subject}" sent to ${to}`, {
-      subject: input.subject,
-      template: input.templateName,
-      videoAssetId: input.videoAssetId,
-      videoSlug: input.videoSlug,
-      resendId: data?.id,
-      sentBy: userData.user?.email,
-    })
-    revalidatePath(`/dashboard/leads/${input.leadId}`)
+  let logWarning: string | undefined
+  if (data?.id) {
+    try {
+      await emailWorkspaceApi.logSend(token, {
+        leadId: input.leadId || null,
+        templateId: input.templateId || null,
+        to,
+        subject: input.subject.trim(),
+        body: input.body.trim(),
+        resendId: data.id,
+      })
+    } catch (logError) {
+      logWarning = 'The email was sent, but its CRM activity record could not be saved.'
+      await logAsyncActionFailure({
+        action: 'record_enterprise_email',
+        payload: { resendId: data.id, leadId: input.leadId || null, templateId: input.templateId || null },
+        error: logError,
+        recoverable: true,
+      })
+    }
   }
 
+  if (input.leadId) revalidatePath(`/dashboard/leads/${input.leadId}`)
   revalidatePath('/dashboard/emails')
-  return { success: true, id: data?.id }
+  return { success: true, id: data?.id, warning: logWarning }
+}
+
+type EmailTemplateInput = {
+  name: string
+  subject: string
+  body: string
+  category?: string
+  audience?: string
+  stage?: string
+  ctaLabel?: string
+}
+
+function validateTemplate(input: EmailTemplateInput) {
+  if (!input.name.trim()) return 'Template name is required.'
+  if (!input.subject.trim()) return 'Subject is required.'
+  if (!input.body.trim()) return 'Message body is required.'
+  if (input.name.trim().length > 120) return 'Keep the template name under 120 characters.'
+  if (input.subject.trim().length > 180) return 'Keep the subject under 180 characters.'
+  if (input.body.trim().length > 20_000) return 'Keep the message under 20,000 characters.'
+  return null
+}
+
+export async function createEmailTemplate(input: EmailTemplateInput) {
+  const validation = validateTemplate(input)
+  if (validation) return { error: validation }
+  const token = await getToken()
+  if (!token) return { error: 'Your session has expired. Sign in and try again.' }
+  try {
+    const template = await emailWorkspaceApi.createTemplate(token, input)
+    revalidatePath('/dashboard/emails')
+    return { success: true, template }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Template could not be created.' }
+  }
+}
+
+export async function updateEmailTemplate(id: string, input: EmailTemplateInput) {
+  if (!id) return { error: 'Template is required.' }
+  const validation = validateTemplate(input)
+  if (validation) return { error: validation }
+  const token = await getToken()
+  if (!token) return { error: 'Your session has expired. Sign in and try again.' }
+  try {
+    const template = await emailWorkspaceApi.updateTemplate(token, id, input)
+    revalidatePath('/dashboard/emails')
+    return { success: true, template }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Template could not be updated.' }
+  }
+}
+
+export async function deleteEmailTemplate(id: string) {
+  if (!id) return { error: 'Template is required.' }
+  const token = await getToken()
+  if (!token) return { error: 'Your session has expired. Sign in and try again.' }
+  try {
+    await emailWorkspaceApi.deleteTemplate(token, id)
+    revalidatePath('/dashboard/emails')
+    return { success: true }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Template could not be deleted.' }
+  }
 }
 
 export async function sendVideoFollowUpEmail(leadId: string, email: string, name: string, videoSlug: string) {

@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LogOut,
   Mail,
+  Menu,
   MessageCircle,
   Newspaper,
   Plug,
@@ -18,6 +19,7 @@ import {
   ShieldCheck,
   Users,
   Video,
+  X,
 } from 'lucide-react'
 import styles from './LeadsDashboard.module.css'
 import { getDashboardAccessProfile, type DashboardAccessProfile } from '@/app/actions/dashboard'
@@ -59,6 +61,7 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
   const [notifications, setNotifications] = useState<UserNotification[]>([])
   const [openNotifications, setOpenNotifications] = useState(false)
   const [notificationsError, setNotificationsError] = useState('')
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
     getDashboardAccessProfile()
@@ -66,6 +69,20 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
       .finally(() => setLoadingAccess(false))
     refreshNotifications()
   }, [])
+
+  useEffect(() => {
+    if (!mobileOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [mobileOpen])
 
   async function refreshNotifications() {
     try {
@@ -118,8 +135,8 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
     return true
   })
 
-  return (
-    <aside className={styles.sidebar}>
+  function sidebarContents(isMobile = false) {
+    return <>
       <div className={styles.brand}>
         <span>Online2Day</span>
         <p>CRM Dashboard</p>
@@ -129,7 +146,7 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
         {visibleNav.map((item) => {
           const Icon = item.icon
           return (
-            <Link key={item.label} className={cx(styles.navItem, item.active && styles.navItemActive)} href={item.href}>
+            <Link key={item.label} className={cx(styles.navItem, item.active && styles.navItemActive)} href={item.href} onClick={() => isMobile && setMobileOpen(false)}>
               <Icon size={18} />
               <span>{item.label}</span>
               {item.badge ? <strong>{item.badge}</strong> : null}
@@ -138,7 +155,7 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
           )
         })}
       </nav>
-      <section className={styles.sidebarNotif}>
+      {!isMobile ? <section className={styles.sidebarNotif}>
         <button className={styles.notifTrigger} onClick={() => setOpenNotifications((open) => !open)}>
           <Bell size={16} />
           <span>Activity</span>
@@ -165,16 +182,50 @@ export function DashboardSidebar({ active }: { active?: ActiveDashboardSection }
             ))}
           </div>
         ) : null}
-      </section>
+      </section> : null}
       <div className={styles.proCard}>
         <div className={styles.proIcon}><Crown size={18} /></div>
         <h3>Pro Plan</h3>
         <p>Unlimited videos, advanced analytics and more.</p>
-        <Link href="/pricing"><button>View Plans</button></Link>
+        <Link href="/pricing" onClick={() => isMobile && setMobileOpen(false)}>View plans</Link>
       </div>
       <form action="/auth/signout" method="post" style={{ display: 'contents' }}>
         <button type="submit" className={styles.signOut}><LogOut size={18} /> Sign Out</button>
       </form>
-    </aside>
+    </>
+  }
+
+  const activeLabel = navItems.find((item) => item.active)?.label || 'Dashboard'
+
+  return (
+    <>
+      <header className={styles.mobileDashboardHeader}>
+        <Link href="/dashboard/overview" className={styles.mobileBrand}>Online2Day</Link>
+        <span>{activeLabel}</span>
+        <button
+          type="button"
+          aria-label="Open dashboard navigation"
+          aria-expanded={mobileOpen}
+          aria-controls="mobile-dashboard-navigation"
+          onClick={() => setMobileOpen(true)}
+        >
+          <Menu size={21} />
+        </button>
+      </header>
+      {mobileOpen ? (
+        <div className={styles.mobileNavBackdrop} onClick={() => setMobileOpen(false)}>
+          <aside
+            id="mobile-dashboard-navigation"
+            className={styles.mobileNavDrawer}
+            aria-label="Dashboard navigation"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button className={styles.mobileNavClose} type="button" onClick={() => setMobileOpen(false)} aria-label="Close dashboard navigation"><X size={20} /></button>
+            {sidebarContents(true)}
+          </aside>
+        </div>
+      ) : null}
+      <aside className={styles.sidebar}>{sidebarContents()}</aside>
+    </>
   )
 }

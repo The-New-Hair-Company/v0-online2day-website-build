@@ -133,9 +133,9 @@ export default function VideoUploadClient({ clientUsers }: Props) {
 
   return (
     <div className="flex min-h-screen bg-background max-[980px]:block" style={{ fontFamily: 'Inter, sans-serif' }}>
-      <div className="max-[980px]:hidden"><DashboardSidebar active="videos" /></div>
+      <DashboardSidebar active="videos" />
 
-      <main className="flex-1 overflow-auto p-8 max-w-3xl mx-auto w-full">
+      <main className="flex-1 overflow-auto p-8 max-[600px]:p-4 max-w-3xl mx-auto w-full">
         <div className="mb-8 flex items-center gap-4">
           <Link href="/dashboard/videos" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft size={16} /> Back to Videos
@@ -155,7 +155,7 @@ export default function VideoUploadClient({ clientUsers }: Props) {
               onDragOver={e => { e.preventDefault(); setDragOver(true) }}
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
-              className={`relative border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${
+              className={`relative border-2 border-dashed rounded-2xl p-12 max-[600px]:p-7 text-center cursor-pointer transition-all ${
                 dragOver
                   ? 'border-primary bg-primary/5'
                   : file

@@ -136,6 +136,94 @@ export interface VideoAssetDto {
   } | null
 }
 
+export interface EmailTemplateDto {
+  id: string
+  name: string
+  subject: string
+  body: string
+  category: string | null
+  audience: string | null
+  stage: string | null
+  cta_label: string | null
+  sent_count: number | null
+  open_count: number | null
+  click_count: number | null
+  reply_count: number | null
+  meetings_booked: number | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface EmailSendDto {
+  id: string
+  lead_id: string | null
+  template_id: string | null
+  subject: string | null
+  body: string | null
+  status: string | null
+  sent_at: string | null
+  opened_at: string | null
+  clicked_at: string | null
+  replied_at: string | null
+  created_at: string
+  lead?: { id: string; name: string | null; company: string | null; email: string | null } | null
+  template?: { id: string; name: string | null } | null
+}
+
+export interface ConversationDto {
+  id: string
+  lead_id: string | null
+  contact_name: string | null
+  company: string | null
+  channel: string | null
+  status: string | null
+  priority: string | null
+  score: number | null
+  unread_count: number | null
+  last_message_preview: string | null
+  last_message_at: string | null
+  resolved_at: string | null
+  created_at: string
+  updated_at: string | null
+  messages?: Array<{
+    id: string
+    conversation_user_id: string | null
+    sender_id: string | null
+    content: string | null
+    is_read: boolean | null
+    created_at: string
+    message_type: string | null
+    attachment_label: string | null
+  }>
+}
+
+export interface SiteRequestDto {
+  id: string
+  title: string | null
+  company: string | null
+  type: string | null
+  priority: string | null
+  stage: string | null
+  contact_name: string | null
+  contact_email: string | null
+  description: string | null
+  budget_min: number | null
+  budget_max: number | null
+  timeline_weeks: number | null
+  brief_url: string | null
+  next_action: string | null
+  lead_id: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface DashboardSupportDto {
+  snapshots: Array<{ section: string; metric_label: string; value_numeric: number | string; snapshot_date: string }>
+  integrations: Array<{ id: string; name: string; type: string; status: string | null; last_synced_at: string | null; updated_at: string | null }>
+  goals: Array<{ id: string; label: string; target_value: number | string; current_value: number | string; unit: string; period_start: string; period_end: string; created_at: string; updated_at: string | null }>
+  healthChecks: Array<{ provider: string; status: 'healthy' | 'degraded' | 'down' | 'unknown'; latency_ms: number | null; checked_at: string; detail: string | null }>
+}
+
 export interface LeadTaskDto {
   id: string
   leadId: string
@@ -439,6 +527,106 @@ export const videoAssetsApi = {
 
   delete(token: string, assetId: string): Promise<void> {
     return apiFetch<void>(`/api/v1/online2day/video-assets/${assetId}`, token, { method: 'DELETE' })
+  },
+}
+
+// ── Online2Day email and dashboard workspaces (Azure gateway → Supabase) ─────
+
+export const emailWorkspaceApi = {
+  listTemplates(token: string): Promise<EmailTemplateDto[]> {
+    return apiFetch<EmailTemplateDto[]>('/api/v1/online2day/email-templates', token)
+  },
+
+  createTemplate(token: string, data: {
+    name: string
+    subject: string
+    body: string
+    category?: string
+    audience?: string
+    stage?: string
+    ctaLabel?: string
+  }): Promise<EmailTemplateDto> {
+    return apiFetch<EmailTemplateDto>('/api/v1/online2day/email-templates', token, {
+      method: 'POST', body: JSON.stringify(data),
+    })
+  },
+
+  updateTemplate(token: string, id: string, data: Partial<{
+    name: string
+    subject: string
+    body: string
+    category: string
+    audience: string
+    stage: string
+    ctaLabel: string
+  }>): Promise<EmailTemplateDto> {
+    return apiFetch<EmailTemplateDto>(`/api/v1/online2day/email-templates/${id}`, token, {
+      method: 'PATCH', body: JSON.stringify(data),
+    })
+  },
+
+  deleteTemplate(token: string, id: string): Promise<void> {
+    return apiFetch<void>(`/api/v1/online2day/email-templates/${id}`, token, { method: 'DELETE' })
+  },
+
+  listSends(token: string, limit = 50): Promise<EmailSendDto[]> {
+    return apiFetch<EmailSendDto[]>(`/api/v1/online2day/email-sends?limit=${limit}`, token)
+  },
+
+  logSend(token: string, data: {
+    leadId?: string | null
+    templateId?: string | null
+    to: string
+    subject: string
+    body: string
+    resendId: string
+  }): Promise<EmailSendDto> {
+    return apiFetch<EmailSendDto>('/api/v1/online2day/email-sends', token, {
+      method: 'POST', body: JSON.stringify(data),
+    })
+  },
+}
+
+export const dashboardWorkspaceApi = {
+  conversations(token: string): Promise<ConversationDto[]> {
+    return apiFetch<ConversationDto[]>('/api/v1/online2day/conversations', token)
+  },
+
+  reply(token: string, conversationId: string, content: string): Promise<{ success: boolean }> {
+    return apiFetch<{ success: boolean }>(`/api/v1/online2day/conversations/${conversationId}/reply`, token, {
+      method: 'POST', body: JSON.stringify({ content }),
+    })
+  },
+
+  markRead(token: string, conversationId: string): Promise<{ success: boolean }> {
+    return apiFetch<{ success: boolean }>(`/api/v1/online2day/conversations/${conversationId}/read`, token, { method: 'POST' })
+  },
+
+  siteRequests(token: string): Promise<SiteRequestDto[]> {
+    return apiFetch<SiteRequestDto[]>('/api/v1/online2day/site-requests', token)
+  },
+
+  updateSiteRequest(token: string, id: string, data: { stage?: string; priority?: 'Low' | 'Medium' | 'High'; nextAction?: string }): Promise<SiteRequestDto> {
+    return apiFetch<SiteRequestDto>(`/api/v1/online2day/site-requests/${id}`, token, {
+      method: 'PATCH', body: JSON.stringify(data),
+    })
+  },
+
+  support(token: string, section?: string): Promise<DashboardSupportDto> {
+    const query = section ? `?section=${encodeURIComponent(section)}` : ''
+    return apiFetch<DashboardSupportDto>(`/api/v1/online2day/dashboard-support${query}`, token)
+  },
+
+  saveHealthChecks(token: string, checks: Array<{
+    provider: string
+    status: 'healthy' | 'degraded' | 'down' | 'unknown'
+    latencyMs: number | null
+    checkedAt: string
+    detail: string
+  }>): Promise<{ success: boolean }> {
+    return apiFetch<{ success: boolean }>('/api/v1/online2day/integration-health-checks', token, {
+      method: 'POST', body: JSON.stringify({ checks }),
+    })
   },
 }
 

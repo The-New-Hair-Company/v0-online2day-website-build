@@ -1,16 +1,24 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { leadsApi, activityFeedApi, tasksApi, prefsApi, videoAssetsApi, type VideoAssetDto } from '@/lib/api/client'
+import {
+  leadsApi,
+  activityFeedApi,
+  tasksApi,
+  prefsApi,
+  videoAssetsApi,
+  emailWorkspaceApi,
+  dashboardWorkspaceApi,
+  type VideoAssetDto,
+} from '@/lib/api/client'
 import { platformServerFetch } from '@/lib/api/platform-server'
 import { isFoundingAdminEmail, normalizeEmail } from '@/lib/license'
-import { getEnterpriseStateValue, setEnterpriseStateValue } from '@/lib/actions/enterprise-actions'
 import type {
   Lead, LeadStage, IconName, PipelineStage, LeadSourcePerformance,
   OwnerPerformance, Metric, TaskItem, ActivityItem, Recommendation
 } from '@/components/leads/leads-types'
 import type {
-  LeadRecord, VideoRecord, EmailRecord, ConversationRecord, SiteRequestRecord, CrmSetupConfig
+  LeadRecord, VideoRecord, EmailRecord, EmailSendRecord, ConversationRecord, SiteRequestRecord, CrmSetupConfig
 } from '@/components/crm-dashboard/types'
 
 async function getToken(): Promise<string | null> {
@@ -219,27 +227,64 @@ export async function getVideos(): Promise<VideoRecord[]> {
 // ─── EMAILS ──────────────────────────────────────────────────────────────────
 
 export async function getEmails(): Promise<EmailRecord[]> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('email_templates')
-    .select('*')
-    .order('created_at', { ascending: false })
-  if (error || !data) return []
+  const token = await getToken()
+  if (!token) return []
+  try {
+    const [data, sends] = await Promise.all([
+      emailWorkspaceApi.listTemplates(token),
+      emailWorkspaceApi.listSends(token, 1_000),
+    ])
+    return data.map((row): EmailRecord => {
+      const templateSends = sends.filter((send) => send.template_id === row.id)
+      const sent = templateSends.length
+      const openCount = templateSends.filter((send) => Boolean(send.opened_at)).length
+      const clickCount = templateSends.filter((send) => Boolean(send.clicked_at)).length
+      const replyCount = templateSends.filter((send) => Boolean(send.replied_at)).length
+      return {
+        id: row.id,
+        template: row.name || 'Untitled template',
+        body: row.body || '',
+        category: row.category || 'Outreach',
+        audience: row.audience || 'All leads',
+        stage: row.stage || 'Outreach',
+        owner: 'Online2Day',
+        subject: row.subject || '(No subject)',
+        sent,
+        opens: sent > 0 ? Math.round((openCount / sent) * 100) : 0,
+        clicks: sent > 0 ? Math.round((clickCount / sent) * 100) : 0,
+        replies: sent > 0 ? Math.round((replyCount / sent) * 100) : 0,
+        meetings: Math.max(0, row.meetings_booked || 0),
+        cta: row.cta_label || 'Reply now',
+        lastEdited: relativeTime(row.updated_at || row.created_at),
+        nextAction: sent > 0 ? 'Send or edit' : 'Send first email',
+      }
+    })
+  } catch {
+    return []
+  }
+}
 
-  return data.map((row: any): EmailRecord => ({
-    id: row.id,
-    template: row.name || 'Untitled Template',
-    audience: row.audience || 'All Leads',
-    stage: row.stage || 'Outreach',
-    owner: 'Sarah M.',
-    subject: row.subject || '(No Subject)',
-    sent: row.sent_count || 0,
-    opens: row.open_count || 0,
-    replies: row.reply_count || 0,
-    cta: row.cta_label || 'Reply now',
-    lastEdited: relativeTime(row.updated_at),
-    nextAction: 'Review performance',
-  }))
+export async function getRecentEmailSends(): Promise<EmailSendRecord[]> {
+  const token = await getToken()
+  if (!token) return []
+  try {
+    const data = await emailWorkspaceApi.listSends(token, 50)
+    return data.map((row): EmailSendRecord => ({
+      id: row.id,
+      leadId: row.lead_id,
+      recipientName: row.lead?.name || 'Manual recipient',
+      recipientEmail: row.lead?.email || '',
+      company: row.lead?.company || '—',
+      templateName: row.template?.name || 'Custom email',
+      subject: row.subject || '(No subject)',
+      status: String(row.status || 'sent').split(':')[0].replaceAll('_', ' '),
+      sentAt: row.sent_at || row.created_at,
+      openedAt: row.opened_at,
+      clickedAt: row.clicked_at,
+    }))
+  } catch {
+    return []
+  }
 }
 
 export async function getEmailComposerData() {
@@ -287,14 +332,11 @@ export async function getEmailComposerData() {
 // ─── CONVERSATIONS / MESSAGES ────────────────────────────────────────────────
 
 export async function getConversations(): Promise<ConversationRecord[]> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('conversations')
-    .select('*, messages(id, content, is_read, created_at, sender_id, message_type)')
-    .order('last_message_at', { ascending: false })
-  if (error || !data) return []
-
-  return (data as any[]).map((conv): ConversationRecord => ({
+  const token = await getToken()
+  if (!token) return []
+  try {
+    const data = await dashboardWorkspaceApi.conversations(token)
+    return data.map((conv): ConversationRecord => ({
     id: conv.id,
     name: conv.contact_name || 'Unknown',
     company: conv.company || 'Prospect',
@@ -305,43 +347,52 @@ export async function getConversations(): Promise<ConversationRecord[]> {
     channel: conv.channel || 'Web',
     status: conv.status || 'Open',
     unread: conv.unread_count || 0,
-    messages: (conv.messages || []).map((m: any) => ({
+    messages: (conv.messages || [])
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      .map((m) => ({
       id: m.id,
-      sender: 'client' as const,
+      sender: m.conversation_user_id === m.sender_id ? 'client' as const : 'agent' as const,
       text: m.content || '',
       time: relativeTime(m.created_at),
+      attachmentLabel: m.attachment_label || undefined,
     })),
-  }))
+    }))
+  } catch {
+    return []
+  }
 }
 
 // ─── SITE REQUESTS ───────────────────────────────────────────────────────────
 
 export async function getSiteRequests(): Promise<SiteRequestRecord[]> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('site_requests')
-    .select('*')
-    .order('created_at', { ascending: false })
-  if (error || !data) return []
-
-  return (data as any[]).map((row): SiteRequestRecord => ({
+  const token = await getToken()
+  if (!token) return []
+  try {
+    const data = await dashboardWorkspaceApi.siteRequests(token)
+    return data.map((row): SiteRequestRecord => ({
     id: row.id,
+    leadId: row.lead_id,
     request: row.title || 'New Site Build',
     company: row.company || 'Prospect',
     type: row.type || 'Website',
     priority: (row.priority as 'High' | 'Medium' | 'Low') || 'Medium',
     stage: row.stage || 'New',
     owner: row.contact_name || 'Unassigned',
+    contactEmail: row.contact_email || '',
+    description: row.description || '',
+    timelineWeeks: Number(row.timeline_weeks) || 0,
     lastActivity: relativeTime(row.updated_at),
-    value: row.budget_max ? `$${Number(row.budget_max).toLocaleString()}` : '$0',
+    value: row.budget_max ? `£${Number(row.budget_max).toLocaleString()}` : '£0',
     nextAction: row.next_action || 'Review request',
-  }))
+    }))
+  } catch {
+    return []
+  }
 }
 
 // ─── DASHBOARD METRICS (Overview + Leads) ────────────────────────────────────
 
 export async function getDashboardMetrics() {
-  const supabase = await createClient()
   const token = await getToken()
   const leads = token ? await leadsApi.list(token).catch(() => []) : []
 
@@ -350,11 +401,8 @@ export async function getDashboardMetrics() {
   lastWeekDate.setDate(lastWeekDate.getDate() - 7)
   const lastWeekStr = lastWeekDate.toISOString().split('T')[0]
 
-  const { data: snapshots } = await supabase
-    .from('metric_snapshots')
-    .select('*')
-    .eq('section', 'leads')
-    .gte('snapshot_date', lastWeekStr)
+  const support = token ? await dashboardWorkspaceApi.support(token, 'leads').catch(() => null) : null
+  const snapshots = (support?.snapshots || []).filter((snapshot) => snapshot.snapshot_date >= lastWeekStr)
 
   const snapshotMap: Record<string, number[]> = {}
   if (snapshots) {
@@ -483,90 +531,54 @@ export async function getVideoMetrics() {
 }
 
 export async function getEmailMetrics() {
-  const supabase = await createClient()
-  const { data: templates } = await supabase.from('email_templates').select('*')
-  const tmpl = (templates as any[]) || []
-  const { data: snaps } = await supabase.from('metric_snapshots').select('*').eq('section', 'emails')
-  const snap = (snaps || []).reduce((acc: Record<string, number[]>, s) => {
-    if (!acc[s.metric_label]) acc[s.metric_label] = []
-    acc[s.metric_label].push(Number(s.value_numeric))
-    return acc
-  }, {})
-
-  const totalSent = tmpl.reduce((s, t) => s + (t.sent_count || 0), 0)
-  const totalOpen = tmpl.reduce((s, t) => s + (t.open_count || 0), 0)
-  const totalClick = tmpl.reduce((s, t) => s + (t.click_count || 0), 0)
-  const totalReply = tmpl.reduce((s, t) => s + (t.reply_count || 0), 0)
-  const meetingsBooked = tmpl.reduce((s, t) => s + (t.meetings_booked || t.meeting_count || 0), 0)
-  const sequencesActive = tmpl.filter((t) => ['active', 'running', 'scheduled'].includes(String(t.status || '').toLowerCase())).length
-  const bounced = tmpl.reduce((s, t) => s + (t.bounce_count || 0), 0)
+  const token = await getToken()
+  if (!token) return []
+  const [tmpl, sends] = await Promise.all([
+    emailWorkspaceApi.listTemplates(token).catch(() => []),
+    emailWorkspaceApi.listSends(token, 1_000).catch(() => []),
+  ])
+  const totalSent = sends.length
+  const totalOpen = sends.filter((send) => Boolean(send.opened_at)).length
+  const totalClick = sends.filter((send) => Boolean(send.clicked_at)).length
+  const totalReply = sends.filter((send) => Boolean(send.replied_at)).length
+  const meetingsBooked = tmpl.reduce((sum, template) => sum + Math.max(0, template.meetings_booked || 0), 0)
   const openRate = totalSent > 0 ? Math.round((totalOpen / totalSent) * 100) : 0
   const clickRate = totalSent > 0 ? Math.round((totalClick / totalSent) * 100) : 0
   const replyRate = totalSent > 0 ? Math.round((totalReply / totalSent) * 100) : 0
-  const deliverability = totalSent > 0 ? Math.max(0, Math.round(((totalSent - bounced) / totalSent) * 1000) / 10) : 98.1
-  const revenueInfluenced = tmpl.reduce((s, t) => s + (Number(t.revenue_influenced) || Number(t.value_influenced) || 0), 0) || totalReply * 1200
-
-  function delta(label: string, cur: number) {
-    const vals = snap[label]; if (!vals || vals.length < 7) return '+0%'
-    const prev = vals[vals.length - 7] ?? vals[0]; if (prev === 0) return '+0%'
-    const pct = Math.round(((cur - prev) / prev) * 100)
-    return `${pct >= 0 ? '+' : ''}${pct}%`
-  }
 
   return [
-    { label: 'Emails sent', value: `${totalSent}`, delta: delta('emails_sent', totalSent) },
-    { label: 'Open rate', value: `${openRate}%`, delta: delta('open_rate', openRate) },
-    { label: 'Click rate', value: `${clickRate}%`, delta: delta('click_rate', clickRate) },
-    { label: 'Reply rate', value: `${replyRate}%`, delta: delta('reply_rate', replyRate) },
-    { label: 'Meetings booked', value: `${meetingsBooked}`, delta: delta('meetings_booked', meetingsBooked) },
-    { label: 'Sequences active', value: `${sequencesActive}`, delta: delta('sequences_active', sequencesActive) },
-    { label: 'Deliverability', value: `${deliverability}%`, delta: delta('deliverability', deliverability) },
-    { label: 'Revenue influenced', value: `$${Math.round(revenueInfluenced / 1000)}K`, delta: delta('revenue_influenced', revenueInfluenced) },
+    { label: 'Templates', value: `${tmpl.length}`, delta: 'API synced' },
+    { label: 'Emails sent', value: `${totalSent}`, delta: 'Recorded sends' },
+    { label: 'Open rate', value: `${openRate}%`, delta: totalSent ? 'Measured events' : 'No sends yet' },
+    { label: 'Click rate', value: `${clickRate}%`, delta: totalSent ? 'Measured events' : 'No sends yet' },
+    { label: 'Reply rate', value: `${replyRate}%`, delta: totalSent ? 'Recorded replies' : 'No sends yet' },
+    { label: 'Meetings booked', value: `${meetingsBooked}`, delta: 'Attributed' },
   ]
 }
 
 export async function getSiteRequestMetrics() {
-  const supabase = await createClient()
-  const { data } = await supabase.from('site_requests').select('stage, budget_max, created_at')
-  const reqs = data || []
-  const { data: snaps } = await supabase.from('metric_snapshots').select('*').eq('section', 'site_requests')
-  const snap = (snaps || []).reduce((acc: Record<string, number[]>, s) => {
-    if (!acc[s.metric_label]) acc[s.metric_label] = []
-    acc[s.metric_label].push(Number(s.value_numeric))
-    return acc
-  }, {})
+  const token = await getToken()
+  if (!token) return []
+  const reqs = await dashboardWorkspaceApi.siteRequests(token).catch(() => [])
 
   const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
   const openReqs = reqs.filter(r => r.stage !== 'Launched').length
   const newThisWeek = reqs.filter(r => new Date(r.created_at) >= sevenDaysAgo).length
-  const qualified = reqs.filter(r => ['Qualified', 'Discovery', 'Scoping', 'In Build'].includes(r.stage)).length
+  const qualified = reqs.filter(r => ['Qualified', 'Discovery', 'Scoping', 'In Build'].includes(r.stage || '')).length
   const pipelineValue = reqs.reduce((s, r) => s + (Number(r.budget_max) || 0), 0)
 
-  function delta(label: string, cur: number) {
-    const vals = snap[label]; if (!vals || vals.length < 7) return '+0%'
-    const prev = vals[vals.length - 7] ?? vals[0]; if (prev === 0) return '+0%'
-    const pct = Math.round(((cur - prev) / prev) * 100)
-    return `${pct >= 0 ? '+' : ''}${pct}%`
-  }
-
   return [
-    { label: 'Open requests', value: `${openReqs}`, delta: delta('open_requests', openReqs) },
-    { label: 'New this week', value: `${newThisWeek}`, delta: delta('new_this_week', newThisWeek) },
-    { label: 'Qualified', value: `${qualified}`, delta: delta('qualified', qualified) },
-    { label: 'Pipeline value', value: `$${pipelineValue.toLocaleString()}`, delta: delta('pipeline_value', pipelineValue) },
+    { label: 'Open requests', value: `${openReqs}`, delta: 'Live records' },
+    { label: 'New this week', value: `${newThisWeek}`, delta: 'Last 7 days' },
+    { label: 'Qualified', value: `${qualified}`, delta: 'Active pipeline' },
+    { label: 'Pipeline value', value: `£${pipelineValue.toLocaleString()}`, delta: 'Budget maximums' },
   ]
 }
 
 export async function getMessageMetrics() {
-  const supabase = await createClient()
-  const { data } = await supabase.from('conversations').select('status, unread_count, resolved_at')
-  const convs = data || []
-  const { data: snaps } = await supabase.from('metric_snapshots').select('*').eq('section', 'messages')
-  const snap = (snaps || []).reduce((acc: Record<string, number[]>, s) => {
-    if (!acc[s.metric_label]) acc[s.metric_label] = []
-    acc[s.metric_label].push(Number(s.value_numeric))
-    return acc
-  }, {})
+  const token = await getToken()
+  if (!token) return { unread: 0, waiting: 0, open: 0, resolved: 0 }
+  const convs = await dashboardWorkspaceApi.conversations(token).catch(() => [])
 
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const open = convs.filter(c => c.status === 'Open' || c.status === 'Waiting').length
@@ -574,24 +586,15 @@ export async function getMessageMetrics() {
   const waiting = convs.filter(c => c.status === 'Waiting').length
   const resolved = convs.filter(c => c.resolved_at && new Date(c.resolved_at) >= today).length
 
-  // Also use snapshots for previous-period values for the pill badges
-  const snapOpen = (snap['open_conversations']?.slice(-1)[0] || open)
-  const snapUnread = (snap['unread_messages']?.slice(-1)[0] || unread)
-  const snapWaiting = (snap['waiting']?.slice(-1)[0] || waiting)
-  const snapResolved = (snap['resolved_today']?.slice(-1)[0] || resolved)
-
-  return {
-    unread: unread > 0 ? unread : snapUnread,
-    waiting: waiting > 0 ? waiting : snapWaiting,
-    open: open > 0 ? open : snapOpen,
-    resolved: resolved > 0 ? resolved : snapResolved,
-  }
+  return { unread, waiting, open, resolved }
 }
 
 export async function getIntegrationStatus() {
-  const supabase = await createClient()
-  const { data } = await supabase.from('integrations').select('status')
-  const integrations = data || []
+  const token = await getToken()
+  if (!token) return { connected: 0, suggested: 0, pending: 0, healthChecks: [] }
+  const supportStarted = Date.now()
+  let support = await dashboardWorkspaceApi.support(token).catch(() => null)
+  const integrations = support?.integrations || []
   const connected = integrations.filter(i => i.status === 'connected' || i.status === 'Configured').length
   const pending = integrations.filter(i => i.status === 'pending').length
   const suggested = Math.max(0, integrations.length - connected - pending)
@@ -605,15 +608,13 @@ export async function getIntegrationStatus() {
   }> = []
   const nowIso = new Date().toISOString()
 
-  const startedSupabase = Date.now()
-  const { error: supabasePingError } = await supabase.from('leads').select('id').limit(1)
-  const supabaseLatency = Date.now() - startedSupabase
+  const supabaseLatency = Date.now() - supportStarted
   checks.push({
     provider: 'Supabase',
-    status: supabasePingError ? 'down' : supabaseLatency > 900 ? 'degraded' : 'healthy',
+    status: support ? (supabaseLatency > 900 ? 'degraded' : 'healthy') : 'down',
     latencyMs: supabaseLatency,
     checkedAt: nowIso,
-    detail: supabasePingError ? `Query error: ${supabasePingError.message}` : 'Read query completed successfully.',
+    detail: support ? 'Authenticated Azure API database probe completed successfully.' : 'Authenticated database probe failed.',
   })
 
   const resendKey = process.env.RESEND_API_KEY || ''
@@ -625,12 +626,10 @@ export async function getIntegrationStatus() {
     detail: resendKey ? 'API key configured in environment.' : 'Missing RESEND_API_KEY.',
   })
 
-  const { data: sessionData } = await supabase.auth.getSession()
   const hubspotStarted = Date.now()
   try {
-    if (!sessionData.session?.access_token) throw new Error('No authenticated API session')
     await platformServerFetch<{ results: unknown[] }>('/api/v1/integrations/hubspot/contacts?limit=1', {
-      accessToken: sessionData.session.access_token,
+      accessToken: token,
     })
     checks.push({
       provider: 'HubSpot',
@@ -649,35 +648,9 @@ export async function getIntegrationStatus() {
     })
   }
 
-  const { data: persistedChecks } = await supabase
-    .from('integration_health_checks')
-    .select('provider, status, latency_ms, checked_at, detail')
-    .order('checked_at', { ascending: false })
-    .limit(6)
-
-  if (!persistedChecks || persistedChecks.length === 0) {
-    await supabase.from('integration_health_checks').insert(
-      checks.map((check) => ({
-        provider: check.provider,
-        status: check.status,
-        latency_ms: check.latencyMs,
-        checked_at: check.checkedAt,
-        detail: check.detail,
-      })) as any,
-    )
-  } else {
-    await supabase.from('integration_health_checks').insert(
-      checks.map((check) => ({
-        provider: check.provider,
-        status: check.status,
-        latency_ms: check.latencyMs,
-        checked_at: check.checkedAt,
-        detail: check.detail,
-      })) as any,
-    )
-  }
-
-  const history = (persistedChecks || []).map((row: any) => ({
+  await dashboardWorkspaceApi.saveHealthChecks(token, checks).catch(() => null)
+  support = await dashboardWorkspaceApi.support(token).catch(() => support)
+  const history = (support?.healthChecks || []).slice(0, 6).map((row) => ({
     provider: row.provider || 'Unknown',
     status: (row.status || 'unknown') as 'healthy' | 'degraded' | 'down' | 'unknown',
     latencyMs: row.latency_ms ?? null,
@@ -685,27 +658,7 @@ export async function getIntegrationStatus() {
     detail: row.detail || 'No detail available.',
   }))
 
-  if (history.length > 0) {
-    return { connected, suggested, pending, healthChecks: history }
-  }
-
-  // Fallback when integration_health_checks migration is not yet present.
-  const fallbackKey = 'integration_health_checks_history'
-  const fallbackRaw = await getEnterpriseStateValue(fallbackKey)
-  const fallback = Array.isArray(fallbackRaw) ? fallbackRaw : []
-  const combined = [
-    ...checks.map((check) => ({
-      provider: check.provider,
-      status: check.status,
-      latencyMs: check.latencyMs,
-      checkedAt: check.checkedAt,
-      detail: check.detail,
-    })),
-    ...fallback,
-  ].slice(0, 30)
-  await setEnterpriseStateValue(fallbackKey, combined)
-
-  return { connected, suggested, pending, healthChecks: combined.slice(0, 6) as any }
+  return { connected, suggested, pending, healthChecks: history.length ? history : checks }
 }
 
 // ─── TASKS, ACTIVITY, RECOMMENDATIONS, GOALS ─────────────────────────────────
@@ -767,17 +720,20 @@ export async function getRecommendations(): Promise<Recommendation[]> {
 }
 
 export async function getGoals() {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('goals').select('*').order('created_at', { ascending: true })
-  if (!data) return []
-  return data.map(g => ({
-    label: g.label,
-    current: Number(g.current_value),
-    target: Number(g.target_value),
-    unit: g.unit as 'count' | 'dollar',
-    pct: g.target_value > 0 ? Math.round((g.current_value / g.target_value) * 100) : 0,
-  }))
+  const token = await getToken()
+  if (!token) return []
+  const support = await dashboardWorkspaceApi.support(token).catch(() => null)
+  return (support?.goals || []).map(g => {
+    const current = Number(g.current_value)
+    const target = Number(g.target_value)
+    return {
+      label: g.label,
+      current,
+      target,
+      unit: g.unit as 'count' | 'dollar',
+      pct: target > 0 ? Math.round((current / target) * 100) : 0,
+    }
+  })
 }
 
 // ─── LEAD EVENTS (per-lead timeline) ─────────────────────────────────────────

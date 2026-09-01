@@ -225,6 +225,46 @@ const videoAssetUpdateSchema = z.object({
   metadata: videoAssetMetadataSchema.optional(),
 }).refine((value) => Object.keys(value).length > 0, 'At least one video asset field is required.')
 
+const emailTemplateCreateSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  subject: z.string().trim().min(1).max(180),
+  body: z.string().trim().min(1).max(20_000),
+  category: z.string().trim().max(80).optional().default('Outreach'),
+  audience: z.string().trim().max(120).optional().default('All leads'),
+  stage: z.string().trim().max(80).optional().default('Outreach'),
+  ctaLabel: z.string().trim().max(80).optional().default('Reply now'),
+})
+
+const emailTemplateUpdateSchema = emailTemplateCreateSchema.partial().refine(
+  (value) => Object.keys(value).length > 0,
+  'At least one email template field is required.',
+)
+
+const emailSendSchema = z.object({
+  leadId: z.string().uuid().nullable().optional(),
+  templateId: z.string().uuid().nullable().optional(),
+  to: z.string().trim().email().max(254),
+  subject: z.string().trim().min(1).max(180),
+  body: z.string().trim().min(1).max(20_000),
+  resendId: z.string().trim().min(1).max(160),
+})
+
+const emailEventSchema = z.object({
+  eventId: z.string().trim().min(1).max(200),
+  emailId: z.string().trim().min(1).max(160),
+  eventType: z.enum([
+    'email.sent', 'email.delivered', 'email.delivery_delayed', 'email.opened',
+    'email.clicked', 'email.bounced', 'email.complained', 'email.failed', 'email.suppressed',
+  ]),
+  createdAt: z.string().datetime().optional(),
+})
+
+const siteRequestUpdateSchema = z.object({
+  stage: z.string().trim().min(1).max(80).optional(),
+  priority: z.enum(['Low', 'Medium', 'High']).optional(),
+  nextAction: z.string().trim().min(1).max(240).optional(),
+}).refine((value) => Object.keys(value).length > 0, 'At least one site request field is required.')
+
 type VideoAssetRow = {
   id: string
   lead_id: string | null
@@ -641,6 +681,346 @@ app.delete('/api/v1/online2day/video-assets/:id', {
     method: 'DELETE', headers: { Prefer: 'return=minimal' },
   })
   return reply.code(204).send()
+})
+
+app.get('/api/v1/online2day/email-templates', {
+  preHandler: requireSupabaseAdmin,
+}, async () => supabaseFetch<Array<Record<string, unknown>>>(
+  'email_templates?select=id,name,subject,body,category,audience,stage,cta_label,sent_count,open_count,click_count,reply_count,meetings_booked,created_at,updated_at&order=updated_at.desc.nullslast,created_at.desc&limit=250',
+  { headers: { Accept: 'application/json' } },
+))
+
+app.post('/api/v1/online2day/email-templates', {
+  preHandler: requireSupabaseAdmin,
+}, async (request, reply) => {
+  const user = await requireSupabaseAdmin(request)
+  const body = emailTemplateCreateSchema.parse(request.body)
+  const rows = await supabaseFetch<Array<Record<string, unknown>>>(
+    'email_templates?select=id,name,subject,body,category,audience,stage,cta_label,sent_count,open_count,click_count,reply_count,meetings_booked,created_at,updated_at',
+    {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        name: body.name,
+        subject: body.subject,
+        body: body.body,
+        category: body.category,
+        audience: body.audience,
+        stage: body.stage,
+        cta_label: body.ctaLabel,
+        created_by: String(user.sub),
+      }),
+    },
+  )
+  return reply.code(201).send(rows[0])
+})
+
+app.patch('/api/v1/online2day/email-templates/:id', {
+  preHandler: requireSupabaseAdmin,
+}, async (request, reply) => {
+  const params = z.object({ id: z.string().uuid() }).parse(request.params)
+  const body = emailTemplateUpdateSchema.parse(request.body)
+  const patch = {
+    ...(body.name !== undefined ? { name: body.name } : {}),
+    ...(body.subject !== undefined ? { subject: body.subject } : {}),
+    ...(body.body !== undefined ? { body: body.body } : {}),
+    ...(body.category !== undefined ? { category: body.category } : {}),
+    ...(body.audience !== undefined ? { audience: body.audience } : {}),
+    ...(body.stage !== undefined ? { stage: body.stage } : {}),
+    ...(body.ctaLabel !== undefined ? { cta_label: body.ctaLabel } : {}),
+    updated_at: new Date().toISOString(),
+  }
+  const rows = await supabaseFetch<Array<Record<string, unknown>>>(
+    `email_templates?id=eq.${encodeURIComponent(params.id)}&select=id,name,subject,body,category,audience,stage,cta_label,sent_count,open_count,click_count,reply_count,meetings_booked,created_at,updated_at`,
+    { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch) },
+  )
+  if (!rows[0]) return reply.code(404).send({ error: 'Email template not found.' })
+  return rows[0]
+})
+
+app.delete('/api/v1/online2day/email-templates/:id', {
+  preHandler: requireSupabaseAdmin,
+}, async (request, reply) => {
+  const params = z.object({ id: z.string().uuid() }).parse(request.params)
+  await supabaseFetch(`email_templates?id=eq.${encodeURIComponent(params.id)}`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' },
+  })
+  return reply.code(204).send()
+})
+
+app.get('/api/v1/online2day/email-sends', {
+  preHandler: requireSupabaseAdmin,
+}, async (request) => {
+  const query = z.object({ limit: z.coerce.number().int().min(1).max(1_000).default(50) }).parse(request.query)
+  return supabaseFetch<Array<Record<string, unknown>>>(
+    `emails?select=id,lead_id,template_id,subject,body,status,sent_at,opened_at,clicked_at,replied_at,created_at,lead:leads(id,name,company,email),template:email_templates(id,name)&order=sent_at.desc&limit=${query.limit}`,
+    { headers: { Accept: 'application/json' } },
+  )
+})
+
+app.post('/api/v1/online2day/email-sends', {
+  preHandler: requireSupabaseAdmin,
+}, async (request, reply) => {
+  const user = await requireSupabaseAdmin(request)
+  const body = emailSendSchema.parse(request.body)
+  const rows = await supabaseFetch<Array<Record<string, unknown>>>(
+    'emails?select=id,lead_id,template_id,subject,body,status,sent_at,opened_at,clicked_at,replied_at,created_at',
+    {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        lead_id: body.leadId || null,
+        sender_id: String(user.sub),
+        template_id: body.templateId || null,
+        subject: body.subject,
+        body: body.body,
+        status: `sent:${body.resendId}`,
+        sent_at: new Date().toISOString(),
+      }),
+    },
+  )
+  const emailRecord = rows[0]
+  if (!emailRecord) throw new Error('Email send could not be recorded.')
+
+  if (body.templateId) {
+    const templates = await supabaseFetch<Array<{ sent_count: number | null }>>(
+      `email_templates?id=eq.${encodeURIComponent(body.templateId)}&select=sent_count&limit=1`,
+      { headers: { Accept: 'application/json' } },
+    )
+    await supabaseFetch(`email_templates?id=eq.${encodeURIComponent(body.templateId)}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        sent_count: Math.max(0, templates[0]?.sent_count || 0) + 1,
+        updated_at: new Date().toISOString(),
+      }),
+    })
+  }
+
+  if (body.leadId) {
+    await supabaseFetch('lead_events', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        lead_id: body.leadId,
+        type: 'Email Sent',
+        title: body.subject,
+        note: `Email sent to ${body.to}`,
+        created_by: String(user.sub),
+        metadata: {
+          resendId: body.resendId,
+          emailRecordId: emailRecord.id,
+          templateId: body.templateId || null,
+          recipient: body.to,
+        },
+      }),
+    })
+  }
+
+  return reply.code(201).send(emailRecord)
+})
+
+app.post('/api/v1/online2day/email-events', {
+  preHandler: requireServerKey,
+  config: { rateLimit: { max: 240, timeWindow: '1 minute' } },
+}, async (request, reply) => {
+  const body = emailEventSchema.parse(request.body)
+  const pattern = encodeURIComponent(`*:${body.emailId}`)
+  const records = await supabaseFetch<Array<{
+    id: string
+    template_id: string | null
+    status: string | null
+    opened_at: string | null
+    clicked_at: string | null
+  }>>(
+    `emails?status=like.${pattern}&select=id,template_id,status,opened_at,clicked_at&limit=1`,
+    { headers: { Accept: 'application/json' } },
+  )
+  const record = records[0]
+  if (!record) return reply.code(202).send({ accepted: true, matched: false })
+
+  const occurredAt = body.createdAt || new Date().toISOString()
+  const eventState = body.eventType.replace('email.', '')
+  const stateRank: Record<string, number> = {
+    sent: 0, delivered: 1, delivery_delayed: 1, opened: 2, clicked: 3,
+    bounced: 4, complained: 4, failed: 4, suppressed: 4,
+  }
+  const currentState = String(record.status || 'sent').split(':')[0] || 'sent'
+  const patch: Record<string, unknown> = {}
+  if ((stateRank[eventState] ?? 0) >= (stateRank[currentState] ?? 0)) {
+    patch.status = `${eventState}:${body.emailId}`
+  }
+  const firstOpen = body.eventType === 'email.opened' && !record.opened_at
+  const firstClick = body.eventType === 'email.clicked' && !record.clicked_at
+  if (firstOpen) patch.opened_at = occurredAt
+  if (firstClick) patch.clicked_at = occurredAt
+
+  if (Object.keys(patch).length > 0) {
+    await supabaseFetch(`emails?id=eq.${encodeURIComponent(record.id)}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(patch),
+    })
+  }
+
+  if (record.template_id && (firstOpen || firstClick)) {
+    const templates = await supabaseFetch<Array<{ open_count: number | null; click_count: number | null }>>(
+      `email_templates?id=eq.${encodeURIComponent(record.template_id)}&select=open_count,click_count&limit=1`,
+      { headers: { Accept: 'application/json' } },
+    )
+    const template = templates[0]
+    if (template) {
+      await supabaseFetch(`email_templates?id=eq.${encodeURIComponent(record.template_id)}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          ...(firstOpen ? { open_count: Math.max(0, template.open_count || 0) + 1 } : {}),
+          ...(firstClick ? { click_count: Math.max(0, template.click_count || 0) + 1 } : {}),
+          updated_at: new Date().toISOString(),
+        }),
+      })
+    }
+  }
+  return { accepted: true, matched: true, eventId: body.eventId }
+})
+
+app.get('/api/v1/online2day/conversations', {
+  preHandler: requireSupabaseAdmin,
+}, async () => supabaseFetch<Array<Record<string, unknown>>>(
+  'conversations?select=id,lead_id,contact_name,company,channel,status,priority,score,unread_count,last_message_preview,last_message_at,resolved_at,created_at,updated_at,messages(id,conversation_user_id,sender_id,content,is_read,created_at,message_type,attachment_label)&order=last_message_at.desc&limit=200',
+  { headers: { Accept: 'application/json' } },
+))
+
+app.post('/api/v1/online2day/conversations/:id/reply', {
+  preHandler: requireSupabaseAdmin,
+}, async (request, reply) => {
+  const user = await requireSupabaseAdmin(request)
+  const params = z.object({ id: z.string().uuid() }).parse(request.params)
+  const body = z.object({ content: z.string().trim().min(1).max(5_000) }).parse(request.body)
+  const conversations = await supabaseFetch<Array<{ id: string; status: string | null }>>(
+    `conversations?id=eq.${encodeURIComponent(params.id)}&select=id,status&limit=1`,
+    { headers: { Accept: 'application/json' } },
+  )
+  if (!conversations[0]) return reply.code(404).send({ error: 'Conversation not found.' })
+  const previousMessages = await supabaseFetch<Array<{ conversation_user_id: string | null }>>(
+    `messages?conversation_id=eq.${encodeURIComponent(params.id)}&select=conversation_user_id&order=created_at.desc&limit=1`,
+    { headers: { Accept: 'application/json' } },
+  )
+  const conversationUserId = previousMessages[0]?.conversation_user_id || String(user.sub)
+  const now = new Date().toISOString()
+  await supabaseFetch('messages', {
+    method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({
+      conversation_id: params.id,
+      conversation_user_id: conversationUserId,
+      sender_id: String(user.sub),
+      content: body.content,
+      is_read: true,
+      message_type: 'text',
+    }),
+  })
+  await supabaseFetch(`conversations?id=eq.${encodeURIComponent(params.id)}`, {
+    method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({
+      last_message_preview: body.content.slice(0, 120),
+      last_message_at: now,
+      updated_at: now,
+      status: String(conversations[0].status || '').toLowerCase() === 'resolved' ? 'Open' : conversations[0].status,
+    }),
+  })
+  return reply.code(201).send({ success: true })
+})
+
+app.post('/api/v1/online2day/conversations/:id/read', {
+  preHandler: requireSupabaseAdmin,
+}, async (request) => {
+  const params = z.object({ id: z.string().uuid() }).parse(request.params)
+  const now = new Date().toISOString()
+  await Promise.all([
+    supabaseFetch(`messages?conversation_id=eq.${encodeURIComponent(params.id)}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ is_read: true }),
+    }),
+    supabaseFetch(`conversations?id=eq.${encodeURIComponent(params.id)}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ unread_count: 0, updated_at: now }),
+    }),
+  ])
+  return { success: true }
+})
+
+app.get('/api/v1/online2day/site-requests', {
+  preHandler: requireSupabaseAdmin,
+}, async () => supabaseFetch<Array<Record<string, unknown>>>(
+  'site_requests?select=id,title,company,type,priority,stage,contact_name,contact_email,description,budget_min,budget_max,timeline_weeks,brief_url,next_action,lead_id,created_at,updated_at&order=created_at.desc&limit=250',
+  { headers: { Accept: 'application/json' } },
+))
+
+app.patch('/api/v1/online2day/site-requests/:id', {
+  preHandler: requireSupabaseAdmin,
+}, async (request, reply) => {
+  const params = z.object({ id: z.string().uuid() }).parse(request.params)
+  const body = siteRequestUpdateSchema.parse(request.body)
+  const rows = await supabaseFetch<Array<Record<string, unknown>>>(
+    `site_requests?id=eq.${encodeURIComponent(params.id)}&select=*`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        ...(body.stage !== undefined ? { stage: body.stage } : {}),
+        ...(body.priority !== undefined ? { priority: body.priority } : {}),
+        ...(body.nextAction !== undefined ? { next_action: body.nextAction } : {}),
+        updated_at: new Date().toISOString(),
+      }),
+    },
+  )
+  if (!rows[0]) return reply.code(404).send({ error: 'Site request not found.' })
+  return rows[0]
+})
+
+app.get('/api/v1/online2day/dashboard-support', {
+  preHandler: requireSupabaseAdmin,
+}, async (request) => {
+  const query = z.object({ section: z.string().trim().max(80).optional() }).parse(request.query)
+  const snapshotFilter = query.section ? `&section=eq.${encodeURIComponent(query.section)}` : ''
+  const [snapshots, integrations, goals, healthChecks] = await Promise.all([
+    supabaseFetch<Array<Record<string, unknown>>>(
+      `metric_snapshots?select=section,metric_label,value_numeric,snapshot_date${snapshotFilter}&order=snapshot_date.asc&limit=1000`,
+      { headers: { Accept: 'application/json' } },
+    ),
+    supabaseFetch<Array<Record<string, unknown>>>(
+      'integrations?select=id,name,type,status,last_synced_at,updated_at&order=name.asc&limit=100',
+      { headers: { Accept: 'application/json' } },
+    ),
+    supabaseFetch<Array<Record<string, unknown>>>(
+      'goals?select=id,label,target_value,current_value,unit,period_start,period_end,created_at,updated_at&order=created_at.asc&limit=100',
+      { headers: { Accept: 'application/json' } },
+    ),
+    supabaseFetch<Array<Record<string, unknown>>>(
+      'integration_health_checks?select=provider,status,latency_ms,checked_at,detail&order=checked_at.desc&limit=12',
+      { headers: { Accept: 'application/json' } },
+    ).catch(() => []),
+  ])
+  return { snapshots, integrations, goals, healthChecks }
+})
+
+app.post('/api/v1/online2day/integration-health-checks', {
+  preHandler: requireSupabaseAdmin,
+}, async (request, reply) => {
+  const body = z.object({ checks: z.array(z.object({
+    provider: z.string().trim().min(1).max(80),
+    status: z.enum(['healthy', 'degraded', 'down', 'unknown']),
+    latencyMs: z.number().int().min(0).max(120_000).nullable(),
+    checkedAt: z.string().datetime(),
+    detail: z.string().trim().max(1_000),
+  })).min(1).max(12) }).parse(request.body)
+  await supabaseFetch('integration_health_checks', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify(body.checks.map((check) => ({
+      provider: check.provider,
+      status: check.status,
+      latency_ms: check.latencyMs,
+      checked_at: check.checkedAt,
+      detail: check.detail,
+    }))),
+  })
+  return reply.code(201).send({ success: true })
 })
 
 app.route({

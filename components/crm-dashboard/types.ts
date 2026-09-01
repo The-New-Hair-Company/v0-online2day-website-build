@@ -70,16 +70,34 @@ export type VideoRecord = {
 export type EmailRecord = {
   id: string
   template: string
+  body: string
+  category: string
   audience: string
   stage: string
   owner: string
   subject: string
   sent: number
   opens: number
+  clicks: number
   replies: number
+  meetings: number
   cta: string
   lastEdited: string
   nextAction: string
+}
+
+export type EmailSendRecord = {
+  id: string
+  leadId: string | null
+  recipientName: string
+  recipientEmail: string
+  company: string
+  templateName: string
+  subject: string
+  status: string
+  sentAt: string
+  openedAt: string | null
+  clickedAt: string | null
 }
 
 export type EmailComposerLead = {
@@ -124,12 +142,16 @@ export type ConversationRecord = {
 
 export type SiteRequestRecord = {
   id: string
+  leadId: string | null
   request: string
   company: string
   type: string
   priority: 'High' | 'Medium' | 'Low'
   stage: string
   owner: string
+  contactEmail: string
+  description: string
+  timelineWeeks: number
   lastActivity: string
   value: string
   nextAction: string
@@ -178,6 +200,7 @@ export interface CrmDashboardProps {
   initialLeads?: LeadRecord[]
   initialVideos?: VideoRecord[]
   initialEmails?: EmailRecord[]
+  recentEmailSends?: EmailSendRecord[]
   emailComposerData?: {
     leads: EmailComposerLead[]
     videos: EmailComposerVideo[]
