@@ -36,7 +36,10 @@ async function readApiResponse<T>(res: Response): Promise<T> {
   if (body && typeof body === 'object' && 'success' in body) {
     const envelope = body as ApiResponse<T>
     if (!envelope.success) throw new Error(envelope.error ?? `API error ${res.status}`)
-    return envelope.data as T
+    // Only unwrap the legacy shape when it actually contains a data field.
+    // Newer API endpoints can legitimately return payloads such as
+    // { success: true, id: "..." }, which must be preserved intact.
+    if ('data' in body) return envelope.data as T
   }
 
   if (body === null && raw) throw new Error('API returned an invalid response')
