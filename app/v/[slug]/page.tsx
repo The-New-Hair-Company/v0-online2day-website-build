@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import VideoTracker from './VideoTracker'
-import Link from 'next/link'
 import { Calendar, Mail } from 'lucide-react'
+import EditedVideoPlayer from './EditedVideoPlayer'
 
 export default async function VideoPage({ params }: { params: Promise<{ slug: string }> }) {
   const supabase = await createClient()
@@ -23,6 +23,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
     asset?.metadata && typeof asset.metadata === 'object' && 'editorProject' in asset.metadata
       ? asset.metadata
       : null
+  let trackedAssetId: string = asset?.id || ''
 
   // Standalone video (no lead) — metadata.sharedVideo === true
   const isSharedVideo = asset && !lead
@@ -47,6 +48,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
       .limit(1)
 
     if (latestAssets?.[0]) {
+      trackedAssetId = latestAssets[0].id
       videoUrl = latestAssets[0].url
       videoStoragePath = latestAssets[0].storage_path
       videoName = latestAssets[0].name
@@ -68,10 +70,16 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
     videoUrl = signedUrlData?.signedUrl || videoUrl
   }
 
+  const trimStart = Number(editorProject?.settings?.trimStart || 0)
+  const trimEnd = Number(editorProject?.settings?.trimEnd || 0)
+  const ctaLabel = editorProject?.cta?.label || 'Book a Call with Us'
+  const ctaUrl = editorProject?.cta?.destination || '/contact'
+
   // ─── Shared / standalone video (no lead personalisation) ──────────────────
   if (isSharedVideo) {
     return (
       <div className="min-h-screen bg-background text-foreground flex flex-col">
+        {trackedAssetId ? <VideoTracker assetId={trackedAssetId} /> : null}
         <div className="border-b border-border px-8 py-4 flex items-center justify-between bg-card/50">
           <span className="text-muted-foreground text-sm font-medium tracking-wide">Online2Day</span>
         </div>
@@ -90,14 +98,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
             <div className="relative bg-black rounded-2xl overflow-hidden shadow-2xl shadow-primary/10 border border-border mb-10">
               {videoUrl ? (
                 <div className="aspect-video">
-                  <video
-                    src={videoUrl}
-                    controls
-                    className="w-full h-full object-contain"
-                    playsInline
-                    preload="metadata"
-                    autoPlay={false}
-                  />
+                  <EditedVideoPlayer src={videoUrl} trimStart={trimStart} trimEnd={trimEnd} />
                 </div>
               ) : (
                 <div className="aspect-video flex flex-col items-center justify-center bg-[#111] text-white/30">
@@ -107,13 +108,13 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
             </div>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link
-                href="/contact"
+              <a
+                href={ctaUrl}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-semibold rounded-xl hover:opacity-90 transition-all shadow-lg shadow-primary/20"
               >
                 <Calendar size={18} />
-                Book a Call with Us
-              </Link>
+                {ctaLabel}
+              </a>
               <a
                 href="mailto:hello@online2day.com"
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-card border border-border text-foreground font-semibold rounded-xl hover:bg-muted transition-all"
@@ -135,7 +136,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
   // ─── Lead-personalised video ───────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <VideoTracker leadId={lead.id} />
+      {trackedAssetId ? <VideoTracker assetId={trackedAssetId} /> : null}
 
       <div className="border-b border-border px-8 py-4 flex items-center justify-between bg-card/50">
         <span className="text-muted-foreground text-sm font-medium tracking-wide">Online2Day</span>
@@ -160,13 +161,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
           <div className="relative bg-black rounded-2xl overflow-hidden shadow-2xl shadow-primary/10 border border-border mb-10">
             {videoUrl ? (
               <div className="aspect-video">
-                <video
-                  src={videoUrl}
-                  controls
-                  className="w-full h-full object-contain"
-                  playsInline
-                  preload="metadata"
-                />
+                <EditedVideoPlayer src={videoUrl} trimStart={trimStart} trimEnd={trimEnd} />
               </div>
             ) : editorProject ? (
               <div className="aspect-video relative overflow-hidden bg-linear-to-br from-[#081225] via-[#0b1020] to-[#111827]">
@@ -200,13 +195,13 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-            <Link
-              href="/contact"
+            <a
+              href={ctaUrl}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-semibold rounded-xl hover:opacity-90 transition-all shadow-lg shadow-primary/20"
             >
               <Calendar size={18} />
-              Book a Call with Us
-            </Link>
+              {ctaLabel}
+            </a>
             <a
               href="mailto:hello@online2day.com"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-card border border-border text-foreground font-semibold rounded-xl hover:bg-muted transition-all"
