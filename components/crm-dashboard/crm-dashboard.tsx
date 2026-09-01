@@ -37,6 +37,7 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  Trash2,
   Upload,
   UserPlus,
   UserRoundCheck,
@@ -47,6 +48,7 @@ import {
 import styles from './dashboard.module.css'
 import { sendEnterpriseEmail } from '@/lib/actions/email-actions'
 import { sendConversationReply } from '@/lib/actions/message-actions'
+import { deleteVideoAsset } from '@/lib/actions/video-actions'
 import { openExternalSafely } from '@/lib/security/external-links'
 import type {
   CrmSetupConfig,
@@ -113,9 +115,9 @@ function enrichMetrics(raw: RawMetric[], section: 'leads' | 'video' | 'email' | 
     },
     video: {
       'Total videos': Video,
-      'Sent this week': MonitorPlay,
-      'Avg watch rate': Activity,
-      'Meetings booked': CalendarDays,
+      'Ready to share': MonitorPlay,
+      'Total views': Activity,
+      'Draft projects': PenSquare,
     },
     email: {
       'Emails sent': Mail,
@@ -696,11 +698,11 @@ function LeadsSection({ initialLeads = [], metrics = [] }: { initialLeads?: Lead
   )
 }
 
-function VideosSection({ initialVideos = [], metrics = [], setupConfig }: { initialVideos?: VideoRecord[]; metrics?: MetricItem[]; setupConfig?: CrmSetupConfig }) {
-  const router = useRouter()
+function VideosSection({ initialVideos = [], metrics = [] }: { initialVideos?: VideoRecord[]; metrics?: MetricItem[]; setupConfig?: CrmSetupConfig }) {
+  const [videos, setVideos] = useState(initialVideos)
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(initialVideos[0]?.id || '')
-  const [showStageMenu, setShowStageMenu] = useState(true)
+  const [showStageMenu, setShowStageMenu] = useState(false)
   const [showStatusMenu, setShowStatusMenu] = useState(false)
   const [showOwnerMenu, setShowOwnerMenu] = useState(false)
   const [showChannelMenu, setShowChannelMenu] = useState(false)
@@ -709,12 +711,18 @@ function VideosSection({ initialVideos = [], metrics = [], setupConfig }: { init
   const [owner, setOwner] = useState('All owners')
   const [channel, setChannel] = useState('All channels')
   const [activeTab, setActiveTab] = useState('Library')
-  const [ctaType, setCtaType] = useState(setupConfig?.defaultCtaLabel || 'Book call')
-  const [ctaUrl, setCtaUrl] = useState(setupConfig?.defaultCtaUrl || setupConfig?.bookingUrl || 'https://calendly.com/online2day/demo')
-  const videoTabs = [{ label: 'Library' }, { label: 'Personalised' }, { label: 'Templates' }, { label: 'Campaigns' }, { label: 'Analytics' }]
-  const statuses = useMemo(() => ['All statuses', ...Array.from(new Set(initialVideos.map((video) => video.status)))], [initialVideos])
-  const owners = useMemo(() => ['All owners', ...Array.from(new Set(initialVideos.map((video) => video.owner)))], [initialVideos])
-  const channels = useMemo(() => ['All channels', ...Array.from(new Set(initialVideos.map((video) => video.channel)))], [initialVideos])
+  const [deleteError, setDeleteError] = useState('')
+  const [isDeleting, startDeleting] = useTransition()
+  const videoTabs = [
+    { label: 'Library', count: videos.length },
+    { label: 'Ready', count: videos.filter((video) => video.hasMedia).length },
+    { label: 'Drafts', count: videos.filter((video) => !video.hasMedia).length },
+    { label: 'Personalised', count: videos.filter((video) => video.leadId).length },
+    { label: 'Shared', count: videos.filter((video) => !video.leadId).length },
+  ]
+  const statuses = useMemo(() => ['All statuses', ...Array.from(new Set(videos.map((video) => video.status)))], [videos])
+  const owners = useMemo(() => ['All owners', ...Array.from(new Set(videos.map((video) => video.owner)))], [videos])
+  const channels = useMemo(() => ['All channels', ...Array.from(new Set(videos.map((video) => video.channel)))], [videos])
 
   function clearVideoFilters() {
     setQuery('')
@@ -726,73 +734,56 @@ function VideosSection({ initialVideos = [], metrics = [], setupConfig }: { init
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return initialVideos.filter((video) => {
+    return videos.filter((video) => {
       const matchesQuery = normalized
         ? `${video.title} ${video.company} ${video.owner} ${video.status}`.toLowerCase().includes(normalized)
         : true
+      const matchesTab = activeTab === 'Library'
+        || (activeTab === 'Ready' && video.hasMedia)
+        || (activeTab === 'Drafts' && !video.hasMedia)
+        || (activeTab === 'Personalised' && Boolean(video.leadId))
+        || (activeTab === 'Shared' && !video.leadId)
       const matchesStage = stage === 'All stages' || video.funnelStage === stage
       const matchesStatus = status === 'All statuses' || video.status === status
       const matchesOwner = owner === 'All owners' || video.owner === owner
       const matchesChannel = channel === 'All channels' || video.channel === channel
-      return matchesQuery && matchesStage && matchesStatus && matchesOwner && matchesChannel
+      return matchesQuery && matchesTab && matchesStage && matchesStatus && matchesOwner && matchesChannel
     })
-  }, [query, stage, status, owner, channel, initialVideos])
-  const selectedVideo = initialVideos.find((video) => video.id === selectedId) ?? initialVideos[0] ?? null
+  }, [query, activeTab, stage, status, owner, channel, videos])
+  const selectedVideo = videos.find((video) => video.id === selectedId) ?? filtered[0] ?? null
 
-  if (!selectedVideo) {
-    return (
-      <>
-        <MetricGrid items={metrics} />
+  useEffect(() => {
+    if (selectedVideo && !filtered.some((video) => video.id === selectedVideo.id)) setSelectedId(filtered[0]?.id || '')
+  }, [filtered, selectedVideo])
 
-        <div className={styles.panelGrid}>
-          <div className={cx(styles.panel, styles.tablePanel)}>
-            <Tabs tabs={videoTabs} activeTab={activeTab} onChange={setActiveTab} />
-            <div className={styles.toolbar}>
-              <label className={styles.smallSearch}>
-                <Search size={14} />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search videos..." />
-              </label>
-              <div className={styles.dropdownWrap}>
-                <button className={styles.chipButton} onClick={() => setShowStageMenu((value) => !value)}>
-                  Funnel stage
-                  <ChevronDown size={14} />
-                </button>
-                {showStageMenu ? (
-                  <div className={styles.dropdown}>
-                    {['All stages', 'Prospecting', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won'].map((item) => (
-                      <button key={item} className={cx(stage === item && styles.dropdownActive)} onClick={() => setStage(item)}>
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              <div className={styles.dropdownWrap}>
-                <button className={styles.chipButton} onClick={() => setShowStatusMenu((value) => !value)}>Status <ChevronDown size={14} /></button>
-                {showStatusMenu ? <div className={styles.dropdown}>{statuses.map((item) => <button key={item} className={cx(status === item && styles.dropdownActive)} onClick={() => setStatus(item)}>{item}</button>)}</div> : null}
-              </div>
-              <div className={styles.dropdownWrap}>
-                <button className={styles.chipButton} onClick={() => setShowOwnerMenu((value) => !value)}>Owner <ChevronDown size={14} /></button>
-                {showOwnerMenu ? <div className={styles.dropdown}>{owners.map((item) => <button key={item} className={cx(owner === item && styles.dropdownActive)} onClick={() => setOwner(item)}>{item}</button>)}</div> : null}
-              </div>
-              <div className={styles.dropdownWrap}>
-                <button className={styles.chipButton} onClick={() => setShowChannelMenu((value) => !value)}>Channel <ChevronDown size={14} /></button>
-                {showChannelMenu ? <div className={styles.dropdown}>{channels.map((item) => <button key={item} className={cx(channel === item && styles.dropdownActive)} onClick={() => setChannel(item)}>{item}</button>)}</div> : null}
-              </div>
-              <button className={styles.buttonGhost} onClick={clearVideoFilters}>Clear filters</button>
-            </div>
-            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
-              No videos found. Upload or create videos to see them here.
-            </div>
-          </div>
-        </div>
-      </>
-    )
+  function removeSelectedVideo() {
+    if (!selectedVideo || !window.confirm(`Delete “${selectedVideo.title}”? This also removes the stored video file and cannot be undone.`)) return
+    setDeleteError('')
+    startDeleting(async () => {
+      const result = await deleteVideoAsset(selectedVideo.id)
+      if ('error' in result && result.error) {
+        setDeleteError(String(result.error))
+        return
+      }
+      setVideos((current) => current.filter((video) => video.id !== selectedVideo.id))
+      setSelectedId('')
+    })
   }
 
   return (
     <>
       <MetricGrid items={metrics} />
+
+      <div className={styles.panel} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div>
+          <strong>Video studio</strong>
+          <div className={styles.subtle}>Record or upload real media, edit the campaign presentation, then save and share it.</div>
+        </div>
+        <div className={styles.detailActions}>
+          <Link className={styles.button} href="/dashboard/videos/upload" data-dashboard-native="true"><Upload size={15} /> Upload video</Link>
+          <Link className={styles.buttonPrimary} href="/dashboard/videos/editor" data-dashboard-native="true"><WandSparkles size={15} /> New project</Link>
+        </div>
+      </div>
 
       <div className={styles.panelGrid}>
         <div className={cx(styles.panel, styles.tablePanel)}>
@@ -832,67 +823,31 @@ function VideosSection({ initialVideos = [], metrics = [], setupConfig }: { init
             <button className={styles.buttonGhost} onClick={clearVideoFilters}>Clear filters</button>
           </div>
           <VideoTable rows={filtered} selectedId={selectedId} onSelect={setSelectedId} />
+          {filtered.length === 0 ? (
+            <div style={{ padding: '44px 24px', textAlign: 'center', color: 'var(--muted)' }}>
+              {videos.length ? 'No videos match the current filters.' : 'No videos yet. Upload media or create your first project.'}
+            </div>
+          ) : null}
         </div>
 
         <div className={styles.rightRail}>
-          <RightPanel title="Lead engagement snapshot">
-            <div className={styles.list}>
-              <div>
-                <strong>Acme Corporation</strong>
-                <div className={styles.subtle}>Sarah Johnson · Marketing Director</div>
-              </div>
-              <div>
-                <strong>Video: Q2 Marketing Proposal</strong>
-              </div>
-              {['Watched 84%', 'Clicked CTA (Book meeting)', 'Revisited pricing section', 'Awaiting your follow-up'].map((item) => (
-                <div key={item} className={styles.listRow}>
-                  <span>{item}</span>
-                  {item === 'Watched 84%' ? <span className={cx(styles.pill, styles.pillGreen)}>High intent</span> : <span />}
+          <RightPanel title="Selected video">
+            {selectedVideo ? (
+              <div className={styles.list}>
+                <div><strong>{selectedVideo.title}</strong><div className={styles.subtle}>{selectedVideo.company}</div></div>
+                <div className={styles.listRow}><span>Status</span><span className={cx(styles.pill, statusPill(selectedVideo.status))}>{selectedVideo.status}</span></div>
+                <div className={styles.listRow}><span>Created</span><strong>{new Date(selectedVideo.createdAt).toLocaleDateString('en-GB')}</strong></div>
+                <div className={styles.listRow}><span>Views</span><strong>{selectedVideo.viewCount}</strong></div>
+                <div className={styles.listRow}><span>Duration</span><strong>{selectedVideo.duration}</strong></div>
+                <div className={styles.detailActions}>
+                  <Link className={styles.buttonPrimary} href={`/dashboard/videos/editor?asset=${selectedVideo.id}`} data-dashboard-native="true">Edit</Link>
+                  {selectedVideo.slug ? <a className={styles.button} href={`/v/${selectedVideo.slug}`} target="_blank" rel="noreferrer" data-dashboard-native="true"><ExternalLink size={14} /> Open</a> : null}
+                  <button className={styles.buttonGhost} onClick={removeSelectedVideo} disabled={isDeleting} data-dashboard-native="true"><Trash2 size={14} /> {isDeleting ? 'Deleting...' : 'Delete'}</button>
                 </div>
-              ))}
-            </div>
+                {deleteError ? <div style={{ color: '#f87171', fontSize: 13 }}>{deleteError}</div> : null}
+              </div>
+            ) : <div className={styles.subtle}>Choose a video to inspect it.</div>}
           </RightPanel>
-          <RightPanel title="Recommended actions">
-            <div className={styles.recommendationList}>
-              <RecommendationAction title="Send follow-up email" subtitle="Sarah watched 84% and clicked CTA" actionLabel="Send" />
-              <RecommendationAction title="Create task" subtitle="Follow up within 24 hours" actionLabel="Create" />
-            </div>
-          </RightPanel>
-        </div>
-      </div>
-
-      <div className={styles.panel}>
-        <div className={styles.videoPreview}>
-          <div className={styles.previewCard}>
-            <div className={styles.playButton}>
-              <span onClick={() => router.push(`/dashboard/videos/editor?video=${selectedVideo.id}`)}>
-                <Video size={22} />
-              </span>
-            </div>
-          </div>
-      <div className={styles.list}>
-            <div>
-              <strong>{selectedVideo?.title}</strong>
-              <div className={styles.subtitle}>{selectedVideo?.company}</div>
-            </div>
-            <div className={styles.listRow}><span>Owner</span><strong>{selectedVideo?.owner}</strong></div>
-            <div className={styles.listRow}><span>Created</span><strong>May 10, 2025</strong></div>
-            <div className={styles.listRow}><span>Last updated</span><strong>May 16, 2025</strong></div>
-            <div className={styles.listRow}><span>Views</span><strong>3</strong></div>
-            <div className={styles.goalRow}>
-              <div className={styles.goalHead}><span>Watch rate</span><strong>{selectedVideo?.watchRate}%</strong></div>
-              <div className={styles.barTrack}><div className={styles.barFill} style={{ width: `${selectedVideo?.watchRate ?? 0}%` }} /></div>
-            </div>
-          </div>
-          <div className={styles.list}>
-            <div className={styles.panelTitle}>CTA configuration</div>
-            <button className={styles.buttonGhost} onClick={() => setCtaType((current) => current === 'Book call' ? 'Watch video' : current === 'Watch video' ? 'Reply to email' : 'Book call')}>{ctaType} <ChevronDown size={14} /></button>
-            <button className={styles.buttonGhost} onClick={() => {
-              const next = window.prompt('Update CTA destination URL', ctaUrl)
-              if (next && next.trim()) setCtaUrl(next.trim())
-            }}>{ctaUrl} <ChevronDown size={14} /></button>
-            <button className={styles.button} onClick={() => openExternalSafely(ctaUrl)}><ExternalLink size={15} /> Preview CTA</button>
-          </div>
         </div>
       </div>
     </>
@@ -1932,13 +1887,10 @@ function VideoTable({ rows, selectedId, onSelect }: { rows: VideoRecord[]; selec
               <th />
               <th>Video</th>
               <th>Funnel stage</th>
-              <th>Owner</th>
-              <th>Channel</th>
-              <th>CTA</th>
               <th>Status</th>
-              <th>Watch %</th>
-              <th>Last viewed</th>
-              <th>Replies</th>
+              <th>Media</th>
+              <th>Views</th>
+              <th>Created</th>
               <th>Next action</th>
             </tr>
           </thead>
@@ -1956,18 +1908,10 @@ function VideoTable({ rows, selectedId, onSelect }: { rows: VideoRecord[]; selec
                   </div>
                 </td>
                 <td><span className={cx(styles.pill, stagePill(video.funnelStage))}>{video.funnelStage}</span></td>
-                <td>{video.owner}</td>
-                <td>{video.channel}</td>
-                <td style={{ color: '#60a5fa' }}>{video.cta}</td>
                 <td><span className={cx(styles.pill, statusPill(video.status))}>{video.status}</span></td>
-                <td style={{ minWidth: 120 }}>
-                  <div className={styles.goalRow}>
-                    <div className={styles.goalHead}><span>{video.watchRate}%</span></div>
-                    <div className={styles.barTrack}><div className={styles.barFill} style={{ width: `${video.watchRate}%` }} /></div>
-                  </div>
-                </td>
-                <td>{video.lastViewed}</td>
-                <td>{video.replies}</td>
+                <td>{video.hasMedia ? 'Source uploaded' : 'Project only'}</td>
+                <td>{video.viewCount}</td>
+                <td>{new Date(video.createdAt).toLocaleDateString('en-GB')}</td>
                 <td style={{ color: '#60a5fa' }}>{video.nextAction}</td>
               </tr>
             ))}
