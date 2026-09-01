@@ -160,6 +160,18 @@ async function supabaseFetch<T>(path: string, init: RequestInit = {}) {
   }, 2)
 }
 
+async function supabaseStorageFetch<T>(path: string, init: RequestInit = {}) {
+  return requestJson<T>(`${config.supabaseUrl}/storage/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: config.supabaseServiceRoleKey,
+      Authorization: `Bearer ${config.supabaseServiceRoleKey}`,
+      'Content-Type': 'application/json',
+      ...init.headers,
+    },
+  }, 2)
+}
+
 const contactSchema = z.object({
   email: z.string().trim().email().max(254),
   firstname: z.string().trim().max(100).optional(),
@@ -188,6 +200,47 @@ const enquirySchema = z.object({
   utmCampaign: z.string().trim().max(200).optional().default(''),
   referrer: z.string().trim().max(500).optional().default(''),
 })
+
+const videoAssetMetadataSchema = z.record(z.string(), z.unknown()).refine(
+  (value) => JSON.stringify(value).length <= 48_000,
+  'Video project metadata is too large.',
+)
+
+const videoAssetCreateSchema = z.object({
+  leadId: z.string().uuid().nullable(),
+  name: z.string().trim().min(1).max(160),
+  url: z.string().trim().url().max(2_000).optional().default(''),
+  storagePath: z.string().trim().max(700).optional().default(''),
+  publicUrl: z.string().trim().url().max(2_000).nullable().optional(),
+  slug: z.string().trim().regex(/^[a-z0-9][a-z0-9-]{2,159}$/),
+  metadata: videoAssetMetadataSchema.optional().default({}),
+})
+
+const videoAssetUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(160).optional(),
+  url: z.string().trim().url().max(2_000).optional(),
+  storagePath: z.string().trim().max(700).optional(),
+  publicUrl: z.string().trim().url().max(2_000).nullable().optional(),
+  slug: z.string().trim().regex(/^[a-z0-9][a-z0-9-]{2,159}$/).optional(),
+  metadata: videoAssetMetadataSchema.optional(),
+}).refine((value) => Object.keys(value).length > 0, 'At least one video asset field is required.')
+
+type VideoAssetRow = {
+  id: string
+  lead_id: string | null
+  name: string
+  type: string
+  url: string | null
+  storage_path: string | null
+  public_url: string | null
+  slug: string | null
+  metadata: Record<string, unknown> | string | null
+  view_count: number | null
+  created_at: string
+  lead?: { id: string; name: string | null; company: string | null; status: string | null; email: string | null } | null
+}
+
+const videoAssetSelect = 'id,lead_id,name,type,url,storage_path,public_url,slug,metadata,view_count,created_at,lead:leads(id,name,company,status,email)'
 
 type Enquiry = z.infer<typeof enquirySchema>
 const publicEmailDomains = new Set([
@@ -453,6 +506,129 @@ app.post('/api/v1/online2day/contact-leads', {
     }),
   })
   return reply.code(201).send({ id: inserted[0]?.id })
+})
+
+app.get('/api/v1/online2day/video-assets', {
+  preHandler: requireSupabaseAdmin,
+}, async (request) => {
+  const query = z.object({
+    leadId: z.string().uuid().optional(),
+    limit: z.coerce.number().int().min(1).max(250).default(200),
+  }).parse(request.query)
+  const leadFilter = query.leadId ? `&lead_id=eq.${encodeURIComponent(query.leadId)}` : ''
+  return supabaseFetch<VideoAssetRow[]>(
+    `lead_assets?type=eq.video${leadFilter}&select=${videoAssetSelect}&order=created_at.desc&limit=${query.limit}`,
+    { headers: { Accept: 'application/json' } },
+  )
+})
+
+app.post('/api/v1/online2day/video-assets', {
+  preHandler: requireSupabaseAdmin,
+}, async (request, reply) => {
+  const body = videoAssetCreateSchema.parse(request.body)
+  const inserted = await supabaseFetch<VideoAssetRow[]>(`lead_assets?select=${videoAssetSelect}`, {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      lead_id: body.leadId,
+      name: body.name,
+      type: 'video',
+      url: body.url,
+      storage_path: body.storagePath || null,
+      public_url: body.publicUrl ?? null,
+      slug: body.slug,
+      metadata: body.metadata,
+    }),
+  })
+  return reply.code(201).send(inserted[0])
+})
+
+app.patch('/api/v1/online2day/video-assets/:id', {
+  preHandler: requireSupabaseAdmin,
+}, async (request, reply) => {
+  const params = z.object({ id: z.string().uuid() }).parse(request.params)
+  const body = videoAssetUpdateSchema.parse(request.body)
+  const patch = {
+    ...(body.name !== undefined ? { name: body.name } : {}),
+    ...(body.url !== undefined ? { url: body.url } : {}),
+    ...(body.storagePath !== undefined ? { storage_path: body.storagePath || null } : {}),
+    ...(body.publicUrl !== undefined ? { public_url: body.publicUrl } : {}),
+    ...(body.slug !== undefined ? { slug: body.slug } : {}),
+    ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
+  }
+  const updated = await supabaseFetch<VideoAssetRow[]>(
+    `lead_assets?id=eq.${encodeURIComponent(params.id)}&type=eq.video&select=${videoAssetSelect}`,
+    { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch) },
+  )
+  if (!updated[0]) return reply.code(404).send({ error: 'Video asset not found.' })
+  return updated[0]
+})
+
+app.get('/api/v1/online2day/video-assets/:id/playback', {
+  preHandler: requireSupabaseAdmin,
+}, async (request, reply) => {
+  const params = z.object({ id: z.string().uuid() }).parse(request.params)
+  const rows = await supabaseFetch<Array<Pick<VideoAssetRow, 'url' | 'storage_path'>>>(
+    `lead_assets?id=eq.${encodeURIComponent(params.id)}&type=eq.video&select=url,storage_path&limit=1`,
+    { headers: { Accept: 'application/json' } },
+  )
+  const asset = rows[0]
+  if (!asset) return reply.code(404).send({ error: 'Video asset not found.' })
+  if (!asset.storage_path) return { url: asset.url || null, expiresIn: null }
+  const objectPath = asset.storage_path.split('/').map(encodeURIComponent).join('/')
+  const signed = await supabaseStorageFetch<{ signedURL?: string; signedUrl?: string }>(
+    `object/sign/lead-videos/${objectPath}`,
+    { method: 'POST', body: JSON.stringify({ expiresIn: 60 * 60 * 24 }) },
+  )
+  const signedPath = signed.signedURL || signed.signedUrl
+  return {
+    url: signedPath ? `${config.supabaseUrl}/storage/v1${signedPath}` : asset.url || null,
+    expiresIn: signedPath ? 60 * 60 * 24 : null,
+  }
+})
+
+app.post('/api/v1/online2day/video-assets/:id/view', {
+  config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+  preHandler: requireServerKey,
+}, async (request, reply) => {
+  const params = z.object({ id: z.string().uuid() }).parse(request.params)
+  const rows = await supabaseFetch<Array<Pick<VideoAssetRow, 'id' | 'lead_id' | 'view_count' | 'name'>>>(
+    `lead_assets?id=eq.${encodeURIComponent(params.id)}&type=eq.video&select=id,lead_id,view_count,name&limit=1`,
+    { headers: { Accept: 'application/json' } },
+  )
+  const asset = rows[0]
+  if (!asset) return reply.code(404).send({ error: 'Video asset not found.' })
+  const viewCount = Math.max(0, asset.view_count || 0) + 1
+  await supabaseFetch(`lead_assets?id=eq.${encodeURIComponent(params.id)}&type=eq.video`, {
+    method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ view_count: viewCount }),
+  })
+  if (asset.lead_id) {
+    await supabaseFetch('lead_events', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ lead_id: asset.lead_id, type: 'Video View', note: `Viewed video “${asset.name || 'Untitled video'}”` }),
+    })
+  }
+  return { success: true, viewCount }
+})
+
+app.delete('/api/v1/online2day/video-assets/:id', {
+  preHandler: requireSupabaseAdmin,
+}, async (request, reply) => {
+  const params = z.object({ id: z.string().uuid() }).parse(request.params)
+  const rows = await supabaseFetch<Array<Pick<VideoAssetRow, 'storage_path'>>>(
+    `lead_assets?id=eq.${encodeURIComponent(params.id)}&type=eq.video&select=storage_path&limit=1`,
+    { headers: { Accept: 'application/json' } },
+  )
+  const asset = rows[0]
+  if (!asset) return reply.code(404).send({ error: 'Video asset not found.' })
+  if (asset.storage_path) {
+    const objectPath = asset.storage_path.split('/').map(encodeURIComponent).join('/')
+    await supabaseStorageFetch(`object/lead-videos/${objectPath}`, { method: 'DELETE' })
+  }
+  await supabaseFetch(`lead_assets?id=eq.${encodeURIComponent(params.id)}&type=eq.video`, {
+    method: 'DELETE', headers: { Prefer: 'return=minimal' },
+  })
+  return reply.code(204).send()
 })
 
 app.route({
