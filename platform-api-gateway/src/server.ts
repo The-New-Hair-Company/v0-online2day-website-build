@@ -794,10 +794,22 @@ app.get('/api/v1/online2day/video-assets/:id/playback', {
   if (!asset) return reply.code(404).send({ error: 'Video asset not found.' })
   if (!asset.storage_path) return { url: asset.url || null, expiresIn: null }
   const objectPath = asset.storage_path.split('/').map(encodeURIComponent).join('/')
-  const signed = await supabaseStorageFetch<{ signedURL?: string; signedUrl?: string }>(
-    `object/sign/lead-videos/${objectPath}`,
-    { method: 'POST', body: JSON.stringify({ expiresIn: 60 * 60 * 24 }) },
-  )
+  let signed: { signedURL?: string; signedUrl?: string }
+  try {
+    signed = await supabaseStorageFetch<{ signedURL?: string; signedUrl?: string }>(
+      `object/sign/lead-videos/${objectPath}`,
+      { method: 'POST', body: JSON.stringify({ expiresIn: 60 * 60 * 24 }) },
+    )
+  } catch (error) {
+    // Historical records can outlive manually removed Storage objects. Treat a
+    // missing object as unavailable media so one stale record cannot break the
+    // entire video library, while preserving genuine upstream failures.
+    if (error instanceof Error && /NoSuchKey|Object not found/i.test(error.message)) {
+      request.log.warn({ assetId: params.id, storagePath: asset.storage_path }, 'Video storage object is missing')
+      return { url: asset.url || null, expiresIn: null }
+    }
+    throw error
+  }
   const signedPath = signed.signedURL || signed.signedUrl
   return {
     url: signedPath ? `${config.supabaseUrl}/storage/v1${signedPath}` : asset.url || null,

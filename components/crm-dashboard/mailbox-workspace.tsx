@@ -664,6 +664,7 @@ function FlagshipComposer({
   );
   const fileRef = useRef<HTMLInputElement>(null);
   const autosaveRef = useRef(false);
+  const saveDraftRef = useRef<((silent?: boolean) => Promise<void>) | null>(null);
   const plain = useMemo(
     () =>
       html
@@ -682,17 +683,6 @@ function FlagshipComposer({
     window.addEventListener("beforeunload", beforeUnload);
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, [dirty]);
-  useEffect(() => {
-    if (!autosaveRef.current) {
-      autosaveRef.current = true;
-      return;
-    }
-    setDirty(true);
-    const timer = window.setTimeout(() => {
-      if (subject || plain || to.length) void saveDraft(true);
-    }, 2_500);
-    return () => window.clearTimeout(timer);
-  }, [to, cc, bcc, subject, html, leadId, priority, attachments.length]);
   async function attachFiles(files: FileList | File[]) {
     for (const file of Array.from(files)) {
       const temp = {
@@ -753,7 +743,10 @@ function FlagshipComposer({
     if (!silent) setBusy("draft");
     const result = await saveMailboxDraft(payload());
     if (!silent) setBusy("");
-    if ("error" in result) return !silent && setFeedback(result.error);
+    if ("error" in result) {
+      if (!silent) setFeedback(result.error);
+      return;
+    }
     setDraftId(result.id);
     setDirty(false);
     if (!silent) {
@@ -761,6 +754,20 @@ function FlagshipComposer({
       window.setTimeout(onSaved, 500);
     }
   }
+  useEffect(() => {
+    saveDraftRef.current = saveDraft;
+  });
+  useEffect(() => {
+    if (!autosaveRef.current) {
+      autosaveRef.current = true;
+      return;
+    }
+    setDirty(true);
+    const timer = window.setTimeout(() => {
+      if (subject || plain || to.length) void saveDraftRef.current?.(true);
+    }, 2_500);
+    return () => window.clearTimeout(timer);
+  }, [attachments.length, bcc, cc, html, leadId, plain, priority, subject, to]);
   async function send() {
     setBusy("send");
     setFeedback("");
