@@ -247,7 +247,7 @@ export async function getEmailComposerData() {
   if (!token) return { leads: [], videos: [] }
   try {
     const [leads, videos] = await Promise.all([
-      leadsApi.list(token),
+      videoAssetsApi.leads(token),
       videoAssetsApi.list(token, { limit: 200 }),
     ])
     const previewEntries = await Promise.all(videos.slice(0, 50).map(async (video) => {
