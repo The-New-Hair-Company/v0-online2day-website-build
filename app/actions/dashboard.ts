@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { leadsApi, activityFeedApi, tasksApi, prefsApi } from '@/lib/api/client'
+import { leadsApi, activityFeedApi, tasksApi, prefsApi, videoAssetsApi, type VideoAssetDto } from '@/lib/api/client'
 import { platformServerFetch } from '@/lib/api/platform-server'
 import { isFoundingAdminEmail, normalizeEmail } from '@/lib/license'
 import { getEnterpriseStateValue, setEnterpriseStateValue } from '@/lib/actions/enterprise-actions'
@@ -41,6 +41,17 @@ function relativeTime(date: string | null): string {
 function fmtDate(date: string | null): string {
   if (!date) return '—'
   return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function videoMetadata(value: VideoAssetDto['metadata']): Record<string, any> {
+  if (!value) return {}
+  if (typeof value === 'object') return value
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
 }
 
 export async function getCrmSetupConfig(): Promise<CrmSetupConfig> {
@@ -169,57 +180,40 @@ export async function getLeadRecords(): Promise<LeadRecord[]> {
 // ─── VIDEOS ──────────────────────────────────────────────────────────────────
 
 export async function getVideos(): Promise<VideoRecord[]> {
-  const supabase = await createClient()
-  const [{ data, error }, { data: assets, error: assetError }] = await Promise.all([
-    supabase
-      .from('videos')
-      .select('*, lead:lead_id(name, company, status)')
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('lead_assets')
-      .select('*, lead:lead_id(name, company, status)')
-      .eq('type', 'video')
-      .order('created_at', { ascending: false }),
-  ])
-
-  const tableVideos = error || !data ? [] : (data as any[]).map((row): VideoRecord => ({
-    id: row.id,
-    title: row.title || 'Untitled Video',
-    company: row.lead?.company || 'Prospect',
-    duration: formatDuration(row.duration_seconds || 0),
-    funnelStage: row.funnel_stage || 'Prospecting',
-    owner: 'Sarah M.',
-    channel: row.channel || 'Email',
-    cta: row.cta_label || 'Watch Video',
-    status: row.status || 'Draft',
-    watchRate: row.watch_rate || 0,
-    lastViewed: fmtDate(row.last_viewed_at),
-    replies: row.reply_count || 0,
-    nextAction: row.next_action || 'Follow up',
-  }))
-
-  const libraryVideos = assetError || !assets ? [] : (assets as any[]).map((row): VideoRecord => {
-    const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
-    const duration = Number(metadata.duration || metadata.recording?.duration || 0)
-    const cta = typeof metadata.cta === 'object' && metadata.cta ? metadata.cta.label : undefined
-    return {
-      id: row.id,
-      title: row.name || 'Recorded video',
-      company: row.lead?.company || 'Prospect',
-      duration: duration ? formatDuration(duration) : '00:00',
-      funnelStage: row.lead?.status || 'Prospecting',
-      owner: metadata.createdBy || 'Online2Day',
-      channel: row.url ? 'Hosted page' : 'Editor project',
-      cta: cta || 'Watch Video',
-      status: row.url ? 'Ready' : 'Draft',
-      watchRate: row.view_count || 0,
-      lastViewed: fmtDate(row.created_at),
-      replies: 0,
-      nextAction: row.url ? 'Share video' : 'Finish edits',
-    }
-  })
-
-  return [...libraryVideos, ...tableVideos]
+  const token = await getToken()
+  if (!token) return []
+  try {
+    const assets = await videoAssetsApi.list(token, { limit: 250 })
+    return assets.map((row): VideoRecord => {
+      const metadata = videoMetadata(row.metadata)
+      const duration = Number(metadata.duration || metadata.recording?.duration || 0)
+      const cta = metadata.cta && typeof metadata.cta === 'object' ? String(metadata.cta.label || '') : ''
+      const hasMedia = Boolean(row.storage_path || row.url)
+      const status = typeof metadata.status === 'string' ? metadata.status : hasMedia ? 'Ready' : 'Draft'
+      return {
+        id: row.id,
+        leadId: row.lead_id,
+        slug: row.slug || '',
+        title: row.name || 'Untitled video',
+        company: row.lead?.company || (row.lead_id ? 'Prospect' : 'Shared library'),
+        duration: duration ? formatDuration(Math.round(duration)) : '00:00',
+        funnelStage: row.lead?.status || 'Unassigned',
+        owner: String(metadata.createdBy || metadata.uploadedBy || 'Online2Day'),
+        channel: hasMedia ? 'Hosted page' : 'Editor project',
+        cta: cta || 'Watch video',
+        status,
+        watchRate: Number(metadata.watchRate || 0),
+        lastViewed: row.view_count ? `${row.view_count} view${row.view_count === 1 ? '' : 's'}` : 'Not viewed',
+        replies: Number(metadata.replyCount || 0),
+        nextAction: hasMedia ? 'Share or edit' : 'Add media',
+        createdAt: row.created_at,
+        viewCount: row.view_count || 0,
+        hasMedia,
+      }
+    })
+  } catch {
+    return []
+  }
 }
 
 // ─── EMAILS ──────────────────────────────────────────────────────────────────
@@ -249,36 +243,44 @@ export async function getEmails(): Promise<EmailRecord[]> {
 }
 
 export async function getEmailComposerData() {
-  const supabase = await createClient()
-  const [{ data: leads }, { data: videos }] = await Promise.all([
-    supabase
-      .from('leads')
-      .select('id, name, company, email, status')
-      .order('created_at', { ascending: false })
-      .limit(200),
-    supabase
-      .from('lead_assets')
-      .select('id, lead_id, name, slug, url, storage_path, created_at')
-      .eq('type', 'video')
-      .order('created_at', { ascending: false })
-      .limit(200),
-  ])
-
-  return {
-    leads: (leads || []).map((lead: any) => ({
-      id: lead.id,
-      name: lead.name || 'Unknown',
-      company: lead.company || 'Private',
-      email: lead.email || '',
-      status: lead.status || 'New',
-    })),
-    videos: (videos || []).map((video: any) => ({
-      id: video.id,
-      leadId: video.lead_id,
-      name: video.name || 'Untitled video',
-      slug: video.slug || '',
-      createdAt: video.created_at || '',
-    })),
+  const token = await getToken()
+  if (!token) return { leads: [], videos: [] }
+  try {
+    const [leads, videos] = await Promise.all([
+      leadsApi.list(token),
+      videoAssetsApi.list(token, { limit: 200 }),
+    ])
+    const previewEntries = await Promise.all(videos.slice(0, 50).map(async (video) => {
+      if (!video.storage_path && !video.url) return [video.id, video.url || ''] as const
+      try {
+        const playback = await videoAssetsApi.playback(token, video.id)
+        return [video.id, playback.url || ''] as const
+      } catch {
+        return [video.id, video.url || ''] as const
+      }
+    }))
+    const previewUrls = new Map(previewEntries)
+    return {
+      leads: leads.slice(0, 200).map((lead) => ({
+        id: lead.id,
+        name: lead.name || 'Unknown',
+        company: lead.company || 'Private',
+        email: lead.email || '',
+        status: lead.status || 'New',
+      })),
+      videos: videos.map((video) => ({
+        id: video.id,
+        leadId: video.lead_id,
+        name: video.name || 'Untitled video',
+        slug: video.slug || '',
+        createdAt: video.created_at || '',
+        storagePath: video.storage_path || '',
+        previewUrl: previewUrls.get(video.id) || video.url || '',
+        metadata: videoMetadata(video.metadata),
+      })),
+    }
+  } catch {
+    return { leads: [], videos: [] }
   }
 }
 
@@ -468,38 +470,15 @@ export async function getDashboardMetrics() {
 // ─── SECTION METRICS ─────────────────────────────────────────────────────────
 
 export async function getVideoMetrics() {
-  const supabase = await createClient()
-  const { data: snaps } = await supabase
-    .from('metric_snapshots').select('*').eq('section', 'videos')
-  const snap = (snaps || []).reduce((acc: Record<string, number[]>, s) => {
-    if (!acc[s.metric_label]) acc[s.metric_label] = []
-    acc[s.metric_label].push(Number(s.value_numeric))
-    return acc
-  }, {})
-
-  const { data: videos } = await supabase.from('videos').select('watch_rate, meetings_booked, created_at, status')
-  const vids = videos || []
-  const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
-  const totalVideos = vids.length
-  const sentThisWeek = vids.filter(v => v.status !== 'Draft' && new Date(v.created_at) >= sevenDaysAgo).length
-  const avgWatchRate = vids.filter(v => v.watch_rate > 0).length > 0
-    ? Math.round(vids.filter(v => v.watch_rate > 0).reduce((s, v) => s + v.watch_rate, 0) / vids.filter(v => v.watch_rate > 0).length)
-    : 0
-  const meetingsBooked = vids.reduce((s, v) => s + (v.meetings_booked || 0), 0)
-
-  function delta(label: string, cur: number) {
-    const vals = snap[label]; if (!vals || vals.length < 7) return '+0%'
-    const prev = vals[vals.length - 7] ?? vals[0]; if (prev === 0) return '+0%'
-    const pct = Math.round(((cur - prev) / prev) * 100)
-    return `${pct >= 0 ? '+' : ''}${pct}%`
-  }
-
+  const videos = await getVideos()
+  const totalViews = videos.reduce((sum, video) => sum + video.viewCount, 0)
+  const ready = videos.filter((video) => video.hasMedia).length
+  const drafts = videos.length - ready
   return [
-    { label: 'Total videos', value: `${totalVideos}`, delta: delta('total_videos', totalVideos) },
-    { label: 'Sent this week', value: `${sentThisWeek}`, delta: delta('sent_this_week', sentThisWeek) },
-    { label: 'Avg watch rate', value: `${avgWatchRate}%`, delta: delta('avg_watch_rate', avgWatchRate) },
-    { label: 'Meetings booked', value: `${meetingsBooked}`, delta: delta('meetings_booked', meetingsBooked) },
+    { label: 'Total videos', value: String(videos.length), delta: 'Live' },
+    { label: 'Ready to share', value: String(ready), delta: ready ? 'Available' : 'None yet' },
+    { label: 'Total views', value: String(totalViews), delta: totalViews ? 'Tracked' : 'No views yet' },
+    { label: 'Draft projects', value: String(drafts), delta: drafts ? 'Needs media' : 'All ready' },
   ]
 }
 
