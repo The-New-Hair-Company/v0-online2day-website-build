@@ -386,6 +386,16 @@ export const assetsApi = {
 // ── Online2Day video library (Azure gateway → Supabase) ─────────────────────
 
 export const videoAssetsApi = {
+  leads(token: string): Promise<Array<{
+    id: string
+    name: string | null
+    company: string | null
+    email: string | null
+    status: string | null
+  }>> {
+    return apiFetch('/api/v1/online2day/crm-leads', token)
+  },
+
   list(token: string, options?: { leadId?: string; limit?: number }): Promise<VideoAssetDto[]> {
     const params = new URLSearchParams()
     if (options?.leadId) params.set('leadId', options.leadId)
