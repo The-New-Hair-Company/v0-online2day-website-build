@@ -11,9 +11,8 @@ type ResendEmailEvent = {
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.RESEND_API_KEY
   const webhookSecret = process.env.RESEND_WEBHOOK_SECRET
-  if (!apiKey || !webhookSecret) {
+  if (!webhookSecret) {
     return NextResponse.json({ error: 'Email webhook is not configured.' }, { status: 503 })
   }
 
@@ -26,7 +25,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const payload = await request.text()
-    const resend = new Resend(apiKey)
+    // Signature verification is entirely local and only needs the webhook
+    // signing secret. Delivery credentials intentionally live in Azure.
+    const resend = new Resend('webhook-verification-only')
     const event = resend.webhooks.verify({
       payload,
       headers: { id: eventId, timestamp, signature },
