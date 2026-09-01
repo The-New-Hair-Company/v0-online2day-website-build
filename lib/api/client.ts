@@ -512,6 +512,7 @@ export const videoAssetsApi = {
   },
 
   update(token: string, assetId: string, data: {
+    leadId?: string | null
     name?: string
     url?: string
     storagePath?: string

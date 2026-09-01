@@ -221,6 +221,7 @@ const videoAssetCreateSchema = z.object({
 })
 
 const videoAssetUpdateSchema = z.object({
+  leadId: z.string().uuid().nullable().optional(),
   name: z.string().trim().min(1).max(160).optional(),
   url: z.string().trim().url().max(2_000).optional(),
   storagePath: z.string().trim().max(700).optional(),
@@ -736,6 +737,7 @@ app.patch('/api/v1/online2day/video-assets/:id', {
   const params = z.object({ id: z.string().uuid() }).parse(request.params)
   const body = videoAssetUpdateSchema.parse(request.body)
   const patch = {
+    ...(body.leadId !== undefined ? { lead_id: body.leadId } : {}),
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.url !== undefined ? { url: body.url } : {}),
     ...(body.storagePath !== undefined ? { storage_path: body.storagePath || null } : {}),

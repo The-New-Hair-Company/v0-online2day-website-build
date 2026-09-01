@@ -70,8 +70,24 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
     videoUrl = signedUrlData?.signedUrl || videoUrl
   }
 
-  const trimStart = Number(editorProject?.settings?.trimStart || 0)
-  const trimEnd = Number(editorProject?.settings?.trimEnd || 0)
+  const editorSettings = editorProject?.settings && typeof editorProject.settings === 'object' ? editorProject.settings : {}
+  const trimStart = Number(editorSettings.trimStart || 0)
+  const trimEnd = Number(editorSettings.trimEnd || 0)
+  const playerProps = {
+    trimStart,
+    trimEnd,
+    cuts: Array.isArray(editorSettings.cuts) ? editorSettings.cuts : [],
+    transform: editorSettings.transform,
+    captions: Array.isArray(editorSettings.captionItems) ? editorSettings.captionItems : [],
+    captionsEnabled: Boolean(editorSettings.captions),
+    captionStyle: editorSettings.captionStyle,
+    watermark: Boolean(editorProject?.brand?.watermark),
+    brandColor: editorProject?.brand?.primary || '#2f6bff',
+    playbackRate: Number(editorSettings.playbackRate || 1),
+    volume: Number(editorSettings.volume ?? 1),
+    fallbackCaption: editorProject?.scenes?.[0]?.headline || '',
+  }
+  const videoAspect = String(editorProject?.format || '16:9').replace(':', ' / ')
   const ctaLabel = editorProject?.cta?.label || 'Book a Call with Us'
   const ctaUrl = editorProject?.cta?.destination || '/contact'
 
@@ -97,11 +113,11 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
 
             <div className="relative bg-black rounded-2xl overflow-hidden shadow-2xl shadow-primary/10 border border-border mb-10">
               {videoUrl ? (
-                <div className="aspect-video">
-                  <EditedVideoPlayer src={videoUrl} trimStart={trimStart} trimEnd={trimEnd} />
+                <div style={{ aspectRatio: videoAspect }}>
+                  <EditedVideoPlayer src={videoUrl} {...playerProps} />
                 </div>
               ) : (
-                <div className="aspect-video flex flex-col items-center justify-center bg-[#111] text-white/30">
+                <div style={{ aspectRatio: videoAspect }} className="flex flex-col items-center justify-center bg-[#111] text-white/30">
                   <p className="text-sm">Video processing — please check back shortly.</p>
                 </div>
               )}
@@ -160,11 +176,11 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
 
           <div className="relative bg-black rounded-2xl overflow-hidden shadow-2xl shadow-primary/10 border border-border mb-10">
             {videoUrl ? (
-              <div className="aspect-video">
-                <EditedVideoPlayer src={videoUrl} trimStart={trimStart} trimEnd={trimEnd} />
+              <div style={{ aspectRatio: videoAspect }}>
+                <EditedVideoPlayer src={videoUrl} {...playerProps} />
               </div>
             ) : editorProject ? (
-              <div className="aspect-video relative overflow-hidden bg-linear-to-br from-[#081225] via-[#0b1020] to-[#111827]">
+              <div style={{ aspectRatio: videoAspect }} className="relative overflow-hidden bg-linear-to-br from-[#081225] via-[#0b1020] to-[#111827]">
                 <div className="absolute inset-8 border border-white/10 rounded-xl" />
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_18%,rgba(47,107,255,0.35),transparent_30%)]" />
                 <div className="relative h-full p-10 flex flex-col justify-center">
@@ -185,7 +201,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
                 </div>
               </div>
             ) : (
-              <div className="aspect-video flex flex-col items-center justify-center bg-[#111] text-white/30">
+              <div style={{ aspectRatio: videoAspect }} className="flex flex-col items-center justify-center bg-[#111] text-white/30">
                 <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
                   <div className="w-0 h-0 border-t-[12px] border-t-transparent border-l-[22px] border-l-primary border-b-[12px] border-b-transparent ml-2" />
                 </div>

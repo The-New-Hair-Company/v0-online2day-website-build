@@ -19,7 +19,7 @@ const allowedVideoTypes = new Set(['video/mp4', 'video/quicktime', 'video/webm',
 const hexColour = z.string().regex(/^#[0-9a-f]{6}$/i)
 const editorProjectSchema = z.object({
   title: z.string().trim().min(1).max(160),
-  leadId: z.string().uuid(),
+  leadId: z.string().uuid().nullable(),
   sourceAssetId: z.string().uuid().optional().or(z.literal('')),
   sourceSlug: z.string().max(160).optional(),
   duration: z.number().finite().min(1).max(14_400),
@@ -179,7 +179,7 @@ export async function getAgreementDownloadUrl(storagePath: string) {
 
 type EditorProjectPayload = {
   title: string
-  leadId: string
+  leadId: string | null
   sourceAssetId?: string
   sourceSlug?: string
   duration: number
@@ -224,6 +224,7 @@ export async function registerUploadedVideo(input: z.infer<typeof uploadedVideoS
     }
     const asset = video.assetId
       ? await videoAssetsApi.update(token, video.assetId, {
+          leadId: video.leadId,
           name: video.name,
           storagePath: video.storagePath,
           metadata: uploadMetadata,
@@ -359,10 +360,10 @@ export async function saveVideoEditorProject(payload: EditorProjectPayload) {
   const parsed = editorProjectSchema.safeParse(payload)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || 'The video project contains invalid data.' }
   const project = parsed.data
-  const slug = project.sourceSlug || `${project.leadId.slice(0, 8)}-editor-${Date.now()}`
+  const slug = project.sourceSlug || `${project.leadId?.slice(0, 8) || 'shared'}-editor-${Date.now()}`
   const projectMetadata = {
     editorProject: true,
-    schemaVersion: 2,
+    schemaVersion: 3,
     duration: project.duration,
     format: project.format,
     scenes: project.scenes,
@@ -382,6 +383,7 @@ export async function saveVideoEditorProject(payload: EditorProjectPayload) {
 
     if (project.sourceAssetId) {
       asset = await videoAssetsApi.update(token, project.sourceAssetId, {
+        leadId: project.leadId,
         name: project.title,
         metadata: projectMetadata,
       })
@@ -394,14 +396,16 @@ export async function saveVideoEditorProject(payload: EditorProjectPayload) {
       })
     }
 
-    await logLeadEvent(project.leadId, 'Video Editor Project Saved',
-      `Video project "${project.title}" saved by ${user.user?.email || 'unknown'}`,
-      { slug: asset.slug || slug, sourceAssetId: project.sourceAssetId || null, duration: project.duration, format: project.format })
+    if (project.leadId) {
+      await logLeadEvent(project.leadId, 'Video Editor Project Saved',
+        `Video project "${project.title}" saved by ${user.user?.email || 'unknown'}`,
+        { slug: asset.slug || slug, sourceAssetId: project.sourceAssetId || null, duration: project.duration, format: project.format })
+    }
 
     revalidatePath('/dashboard/videos')
     revalidatePath('/dashboard/videos/editor')
     revalidatePath('/dashboard/emails')
-    revalidatePath(`/dashboard/leads/${project.leadId}`)
+    if (project.leadId) revalidatePath(`/dashboard/leads/${project.leadId}`)
     return { success: true, slug: asset.slug || slug, asset, assetId: asset.id }
   } catch (e) {
     await logAsyncActionFailure({
