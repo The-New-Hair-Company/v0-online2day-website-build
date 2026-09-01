@@ -197,8 +197,8 @@ export async function getVideos(): Promise<VideoRecord[]> {
       const metadata = videoMetadata(row.metadata)
       const duration = Number(metadata.duration || metadata.recording?.duration || 0)
       const cta = metadata.cta && typeof metadata.cta === 'object' ? String(metadata.cta.label || '') : ''
-      const hasMedia = Boolean(row.storage_path || row.url)
-      const status = typeof metadata.status === 'string' ? metadata.status : hasMedia ? 'Ready' : 'Draft'
+      const hasMedia = Boolean(row.storage_path || row.url) && Number.isFinite(duration) && duration > 0
+      const status = hasMedia ? (typeof metadata.status === 'string' ? metadata.status : 'Ready') : 'Needs media'
       return {
         id: row.id,
         leadId: row.lead_id,

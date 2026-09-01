@@ -70,7 +70,10 @@ const starterScenes: Scene[] = [
 
 const uid = () => globalThis.crypto?.randomUUID?.() || `item-${Date.now()}-${Math.random().toString(36).slice(2)}`
 const asObject = (value: unknown): Record<string, any> => value && typeof value === 'object' ? value as Record<string, any> : {}
-const seconds = (value: number) => `${Math.floor(Math.max(0, value) / 60).toString().padStart(2, '0')}:${Math.floor(Math.max(0, value) % 60).toString().padStart(2, '0')}`
+const seconds = (value: number) => {
+  const safe = Number.isFinite(value) ? Math.max(0, value) : 0
+  return `${Math.floor(safe / 60).toString().padStart(2, '0')}:${Math.floor(safe % 60).toString().padStart(2, '0')}`
+}
 const preciseSeconds = (value: number) => `${Math.max(0, value).toFixed(1)}s`
 
 function safeTransform(value: unknown): VideoTransform {
@@ -199,6 +202,12 @@ export function VideoEditorClient({ leads, videos, setupConfig }: { leads: Email
   function restoreLocalDraft() { try { const value = localStorage.getItem('o2d-video-studio-draft-v3') || localStorage.getItem('o2d-video-studio-draft-v2'); if (!value) return setMessage({ kind: 'info', text: 'There is no local draft to restore.' }); applyDraft(JSON.parse(value)); setMessage({ kind: 'ok', text: 'Local draft restored.' }) } catch { setMessage({ kind: 'error', text: 'The local draft could not be restored.' }) } }
   const inspectFile = useCallback((file: File) => { if (!allowedTypes.has(file.type)) return setMessage({ kind: 'error', text: 'Choose an MP4, MOV or WebM video.' }); if (file.size > maxSize) return setMessage({ kind: 'error', text: 'Videos must be 2 GB or smaller.' }); if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current); const url = URL.createObjectURL(file); previewObjectUrlRef.current = url; setSourceFile(file); setSourceUrl(url); setStoragePath(''); setUploadProgress(0); setDirty(true); setMessage({ kind: 'info', text: `${file.name} is staged. Edit it now, then save when ready.` }) }, [])
   function onMetadata() { const video = videoRef.current; const duration = video?.duration || 0; if (!video || !Number.isFinite(duration)) return; setSourceDuration(duration); setTrimStart((current) => clampNumber(current, 0, Math.max(0, duration - 0.1))); setTrimEnd((current) => current > 0 ? clampNumber(current, 0.1, duration) : duration); video.playbackRate = playbackRate; video.volume = volume }
+  function onMediaError() {
+    const wasLocalFile = Boolean(sourceFile)
+    if (previewObjectUrlRef.current) { URL.revokeObjectURL(previewObjectUrlRef.current); previewObjectUrlRef.current = '' }
+    setPlaying(false); setSourceUrl(''); setSourceFile(null); setSourceDuration(0); setCurrentTime(0); setTrimStart(0); setTrimEnd(0); setStoragePath('')
+    setMessage({ kind: wasLocalFile ? 'error' : 'info', text: wasLocalFile ? 'This browser could not decode that video. Convert it to MP4 (H.264) or WebM and try again.' : 'The stored source file is no longer available. Import a replacement video to continue editing this project.' })
+  }
   function seekTo(value: number) { const video = videoRef.current; if (!video || !sourceDuration) return; let next = clampNumber(value, trimStart, trimEnd || sourceDuration); const hidden = normalizedCuts.find((cut) => next >= cut.start && next < cut.end); if (hidden) next = hidden.end; video.currentTime = next; setCurrentTime(next) }
   function togglePlayback() { const video = videoRef.current; if (!video || !sourceUrl) return; if (video.paused) { const end = trimEnd || sourceDuration; if (video.currentTime < trimStart || video.currentTime >= end) seekTo(trimStart); void video.play() } else video.pause() }
   function onTimeUpdate() { const video = videoRef.current; if (!video) return; const end = trimEnd || sourceDuration; const hidden = normalizedCuts.find((cut) => video.currentTime >= cut.start && video.currentTime < cut.end); if (hidden) { video.currentTime = hidden.end; setCurrentTime(hidden.end); return }; if (end && video.currentTime >= end) { video.pause(); video.currentTime = trimStart; setCurrentTime(trimStart); return }; setCurrentTime(video.currentTime) }
@@ -361,7 +370,7 @@ export function VideoEditorClient({ leads, videos, setupConfig }: { leads: Email
         <section className={styles.mediaPanel}>
           <div className={styles.panelHeading}><div><span>LIVE CANVAS</span><h2>Video preview</h2></div><strong>{sourceDuration ? `${seconds(currentTime)} / ${seconds(sourceDuration)}` : 'No media'}</strong></div>
           <div ref={stageRef} className={`${styles.stage} ${tool === 'transform' && sourceUrl ? styles.stageMovable : ''}`} style={{ aspectRatio: aspect }} onPointerDown={beginDrag} onPointerMove={dragVideo} onPointerUp={() => { dragRef.current = null }} onPointerCancel={() => { dragRef.current = null }}>
-            {sourceUrl ? <video ref={videoRef} src={sourceUrl} crossOrigin="anonymous" playsInline preload="metadata" style={previewStyle} onLoadedMetadata={onMetadata} onTimeUpdate={onTimeUpdate} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} /> : <button className={styles.emptyStage} onClick={() => fileInputRef.current?.click()}><Film size={34} /><strong>Import your source video</strong><span>MP4, MOV or WebM · up to 2 GB</span></button>}
+            {sourceUrl ? <video ref={videoRef} src={sourceUrl} crossOrigin="anonymous" playsInline preload="metadata" style={previewStyle} onLoadedMetadata={onMetadata} onError={onMediaError} onTimeUpdate={onTimeUpdate} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} /> : <button className={styles.emptyStage} onClick={() => fileInputRef.current?.click()}><Film size={34} /><strong>Import your source video</strong><span>MP4, MOV or WebM · up to 2 GB</span></button>}
             {sourceUrl ? <div className={styles.videoOverlay} style={{ borderColor: brandColor }}><span>{activeLead?.company || 'Shared video'}</span>{watermark ? <b>Online2Day</b> : null}</div> : null}
             {sourceUrl && stageCaption ? <p className={`${styles.caption} ${styles[`caption${activeCaption?.position || 'bottom'}`]}`} style={{ color: captionStyle.color, background: captionStyle.background, fontWeight: captionStyle.fontWeight, textTransform: captionStyle.uppercase ? 'uppercase' : 'none', fontSize: `clamp(14px, ${(captionStyle.fontSize / 22).toFixed(2)}vw, ${captionStyle.fontSize}px)` }}>{stageCaption}</p> : null}
             {tool === 'transform' && sourceUrl ? <div className={styles.dragHint}><Move size={14} /> Drag to reposition</div> : null}
