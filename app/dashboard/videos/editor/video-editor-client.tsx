@@ -12,12 +12,13 @@ import {
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import type { CrmSetupConfig, EmailComposerLead, EmailComposerVideo } from '@/components/crm-dashboard/types'
 import { sendEnterpriseEmail } from '@/lib/actions/email-actions'
-import { getVideoPlaybackUrl, registerUploadedVideo, saveVideoEditorProject } from '@/lib/actions/video-actions'
+import { completeIntroUpload, createIntroUpload, getMediaProcessingJob, getVideoBranding, getVideoPlaybackUrl, processVideoProject, registerUploadedVideo, removeVideoIntro, saveVideoEditorProject, setIntroEnabled } from '@/lib/actions/video-actions'
 import {
   activeCaptionAt, clampNumber, defaultCaptionStyle, defaultVideoTransform,
   formatRatios, normalizeCuts, playableDuration,
   type CaptionStyle, type VideoCaption, type VideoCut, type VideoFormat, type VideoTransform,
 } from '@/lib/video/editor-project'
+import { formatTimecode, parseTimecode } from '@/lib/video/timecode'
 import { safeVideoObjectName, uploadVideoResumable } from '@/lib/video/resumable-upload'
 import styles from './video-editor.module.css'
 
@@ -138,24 +139,6 @@ function projectFromVideo(video: EmailComposerVideo | undefined): Partial<Draft>
   }
 }
 
-function canvasSize(format: VideoFormat) {
-  if (format === '9:16') return { width: 720, height: 1280 }
-  if (format === '1:1') return { width: 1080, height: 1080 }
-  if (format === '4:5') return { width: 864, height: 1080 }
-  if (format === '21:9') return { width: 1400, height: 600 }
-  return { width: 1280, height: 720 }
-}
-
-function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
-  const words = text.trim().split(/\s+/); const lines: string[] = []; let line = ''
-  words.forEach((word) => {
-    const candidate = line ? `${line} ${word}` : word
-    if (line && context.measureText(candidate).width > maxWidth) { lines.push(line); line = word } else line = candidate
-  })
-  if (line) lines.push(line)
-  return lines.slice(0, 4)
-}
-
 export function VideoEditorClient({ leads, videos, setupConfig }: { leads: EmailComposerLead[]; videos: EmailComposerVideo[]; setupConfig: CrmSetupConfig }) {
   const searchParams = useSearchParams(); const requestedAsset = searchParams.get('asset') || ''; const requestedLead = searchParams.get('lead') || ''
   const initialVideo = videos.find((video) => video.id === requestedAsset); const initial = projectFromVideo(initialVideo)
@@ -180,9 +163,12 @@ export function VideoEditorClient({ leads, videos, setupConfig }: { leads: Email
   const [sourceDuration, setSourceDuration] = useState(Number(asObject(initialVideo?.metadata).duration || 0)); const [trimStart, setTrimStart] = useState(initial.trimStart || 0); const [trimEnd, setTrimEnd] = useState(initial.trimEnd || 0)
   const [playing, setPlaying] = useState(false); const [currentTime, setCurrentTime] = useState(0); const [uploadProgress, setUploadProgress] = useState(0); const [exportProgress, setExportProgress] = useState(0)
   const [busy, setBusy] = useState<'save' | 'send' | 'record' | 'export' | ''>(''); const [message, setMessage] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null); const [dirty, setDirty] = useState(false)
+  const [branding, setBranding] = useState<{ introEnabled: boolean; intro: null | { filename: string; sizeBytes: number; durationSeconds: number; previewUrl?: string | null } }>({ introEnabled: false, intro: null })
+  const [introBusy, setIntroBusy] = useState(false); const introInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null); const videoRef = useRef<HTMLVideoElement>(null); const stageRef = useRef<HTMLDivElement>(null)
   const recorderRef = useRef<MediaRecorder | null>(null); const streamRef = useRef<MediaStream | null>(null); const chunksRef = useRef<Blob[]>([])
   const uploadAbortRef = useRef<AbortController | null>(null); const previewObjectUrlRef = useRef(''); const initializedRef = useRef(false)
+  const processingCancelledRef = useRef(false)
   const dragRef = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null)
   const selectedScene = scenes.find((scene) => scene.id === selectedSceneId) || scenes[0]
   const selectedCaption = captionItems.find((caption) => caption.id === selectedCaptionId) || captionItems[0]
@@ -195,8 +181,9 @@ export function VideoEditorClient({ leads, videos, setupConfig }: { leads: Email
   const draft = useMemo<Draft>(() => ({ title, leadId, scenes, format, brandColor, accentColor, watermark, captionsEnabled, ctaLabel, ctaUrl, emailTo, emailSubject, emailBody, trimStart, trimEnd, transform, cuts, captionItems, captionStyle, playbackRate, volume }), [title, leadId, scenes, format, brandColor, accentColor, watermark, captionsEnabled, ctaLabel, ctaUrl, emailTo, emailSubject, emailBody, trimStart, trimEnd, transform, cuts, captionItems, captionStyle, playbackRate, volume])
 
   useEffect(() => { if (!requestedAsset || initialVideo?.previewUrl || !initialVideo?.storagePath) return; void getVideoPlaybackUrl(requestedAsset).then((result) => { if ('url' in result && result.url) setSourceUrl(result.url) }) }, [initialVideo, requestedAsset])
+  useEffect(() => { void getVideoBranding().then((result) => { if (!('error' in result)) setBranding(result) }) }, [])
   useEffect(() => { if (!initializedRef.current) { initializedRef.current = true; return }; setDirty(true); const timer = window.setTimeout(() => localStorage.setItem('o2d-video-studio-draft-v3', JSON.stringify(draft)), 450); return () => window.clearTimeout(timer) }, [draft])
-  useEffect(() => () => { if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current); streamRef.current?.getTracks().forEach((track) => track.stop()); uploadAbortRef.current?.abort() }, [])
+  useEffect(() => () => { processingCancelledRef.current = true; if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current); streamRef.current?.getTracks().forEach((track) => track.stop()); uploadAbortRef.current?.abort(); if (videoRef.current) { videoRef.current.pause(); videoRef.current.removeAttribute('src'); videoRef.current.load() } }, [])
   useEffect(() => { function onKeyDown(event: KeyboardEvent) { const target = event.target as HTMLElement | null; if (target?.matches('input, textarea, select, [contenteditable="true"]')) return; if (event.code === 'Space') { event.preventDefault(); togglePlayback() }; if (event.key === 'ArrowLeft') seekTo(currentTime - (event.shiftKey ? 5 : 1)); if (event.key === 'ArrowRight') seekTo(currentTime + (event.shiftKey ? 5 : 1)) }; window.addEventListener('keydown', onKeyDown); return () => window.removeEventListener('keydown', onKeyDown) })
 
   function applyDraft(next: Partial<Draft>) {
@@ -225,7 +212,7 @@ export function VideoEditorClient({ leads, videos, setupConfig }: { leads: Email
       const recorder = new MediaRecorder(stream, preferred ? { mimeType: preferred } : undefined); chunksRef.current = []; streamRef.current = stream; recorderRef.current = recorder
       if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.muted = true; void videoRef.current.play() }
       recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data) }
-      recorder.onstop = () => { const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'video/webm' }); const file = new File([blob], `recording-${Date.now()}.webm`, { type: blob.type }); stream.getTracks().forEach((track) => track.stop()); streamRef.current = null; if (videoRef.current) { videoRef.current.srcObject = null; videoRef.current.muted = false }; inspectFile(file); setBusy('') }
+      recorder.onstop = () => { const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'video/webm' }); chunksRef.current = []; const file = new File([blob], `recording-${Date.now()}.webm`, { type: blob.type }); stream.getTracks().forEach((track) => track.stop()); streamRef.current = null; if (videoRef.current) { videoRef.current.srcObject = null; videoRef.current.muted = false }; inspectFile(file); setBusy('') }
       recorder.start(1_000); setBusy('record'); setMessage({ kind: 'info', text: 'Recording camera and microphone…' })
     } catch (error) { setBusy(''); setMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Camera permission was not granted.' }) }
   }
@@ -242,44 +229,94 @@ export function VideoEditorClient({ leads, videos, setupConfig }: { leads: Email
   function addCut(start: number, end: number) { if (!sourceDuration) return; const next = normalizeCuts([...cuts, { id: uid(), start, end }], sourceDuration, trimStart, trimEnd || sourceDuration); if (playableDuration(sourceDuration, trimStart, trimEnd || sourceDuration, next) < 0.25) return setMessage({ kind: 'error', text: 'Keep at least 0.25 seconds of playable video.' }); setCuts(next) }
   function markCutOut() { if (cutIn === null) return setMessage({ kind: 'info', text: 'Set the cut start first.' }); if (currentTime <= cutIn + 0.05) return setMessage({ kind: 'error', text: 'Move the playhead after the cut start.' }); addCut(cutIn, currentTime); setCutIn(null); setMessage({ kind: 'ok', text: `Removed ${preciseSeconds(currentTime - cutIn)} from playback.` }) }
   function updateCut(id: string, patch: Partial<VideoCut>) { setCuts((current) => normalizeCuts(current.map((cut) => cut.id === id ? { ...cut, ...patch } : cut), sourceDuration, trimStart, trimEnd || sourceDuration)) }
+  function setProjectBoundary(kind: 'start' | 'end', value: number) {
+    const end = trimEnd || sourceDuration
+    if (!sourceDuration || value < 0 || value > sourceDuration) return false
+    if (kind === 'start') {
+      if (value >= end) return false
+      setTrimStart(value)
+    } else {
+      if (value <= trimStart) return false
+      setTrimEnd(value)
+    }
+    seekTo(value)
+    return true
+  }
+  function updateCutBoundary(cut: VideoCut, kind: 'start' | 'end', value: number) {
+    if (value < trimStart || value > (trimEnd || sourceDuration)) return false
+    if ((kind === 'start' && value >= cut.end) || (kind === 'end' && value <= cut.start)) return false
+    updateCut(cut.id, { [kind]: value })
+    seekTo(value)
+    return true
+  }
+  function previewSelection() {
+    const video = videoRef.current
+    if (!video || !sourceDuration) return
+    seekTo(trimStart)
+    void video.play()
+  }
   function addCaption() { if (!sourceDuration) return setMessage({ kind: 'info', text: 'Import a video before adding timed captions.' }); const start = clampNumber(currentTime || trimStart, trimStart, Math.max(trimStart, (trimEnd || sourceDuration) - 0.2)); const caption: VideoCaption = { id: uid(), text: 'Type your caption', start, end: Math.min(trimEnd || sourceDuration, start + 3), position: 'bottom' }; setCaptionItems((current) => [...current, caption].sort((a, b) => a.start - b.start)); setSelectedCaptionId(caption.id); setCaptionsEnabled(true) }
   function generateSceneCaptions() { if (!sourceDuration) return setMessage({ kind: 'info', text: 'Import a video before generating captions.' }); const start = trimStart; const end = trimEnd || sourceDuration; const totalWeight = scenes.reduce((sum, scene) => sum + scene.duration, 0) || scenes.length; let cursor = start; const generated = scenes.map((scene, index) => { const duration = index === scenes.length - 1 ? end - cursor : ((end - start) * scene.duration) / totalWeight; const item: VideoCaption = { id: uid(), text: scene.headline || scene.name, start: cursor, end: Math.min(end, cursor + duration), position: 'bottom' }; cursor = item.end; return item }).filter((caption) => caption.end - caption.start >= 0.1); setCaptionItems(generated); setSelectedCaptionId(generated[0]?.id || ''); setCaptionsEnabled(true); setMessage({ kind: 'ok', text: `${generated.length} timed captions created from the scene outline.` }) }
   function updateCaption(id: string, patch: Partial<VideoCaption>) { setCaptionItems((current) => current.map((caption) => caption.id === id ? { ...caption, ...patch, start: patch.start === undefined ? caption.start : clampNumber(patch.start, trimStart, trimEnd || sourceDuration), end: patch.end === undefined ? caption.end : clampNumber(patch.end, trimStart, trimEnd || sourceDuration) } : caption).filter((caption) => caption.end > caption.start).sort((a, b) => a.start - b.start)) }
   function splitCaption() { if (!selectedCaption || currentTime <= selectedCaption.start + 0.05 || currentTime >= selectedCaption.end - 0.05) return setMessage({ kind: 'info', text: 'Place the playhead inside the selected caption to split it.' }); const next: VideoCaption = { ...selectedCaption, id: uid(), start: currentTime }; setCaptionItems((current) => [...current.map((caption) => caption.id === selectedCaption.id ? { ...caption, end: currentTime } : caption), next].sort((a, b) => a.start - b.start)); setSelectedCaptionId(next.id) }
 
-  function drawExportFrame(canvas: HTMLCanvasElement, context: CanvasRenderingContext2D, video: HTMLVideoElement) {
-    const { width, height } = canvas; context.fillStyle = '#000000'; context.fillRect(0, 0, width, height)
-    const mediaRatio = video.videoWidth / video.videoHeight; const frameRatio = width / height
-    const baseScale = transform.fit === 'cover' ? (mediaRatio > frameRatio ? height / video.videoHeight : width / video.videoWidth) : (mediaRatio > frameRatio ? width / video.videoWidth : height / video.videoHeight)
-    const renderedWidth = video.videoWidth * baseScale * transform.scale; const renderedHeight = video.videoHeight * baseScale * transform.scale
-    context.save(); context.translate(width / 2 + (transform.x / 100) * width / 2, height / 2 + (transform.y / 100) * height / 2); context.rotate((transform.rotation * Math.PI) / 180); context.scale(transform.flipX ? -1 : 1, transform.flipY ? -1 : 1); context.drawImage(video, -renderedWidth / 2, -renderedHeight / 2, renderedWidth, renderedHeight); context.restore()
-    context.strokeStyle = brandColor; context.lineWidth = Math.max(3, width * 0.003); context.strokeRect(12, 12, width - 24, height - 24)
-    if (watermark) { context.fillStyle = '#ffffffcc'; context.textAlign = 'right'; context.textBaseline = 'top'; context.font = `800 ${Math.max(18, width * 0.018)}px Inter, Arial, sans-serif`; context.fillText('Online2Day', width - 28, 26) }
-    const caption = captionsEnabled ? activeCaptionAt(captionItems, video.currentTime) : null; const text = caption?.text || (captionsEnabled && captionItems.length === 0 ? selectedScene?.headline : '')
-    if (!text) return
-    const fontSize = captionStyle.fontSize * (width / 1280); context.font = `${captionStyle.fontWeight} ${fontSize}px Inter, Arial, sans-serif`; context.textAlign = 'center'; context.textBaseline = 'middle'
-    const lines = wrapCanvasText(context, captionStyle.uppercase ? text.toUpperCase() : text, width * 0.78); const lineHeight = fontSize * 1.25; const blockHeight = lines.length * lineHeight
-    const centerY = caption?.position === 'top' ? height * 0.16 : caption?.position === 'middle' ? height * 0.5 : height * 0.84; const widest = Math.max(...lines.map((line) => context.measureText(line).width), 0)
-    context.fillStyle = captionStyle.background; context.fillRect((width - widest) / 2 - 22, centerY - blockHeight / 2 - 12, widest + 44, blockHeight + 24); context.fillStyle = captionStyle.color
-    lines.forEach((line, index) => context.fillText(line, width / 2, centerY - blockHeight / 2 + lineHeight * (index + 0.5)))
+  async function exportVideo() {
+    if (!sourceUrl || !sourceDuration) return setMessage({ kind: 'error', text: 'Import a playable video before exporting.' })
+    setBusy('export'); setExportProgress(1); processingCancelledRef.current = false; setMessage({ kind: 'info', text: 'Saving the edit and sending it to the secure media processor. You can leave playback paused.' })
+    try {
+      const saved = dirty || !assetId || sourceFile ? await persist() : { assetId, slug: assetSlug }
+      if (!saved?.assetId) throw new Error('Save the source video before processing it.')
+      setBusy('export')
+      const queued = await processVideoProject(saved.assetId, { trimStart, trimEnd: trimEnd || sourceDuration, cuts: normalizedCuts.map(({ start, end }) => ({ start, end })), format, transform, captionsEnabled, captions: captionItems.map(({ text, start, end, position }) => ({ text, start, end, position })), captionStyle, watermark, playbackRate, volume, applyDefaultIntro: branding.introEnabled })
+      if ('error' in queued) throw new Error(queued.error)
+      setMessage({ kind: 'info', text: `Processing started${branding.introEnabled ? ' with the default intro' : ''}. The browser is no longer rendering or retaining the output.` })
+      let job = queued
+      while (!processingCancelledRef.current && job.status !== 'completed' && job.status !== 'failed' && job.status !== 'cancelled') {
+        await new Promise((resolve) => window.setTimeout(resolve, 2_500))
+        if (processingCancelledRef.current) return
+        const next = await getMediaProcessingJob(job.id)
+        if ('error' in next) throw new Error(next.error)
+        job = next; setExportProgress(job.progress)
+      }
+      if (job.status !== 'completed') throw new Error(job.error_message || 'The media processor could not complete this export.')
+      const playback = await getVideoPlaybackUrl(saved.assetId)
+      if ('error' in playback || !playback.url) throw new Error('The processed download could not be opened.')
+      setSourceUrl(playback.url); setExportProgress(100)
+      const link = document.createElement('a'); link.href = playback.url; link.download = `${safeVideoObjectName(title || 'online2day-video').replace(/\.[^.]+$/, '')}-edited.mp4`; link.rel = 'noopener'; link.click()
+      setMessage({ kind: 'ok', text: 'Server-rendered MP4 completed. The library and secure share page now use the processed result.' })
+    } catch (error) { setMessage({ kind: 'error', text: error instanceof Error ? `Export failed: ${error.message}` : 'The edited video could not be exported.' }) }
+    finally { setBusy('') }
   }
 
-  async function exportVideo() {
-    const video = videoRef.current; if (!video || !sourceUrl || !sourceDuration) return setMessage({ kind: 'error', text: 'Import a playable video before exporting.' })
-    const canvas = document.createElement('canvas'); Object.assign(canvas, canvasSize(format)); const context = canvas.getContext('2d'); const capture = (canvas as HTMLCanvasElement & { captureStream?: (fps?: number) => MediaStream }).captureStream
-    if (!context || !capture || !globalThis.MediaRecorder) return setMessage({ kind: 'error', text: 'Edited download is not supported in this browser.' })
-    setBusy('export'); setExportProgress(0); setMessage({ kind: 'info', text: 'Rendering the edited video in real time. Keep this tab open.' }); const original = { time: video.currentTime, muted: video.muted, volume: video.volume, rate: video.playbackRate }; let exportRecorder: MediaRecorder | null = null; let exportStream: MediaStream | null = null
+  async function uploadIntro(file: File) {
+    if (!allowedTypes.has(file.type) || file.size > 250 * 1024 * 1024) return setMessage({ kind: 'error', text: 'Choose an MP4, MOV or WebM intro up to 250 MB.' })
+    setIntroBusy(true); setMessage({ kind: 'info', text: 'Uploading and validating the default intro…' })
     try {
-      video.pause(); video.currentTime = trimStart; video.playbackRate = playbackRate; video.volume = volume; video.muted = true
-      await new Promise<void>((resolve) => { if (Math.abs(video.currentTime - trimStart) < 0.05) resolve(); else video.addEventListener('seeked', () => resolve(), { once: true }) }); drawExportFrame(canvas, context, video)
-      const output = capture.call(canvas, 30); exportStream = output; const mediaCapture = (video as HTMLVideoElement & { captureStream?: () => MediaStream }).captureStream?.(); mediaCapture?.getAudioTracks().forEach((track) => output.addTrack(track))
-      const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(MediaRecorder.isTypeSupported); const recorder = new MediaRecorder(output, mimeType ? { mimeType, videoBitsPerSecond: 6_000_000 } : undefined); exportRecorder = recorder; const chunks: BlobPart[] = []
-      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }; const finished = new Promise<Blob>((resolve) => { recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || 'video/webm' })) }); recorder.start(1_000)
-      await Promise.race([video.play(), new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('The source video did not start. Keep this editor tab visible and try again.')), 8_000))])
-      await new Promise<void>((resolve, reject) => { let animation = 0; const render = () => { try { const hidden = normalizedCuts.find((cut) => video.currentTime >= cut.start && video.currentTime < cut.end); if (hidden) video.currentTime = hidden.end; drawExportFrame(canvas, context, video); setExportProgress(Math.round(((video.currentTime - trimStart) / Math.max(0.1, (trimEnd || sourceDuration) - trimStart)) * 100)); if (video.currentTime >= (trimEnd || sourceDuration) - 0.04 || video.ended) { window.cancelAnimationFrame(animation); video.pause(); resolve(); return }; animation = window.requestAnimationFrame(render) } catch (error) { window.cancelAnimationFrame(animation); reject(error) } }; animation = window.requestAnimationFrame(render) })
-      await new Promise((resolve) => window.setTimeout(resolve, 180)); recorder.stop(); const blob = await finished; output.getTracks().forEach((track) => track.stop()); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${safeVideoObjectName(title || 'online2day-video').replace(/\.[^.]+$/, '')}-edited.webm`; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 10_000); setExportProgress(100); setMessage({ kind: 'ok', text: 'Edited WebM downloaded with cuts, framing, captions and branding.' })
-    } catch (error) { setMessage({ kind: 'error', text: error instanceof Error ? `Export failed: ${error.message}` : 'The edited video could not be exported.' }) }
-    finally { if (exportRecorder?.state !== 'inactive') exportRecorder?.stop(); exportStream?.getTracks().forEach((track) => track.stop()); video.pause(); video.currentTime = original.time; video.muted = original.muted; video.volume = original.volume; video.playbackRate = original.rate; setBusy('') }
+      const started = await createIntroUpload({ filename: file.name, mimeType: file.type as 'video/mp4' | 'video/quicktime' | 'video/webm', sizeBytes: file.size })
+      if ('error' in started) throw new Error(started.error)
+      const uploaded = await fetch(started.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+      if (!uploaded.ok) throw new Error(`Intro upload failed (${uploaded.status}).`)
+      const saved = await completeIntroUpload({ filename: file.name, mimeType: file.type as 'video/mp4' | 'video/quicktime' | 'video/webm', sizeBytes: file.size, storagePath: started.storagePath, enabled: true })
+      if ('error' in saved) throw new Error(saved.error)
+      setBranding(saved); setMessage({ kind: 'ok', text: 'Default intro configured. It will be prepended by the server on future exports.' })
+    } catch (error) { setMessage({ kind: 'error', text: error instanceof Error ? error.message : 'The intro could not be configured.' }) }
+    finally { setIntroBusy(false) }
+  }
+
+  async function toggleIntro(enabled: boolean) {
+    setIntroBusy(true)
+    const result = await setIntroEnabled(enabled)
+    setIntroBusy(false)
+    if ('error' in result) return setMessage({ kind: 'error', text: result.error || 'The intro setting could not be changed.' })
+    setBranding((current) => ({ ...current, introEnabled: result.introEnabled }))
+    setMessage({ kind: 'ok', text: `Default intro ${enabled ? 'enabled' : 'disabled'} for future exports.` })
+  }
+
+  async function removeIntro() {
+    if (!window.confirm('Remove the default intro? Existing processed videos will not be changed.')) return
+    setIntroBusy(true); const result = await removeVideoIntro(); setIntroBusy(false)
+    if ('error' in result) return setMessage({ kind: 'error', text: result.error || 'The intro could not be removed.' })
+    setBranding({ introEnabled: false, intro: null }); setMessage({ kind: 'ok', text: 'Default intro removed.' })
   }
 
   async function persist() {
@@ -287,7 +324,7 @@ export function VideoEditorClient({ leads, videos, setupConfig }: { leads: Email
     setBusy('save'); setMessage({ kind: 'info', text: sourceFile ? 'Uploading the source video…' : 'Saving project…' })
     try {
       let currentAssetId = assetId; let currentSlug = assetSlug; let currentStoragePath = storagePath
-      if (sourceFile) { const ownerPath = leadId || 'shared'; const slug = currentSlug || `${ownerPath.slice(0, 8)}-${Date.now()}`; const path = `${ownerPath}/${slug}-${safeVideoObjectName(sourceFile.name)}`; const controller = new AbortController(); uploadAbortRef.current = controller; await uploadVideoResumable({ file: sourceFile, objectPath: path, onProgress: setUploadProgress, signal: controller.signal }); const registered = await registerUploadedVideo({ assetId: currentAssetId || undefined, leadId: leadId || null, name: title.trim(), storagePath: path, slug, contentType: sourceFile.type, size: sourceFile.size, duration: sourceDuration }); if ('error' in registered && registered.error) throw new Error(registered.error); if (!registered.asset) throw new Error('The uploaded video could not be registered.'); currentAssetId = registered.asset.id; currentSlug = registered.asset.slug || slug; currentStoragePath = registered.asset.storage_path || path; setAssetId(currentAssetId); setAssetSlug(currentSlug); setStoragePath(currentStoragePath); setSourceFile(null) }
+      if (sourceFile) { const ownerPath = leadId || 'shared'; const slug = currentSlug || `${ownerPath.slice(0, 8)}-${Date.now()}`; const path = `${ownerPath}/${slug}-${safeVideoObjectName(sourceFile.name)}`; const controller = new AbortController(); uploadAbortRef.current = controller; await uploadVideoResumable({ file: sourceFile, objectPath: path, onProgress: setUploadProgress, signal: controller.signal }); const registered = await registerUploadedVideo({ assetId: currentAssetId || undefined, leadId: leadId || null, name: title.trim(), storagePath: path, slug, contentType: sourceFile.type, size: sourceFile.size, duration: sourceDuration }); if ('error' in registered && registered.error) throw new Error(registered.error); if (!registered.asset) throw new Error('The uploaded video could not be registered.'); currentAssetId = registered.asset.id; currentSlug = registered.asset.slug || slug; currentStoragePath = registered.asset.storage_path || path; setAssetId(currentAssetId); setAssetSlug(currentSlug); setStoragePath(currentStoragePath); setSourceFile(null); const playback = await getVideoPlaybackUrl(currentAssetId); if ('url' in playback && playback.url) { setSourceUrl(playback.url); if (previewObjectUrlRef.current) { URL.revokeObjectURL(previewObjectUrlRef.current); previewObjectUrlRef.current = '' } } }
       const duration = Math.max(1, editedDuration || sourceDuration || projectDuration); const timeline = scenes.map((scene, index) => ({ id: `scene-track-${scene.id}`, label: scene.name, track: 'video' as const, start: scenes.slice(0, index).reduce((sum, item) => sum + item.duration, 0), duration: scene.duration }))
       const result = await saveVideoEditorProject({ title: title.trim(), leadId: leadId || null, sourceAssetId: currentAssetId, sourceSlug: currentSlug, duration, format, scenes, timeline, brand: { primary: brandColor, accent: accentColor, watermark, logoPlacement: 'top-left' }, cta: { label: ctaLabel, destination: ctaUrl }, email: { subject: emailSubject, body: emailBody }, recording: currentStoragePath ? { storagePath: currentStoragePath, duration: sourceDuration } : null, settings: { captions: captionsEnabled, captionItems, captionStyle, trimStart, trimEnd: trimEnd || sourceDuration, cuts: normalizedCuts, transform, playbackRate, volume, nonDestructive: true } })
       if ('error' in result && result.error) throw new Error(result.error); if (!result.assetId) throw new Error('The API did not return the saved project.'); setAssetId(result.assetId); setAssetSlug(result.slug || currentSlug); setDirty(false); localStorage.removeItem('o2d-video-studio-draft-v3'); localStorage.removeItem('o2d-video-studio-draft-v2'); window.history.replaceState(null, '', `/dashboard/videos/editor?asset=${result.assetId}`); setMessage({ kind: 'ok', text: 'Project saved. The share page now uses these exact edits.' }); return { assetId: result.assetId, slug: result.slug || currentSlug }
@@ -302,7 +339,7 @@ export function VideoEditorClient({ leads, videos, setupConfig }: { leads: Email
     <main className={styles.main}>
       <header className={styles.header}>
         <div><Link href="/dashboard/videos" className={styles.backLink}><ArrowLeft size={15} /> Video library</Link><div className={styles.eyebrow}>VIDEO STUDIO 3.0</div><h1>Edit without limits</h1><p>Frame the source precisely, remove unwanted sections, add timed captions, brand the result and publish one consistent playback experience.</p></div>
-        <div className={styles.headerActions}><button type="button" onClick={restoreLocalDraft}><RotateCcw size={16} /> Restore local</button>{shareUrl ? <a href={shareUrl} target="_blank" rel="noreferrer">Preview page</a> : null}<button type="button" disabled={!sourceUrl || Boolean(busy)} onClick={() => void exportVideo()}>{busy === 'export' ? <Loader2 className={styles.spin} size={16} /> : <Download size={16} />} Download edit</button><button type="button" className={styles.primary} disabled={Boolean(busy)} onClick={() => void persist()}>{busy === 'save' ? <Loader2 className={styles.spin} size={16} /> : <Save size={16} />} {dirty ? 'Save changes' : 'Saved'}</button></div>
+        <div className={styles.headerActions}><button type="button" onClick={restoreLocalDraft}><RotateCcw size={16} /> Restore local</button>{shareUrl ? <a href={shareUrl} target="_blank" rel="noreferrer">Preview page</a> : null}<button type="button" disabled={!sourceUrl || Boolean(busy)} onClick={() => void exportVideo()}>{busy === 'export' ? <Loader2 className={styles.spin} size={16} /> : <Download size={16} />} Process & download</button><button type="button" className={styles.primary} disabled={Boolean(busy)} onClick={() => void persist()}>{busy === 'save' ? <Loader2 className={styles.spin} size={16} /> : <Save size={16} />} {dirty ? 'Save changes' : 'Saved'}</button></div>
       </header>
       {message ? <div role="status" className={`${styles.notice} ${styles[message.kind]}`}><span>{message.text}</span><button aria-label="Dismiss message" onClick={() => setMessage(null)}><X size={15} /></button></div> : null}
       <section className={styles.setupBar}>
@@ -310,6 +347,13 @@ export function VideoEditorClient({ leads, videos, setupConfig }: { leads: Email
         <label><span>CRM lead <em>optional</em></span><select value={leadId} onChange={(event) => { const id = event.target.value; const lead = leads.find((item) => item.id === id); setLeadId(id); if (lead?.email) setEmailTo(lead.email) }}><option value="">Shared / no lead</option>{leads.map((lead) => <option key={lead.id} value={lead.id}>{lead.name} · {lead.company}</option>)}</select></label>
         <label><span>Canvas</span><select value={format} onChange={(event) => setFormat(event.target.value as VideoFormat)}>{formats.map((item) => <option key={item}>{item}</option>)}</select></label>
         <div className={styles.savedState}><span>{assetId ? 'Library project' : 'Unsaved project'}</span><strong>{dirty ? 'Changes pending' : 'Up to date'}</strong><small>{sourceDuration ? `${seconds(editedDuration)} final` : 'Add media'}</small></div>
+      </section>
+      <section className={styles.brandingBar} aria-label="Default video intro">
+        <div><span>DEFAULT INTRO</span><strong>{branding.intro?.filename || 'No intro configured'}</strong><small>{branding.intro ? `${branding.intro.durationSeconds.toFixed(1)}s · ${(branding.intro.sizeBytes / 1024 / 1024).toFixed(1)} MB` : 'Upload once and apply it during secure server exports.'}</small></div>
+        {branding.intro?.previewUrl ? <video src={branding.intro.previewUrl} controls preload="metadata" playsInline /> : <Film size={25} />}
+        <label className={styles.toggle}><input type="checkbox" checked={branding.introEnabled} disabled={!branding.intro || introBusy} onChange={(event) => void toggleIntro(event.target.checked)} /><span>Automatically prepend</span></label>
+        <input ref={introInputRef} hidden type="file" accept="video/mp4,video/quicktime,video/webm" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadIntro(file); event.target.value = '' }} />
+        <div className={styles.brandingActions}><button disabled={introBusy} onClick={() => introInputRef.current?.click()}>{introBusy ? <Loader2 className={styles.spin} size={15} /> : <Upload size={15} />}{branding.intro ? 'Replace' : 'Upload intro'}</button>{branding.intro ? <button className={styles.danger} disabled={introBusy} onClick={() => void removeIntro()}><Trash2 size={15} /> Remove</button> : null}</div>
       </section>
       <nav className={styles.toolRail} aria-label="Video editing tools">{([['transform', Move, 'Frame & crop'], ['cut', Scissors, 'Cut'], ['captions', Captions, 'Captions'], ['brand', Sparkles, 'Story & brand']] as const).map(([id, Icon, label]) => <button key={id} className={tool === id ? styles.toolActive : ''} onClick={() => setTool(id)}><Icon size={17} /><span>{label}</span></button>)}</nav>
 
@@ -326,14 +370,32 @@ export function VideoEditorClient({ leads, videos, setupConfig }: { leads: Email
           <div className={styles.transport}><button disabled={!sourceUrl} onClick={togglePlayback} aria-label={playing ? 'Pause video' : 'Play video'}>{playing ? <Pause size={18} /> : <Play size={18} />}</button><span>{seconds(currentTime)} / {seconds(trimEnd || sourceDuration)}</span><input aria-label="Video position" disabled={!sourceDuration} type="range" min={trimStart} max={trimEnd || sourceDuration || 1} step="0.05" value={clampNumber(currentTime, trimStart, trimEnd || sourceDuration || 1)} onChange={(event) => seekTo(Number(event.target.value))} /></div>
           <div className={styles.mediaActions}><button onClick={() => fileInputRef.current?.click()}><Upload size={16} /> Import video</button>{busy === 'record' ? <button className={styles.danger} onClick={stopRecording}><CircleStop size={16} /> Stop recording</button> : <button disabled={Boolean(busy)} onClick={() => void startRecording()}><Video size={16} /><Mic size={14} /> Record</button>}{sourceFile ? <span>{sourceFile.name} · {(sourceFile.size / 1024 / 1024).toFixed(1)} MB</span> : storagePath ? <span><Check size={14} /> Stored securely</span> : null}<span className={styles.shortcutHint}>Space play · ←/→ seek · Shift 5s</span></div>
           {busy === 'save' && sourceFile ? <div className={styles.progress}><div style={{ width: `${uploadProgress}%` }} /><span>{uploadProgress}% uploaded</span><button onClick={() => uploadAbortRef.current?.abort()}>Cancel</button></div> : null}
-          {busy === 'export' ? <div className={styles.progress}><div style={{ width: `${exportProgress}%` }} /><span>{exportProgress}% rendered</span><span>Real-time export</span></div> : null}
+          {busy === 'export' ? <div className={styles.progress}><div style={{ width: `${exportProgress}%` }} /><span>{exportProgress}% processed</span><span>Secure server render</span></div> : null}
           {sourceDuration ? <div className={styles.editTimeline} aria-label="Edit timeline" onClick={(event) => { const bounds = event.currentTarget.getBoundingClientRect(); seekTo(((event.clientX - bounds.left) / bounds.width) * sourceDuration) }}><div className={styles.trimmedBefore} style={{ width: `${(trimStart / sourceDuration) * 100}%` }} /><div className={styles.trimmedAfter} style={{ left: `${((trimEnd || sourceDuration) / sourceDuration) * 100}%` }} />{normalizedCuts.map((cut) => <div key={cut.id} className={styles.cutRange} style={{ left: `${(cut.start / sourceDuration) * 100}%`, width: `${((cut.end - cut.start) / sourceDuration) * 100}%` }} />)}{captionItems.map((caption) => <div key={caption.id} className={styles.captionRange} style={{ left: `${(caption.start / sourceDuration) * 100}%`, width: `${((caption.end - caption.start) / sourceDuration) * 100}%` }} />)}<div className={styles.playhead} style={{ left: `${(currentTime / sourceDuration) * 100}%` }} /></div> : null}
         </section>
 
         <aside className={styles.inspector}>
           {tool === 'transform' ? <><div className={styles.panelHeading}><div><span>FRAME & CROP</span><h2>Position the video</h2></div><Crop size={19} /></div><div className={styles.quickGrid}><button onClick={() => resetTransform('contain')}><Minimize2 size={15} /> Fit</button><button onClick={() => resetTransform('cover')}><Maximize2 size={15} /> Fill</button><button onClick={() => setTransformPatch({ x: 0, y: 0 })}><AlignCenter size={15} /> Centre</button><button onClick={() => setTransformPatch({ rotation: 0, flipX: false, flipY: false })}><RotateCcw size={15} /> Reset angle</button></div><div className={styles.fields}><RangeField label="Size" value={transform.scale} min={0.25} max={4} step={0.01} display={`${Math.round(transform.scale * 100)}%`} onChange={(scale) => setTransformPatch({ scale })} /><RangeField label="Horizontal" value={transform.x} min={-100} max={100} step={1} display={`${Math.round(transform.x)}%`} onChange={(x) => setTransformPatch({ x })} /><RangeField label="Vertical" value={transform.y} min={-100} max={100} step={1} display={`${Math.round(transform.y)}%`} onChange={(y) => setTransformPatch({ y })} /><RangeField label="Rotation" value={transform.rotation} min={-180} max={180} step={1} display={`${Math.round(transform.rotation)}°`} onChange={(rotation) => setTransformPatch({ rotation })} /><div className={styles.quickGrid}><button className={transform.flipX ? styles.controlActive : ''} onClick={() => setTransformPatch({ flipX: !transform.flipX })}><FlipHorizontal2 size={15} /> Flip X</button><button className={transform.flipY ? styles.controlActive : ''} onClick={() => setTransformPatch({ flipY: !transform.flipY })}><FlipVertical2 size={15} /> Flip Y</button></div><RangeField label="Playback speed" value={playbackRate} min={0.5} max={2} step={0.25} display={`${playbackRate}×`} onChange={updatePlaybackRate} icon={<Gauge size={14} />} /><RangeField label="Volume" value={volume} min={0} max={1} step={0.05} display={`${Math.round(volume * 100)}%`} onChange={updateVolume} /></div></> : null}
 
-          {tool === 'cut' ? <><div className={styles.panelHeading}><div><span>NON-DESTRUCTIVE CUTS</span><h2>Remove unwanted sections</h2></div><Scissors size={19} /></div><div className={styles.cutSummary}><div><span>Source</span><strong>{seconds(sourceDuration)}</strong></div><div><span>Final</span><strong>{seconds(editedDuration)}</strong></div><div><span>Removed</span><strong>{seconds(Math.max(0, (trimEnd || sourceDuration) - trimStart - editedDuration))}</strong></div></div><div className={styles.fields}><div className={styles.boundaryGrid}><button onClick={() => { setTrimStart(Math.min(currentTime, (trimEnd || sourceDuration) - 0.1)); setMessage({ kind: 'ok', text: 'Project starts at the playhead.' }) }}>Set project start</button><button onClick={() => { setTrimEnd(Math.max(currentTime, trimStart + 0.1)); setMessage({ kind: 'ok', text: 'Project ends at the playhead.' }) }}>Set project end</button></div><div className={styles.trimNumeric}><label><span>Start</span><input type="number" min={0} max={trimEnd || sourceDuration} step="0.1" value={trimStart.toFixed(1)} onChange={(event) => setTrimStart(clampNumber(Number(event.target.value), 0, Math.max(0, (trimEnd || sourceDuration) - 0.1)))} /></label><label><span>End</span><input type="number" min={trimStart} max={sourceDuration} step="0.1" value={(trimEnd || sourceDuration).toFixed(1)} onChange={(event) => setTrimEnd(clampNumber(Number(event.target.value), trimStart + 0.1, sourceDuration))} /></label></div><div className={styles.markCut}><button className={cutIn !== null ? styles.controlActive : ''} onClick={() => { setCutIn(currentTime); setMessage({ kind: 'info', text: `Cut starts at ${preciseSeconds(currentTime)}. Move the playhead and set the end.` }) }}>Mark cut start</button><button disabled={cutIn === null} onClick={markCutOut}>Mark cut end</button></div>{cutIn !== null ? <div className={styles.markerNotice}>Cut start: {preciseSeconds(cutIn)} · playhead: {preciseSeconds(currentTime)}</div> : null}<div className={styles.itemList}>{normalizedCuts.length ? normalizedCuts.map((cut, index) => <div key={cut.id} className={styles.timeItem}><button className={styles.itemMain} onClick={() => seekTo(cut.start)}><strong>Cut {index + 1}</strong><span>{preciseSeconds(cut.start)} – {preciseSeconds(cut.end)} · {preciseSeconds(cut.end - cut.start)}</span></button><div className={styles.timeInputs}><input aria-label={`Cut ${index + 1} start`} type="number" step="0.1" value={cut.start.toFixed(1)} onChange={(event) => updateCut(cut.id, { start: Number(event.target.value) })} /><input aria-label={`Cut ${index + 1} end`} type="number" step="0.1" value={cut.end.toFixed(1)} onChange={(event) => updateCut(cut.id, { end: Number(event.target.value) })} /></div><button aria-label={`Delete cut ${index + 1}`} onClick={() => setCuts((current) => current.filter((item) => item.id !== cut.id))}><Trash2 size={15} /></button></div>) : <div className={styles.emptyInspector}>No internal cuts yet. Mark a start and end around anything you want removed.</div>}</div></div></> : null}
+          {tool === 'cut' ? <>
+            <div className={styles.panelHeading}><div><span>NON-DESTRUCTIVE CUTS</span><h2>Remove unwanted sections</h2></div><Scissors size={19} /></div>
+            <div className={styles.cutSummary}><div><span>Source</span><strong>{seconds(sourceDuration)}</strong></div><div><span>Final</span><strong>{seconds(editedDuration)}</strong></div><div><span>Removed</span><strong>{seconds(Math.max(0, (trimEnd || sourceDuration) - trimStart - editedDuration))}</strong></div></div>
+            <div className={styles.fields}>
+              <div className={styles.boundaryGrid}><button onClick={() => setProjectBoundary('start', Math.min(currentTime, (trimEnd || sourceDuration) - 0.001))}>Set start to playhead</button><button onClick={() => setProjectBoundary('end', Math.max(currentTime, trimStart + 0.001))}>Set end to playhead</button></div>
+              <div className={styles.trimNumeric}>
+                <TimecodeField label="Project start" value={trimStart} duration={sourceDuration} onCommit={(value) => setProjectBoundary('start', value)} />
+                <TimecodeField label="Project end" value={trimEnd || sourceDuration} duration={sourceDuration} onCommit={(value) => setProjectBoundary('end', value)} />
+              </div>
+              <div className={styles.trimHandles} aria-label="Visual trim handles">
+                <input aria-label="Trim start handle" type="range" min={0} max={sourceDuration || 1} step="0.001" value={trimStart} onChange={(event) => setProjectBoundary('start', Math.min(Number(event.target.value), (trimEnd || sourceDuration) - 0.001))} />
+                <input aria-label="Trim end handle" type="range" min={0} max={sourceDuration || 1} step="0.001" value={trimEnd || sourceDuration} onChange={(event) => setProjectBoundary('end', Math.max(Number(event.target.value), trimStart + 0.001))} />
+              </div>
+              <div className={styles.inspectorActions}><button onClick={() => seekTo(trimStart)}>Jump to start</button><button onClick={() => seekTo(trimEnd || sourceDuration)}>Jump to end</button><button onClick={previewSelection}><Play size={14} /> Preview selection</button><button onClick={() => { setTrimStart(0); setTrimEnd(sourceDuration); seekTo(0) }}><RotateCcw size={14} /> Reset trim</button></div>
+              <div className={styles.markCut}><button className={cutIn !== null ? styles.controlActive : ''} onClick={() => { setCutIn(currentTime); setMessage({ kind: 'info', text: `Cut starts at ${formatTimecode(currentTime)}. Move the playhead and set the end.` }) }}>Mark cut start</button><button disabled={cutIn === null} onClick={markCutOut}>Mark cut end</button></div>
+              {cutIn !== null ? <div className={styles.markerNotice}>Cut start: {formatTimecode(cutIn)} · playhead: {formatTimecode(currentTime)}</div> : null}
+              <div className={styles.itemList}>{normalizedCuts.length ? normalizedCuts.map((cut, index) => <div key={cut.id} className={styles.timeItem}><button className={styles.itemMain} onClick={() => seekTo(cut.start)}><strong>Cut {index + 1}</strong><span>{formatTimecode(cut.start)} – {formatTimecode(cut.end)}</span></button><div className={styles.timeInputs}><TimecodeField label={`Cut ${index + 1} start`} value={cut.start} duration={sourceDuration} onCommit={(value) => updateCutBoundary(cut, 'start', value)} compact /><TimecodeField label={`Cut ${index + 1} end`} value={cut.end} duration={sourceDuration} onCommit={(value) => updateCutBoundary(cut, 'end', value)} compact /></div><button aria-label={`Delete cut ${index + 1}`} onClick={() => setCuts((current) => current.filter((item) => item.id !== cut.id))}><Trash2 size={15} /></button></div>) : <div className={styles.emptyInspector}>No internal cuts yet. Mark a start and end around anything you want removed.</div>}</div>
+            </div>
+          </> : null}
 
           {tool === 'captions' ? <><div className={styles.panelHeading}><div><span>TIMED CAPTIONS</span><h2>Write and time captions</h2></div><Captions size={19} /></div><div className={styles.inspectorActions}><button onClick={addCaption}><Plus size={15} /> Add at playhead</button><button onClick={generateSceneCaptions}><Sparkles size={15} /> From scenes</button></div><label className={styles.toggle}><input type="checkbox" checked={captionsEnabled} onChange={(event) => setCaptionsEnabled(event.target.checked)} /><span>Show captions in playback</span></label><div className={styles.captionList}>{captionItems.map((caption, index) => <button key={caption.id} className={caption.id === selectedCaption?.id ? styles.captionItemActive : ''} onClick={() => { setSelectedCaptionId(caption.id); seekTo(caption.start) }}><span>{String(index + 1).padStart(2, '0')}</span><strong>{caption.text || 'Empty caption'}</strong><em>{preciseSeconds(caption.start)}–{preciseSeconds(caption.end)}</em></button>)}</div>{selectedCaption ? <div className={styles.fields}><label><span>Caption text</span><textarea rows={4} value={selectedCaption.text} maxLength={500} onChange={(event) => updateCaption(selectedCaption.id, { text: event.target.value })} /></label><div className={styles.trimNumeric}><label><span>Start</span><input type="number" step="0.1" value={selectedCaption.start.toFixed(1)} onChange={(event) => updateCaption(selectedCaption.id, { start: Number(event.target.value) })} /></label><label><span>End</span><input type="number" step="0.1" value={selectedCaption.end.toFixed(1)} onChange={(event) => updateCaption(selectedCaption.id, { end: Number(event.target.value) })} /></label></div><label><span>Position</span><select value={selectedCaption.position} onChange={(event) => updateCaption(selectedCaption.id, { position: event.target.value as VideoCaption['position'] })}><option value="top">Top</option><option value="middle">Middle</option><option value="bottom">Bottom</option></select></label><div className={styles.inspectorActions}><button onClick={splitCaption}><Scissors size={15} /> Split at playhead</button><button className={styles.danger} onClick={() => { setCaptionItems((current) => current.filter((item) => item.id !== selectedCaption.id)); setSelectedCaptionId('') }}><Trash2 size={15} /> Delete</button></div><div className={styles.fieldRow}><label><span>Text</span><input type="color" value={captionStyle.color.slice(0, 7)} onChange={(event) => setCaptionStyle((current) => ({ ...current, color: event.target.value }))} /></label><label><span>Background</span><input type="color" value={captionStyle.background.slice(0, 7)} onChange={(event) => setCaptionStyle((current) => ({ ...current, background: `${event.target.value}dd` }))} /></label></div><RangeField label="Caption size" value={captionStyle.fontSize} min={16} max={72} step={1} display={`${captionStyle.fontSize}px`} onChange={(fontSize) => setCaptionStyle((current) => ({ ...current, fontSize }))} /><label className={styles.toggle}><input type="checkbox" checked={captionStyle.uppercase} onChange={(event) => setCaptionStyle((current) => ({ ...current, uppercase: event.target.checked }))} /><span>Uppercase captions</span></label></div> : <div className={styles.emptyInspector}>Add a caption at the playhead or generate a timed set from the scene outline.</div>}</> : null}
 
@@ -349,4 +411,20 @@ export function VideoEditorClient({ leads, videos, setupConfig }: { leads: Email
 
 function RangeField({ label, value, min, max, step, display, onChange, icon }: { label: string; value: number; min: number; max: number; step: number; display: string; onChange: (value: number) => void; icon?: React.ReactNode }) {
   return <label className={styles.rangeField}><span>{icon}{label}<b>{display}</b></span><input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /></label>
+}
+
+function TimecodeField({ label, value, duration, onCommit, compact = false }: { label: string; value: number; duration: number; onCommit: (value: number) => boolean; compact?: boolean }) {
+  const [text, setText] = useState(() => formatTimecode(value))
+  const [error, setError] = useState('')
+  useEffect(() => setText(formatTimecode(value)), [value])
+
+  function commit() {
+    const parsed = parseTimecode(text)
+    if (parsed === null) { setError('Use MM:SS or HH:MM:SS.mmm'); return }
+    if (parsed < 0 || parsed > duration) { setError(`Must be within ${formatTimecode(duration)}`); return }
+    if (!onCommit(parsed)) { setError('This boundary must remain before the end and within the selection.'); return }
+    setText(formatTimecode(parsed)); setError('')
+  }
+
+  return <label className={compact ? styles.timecodeCompact : styles.timecodeField} title={error || 'Type MM:SS or HH:MM:SS.mmm'}><span>{label}</span><input aria-label={label} aria-invalid={Boolean(error)} inputMode="decimal" value={text} onChange={(event) => { setText(event.target.value); setError('') }} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commit() }; if (event.key === 'Escape') { setText(formatTimecode(value)); setError('') } }} />{error && !compact ? <small role="alert">{error}</small> : null}</label>
 }

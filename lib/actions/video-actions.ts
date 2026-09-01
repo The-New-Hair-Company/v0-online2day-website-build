@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { agreementsApi, videoAssetsApi } from '@/lib/api/client'
+import { agreementsApi, videoAssetsApi, type VideoBrandingDto } from '@/lib/api/client'
 import { revalidatePath } from 'next/cache'
 import { logLeadEvent } from './lead-actions'
 import { logAsyncActionFailure } from './reliability-actions'
@@ -51,6 +51,18 @@ const editorProjectSchema = z.object({
   recording: z.record(z.string(), z.unknown()).nullable().optional(),
   settings: z.record(z.string(), z.unknown()),
 })
+
+const processVideoSchema = z.object({
+  trimStart: z.number().finite().min(0).max(14_400), trimEnd: z.number().finite().positive().max(14_400),
+  cuts: z.array(z.object({ start: z.number().finite().min(0).max(14_400), end: z.number().finite().positive().max(14_400) })).max(200),
+  format: z.enum(['16:9', '9:16', '1:1', '4:5', '21:9']),
+  transform: z.object({ fit: z.enum(['contain', 'cover']), scale: z.number().min(0.25).max(4), x: z.number().min(-100).max(100), y: z.number().min(-100).max(100), rotation: z.number().min(-180).max(180), flipX: z.boolean(), flipY: z.boolean() }),
+  captionsEnabled: z.boolean(), captions: z.array(z.object({ text: z.string().trim().min(1).max(500), start: z.number().min(0), end: z.number().positive(), position: z.enum(['top', 'middle', 'bottom']) })).max(500),
+  captionStyle: z.object({ color: hexColour, background: z.string().max(32), fontSize: z.number().int().min(16).max(72), fontWeight: z.number().int().min(100).max(900), uppercase: z.boolean() }),
+  watermark: z.boolean(), playbackRate: z.number().min(0.5).max(2), volume: z.number().min(0).max(1), applyDefaultIntro: z.boolean(),
+}).refine((value) => value.trimEnd > value.trimStart, 'Trim end must be after trim start.')
+
+const introSchema = z.object({ filename: z.string().trim().min(1).max(220), mimeType: z.enum(['video/mp4', 'video/quicktime', 'video/webm']), sizeBytes: z.number().int().positive().max(250 * 1024 * 1024) })
 
 // ─── ADMIN STANDALONE VIDEO UPLOAD ───────────────────────────────────────────
 
@@ -263,6 +275,48 @@ export async function getVideoPlaybackUrl(assetId: string) {
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Video preview is unavailable.' }
   }
+}
+
+export async function processVideoProject(assetId: string, instructions: z.infer<typeof processVideoSchema>) {
+  if (!z.string().uuid().safeParse(assetId).success) return { error: 'Save the video before processing it.' }
+  const parsed = processVideoSchema.safeParse(instructions)
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || 'The video processing instructions are invalid.' }
+  try { return await videoAssetsApi.process(await getToken(), assetId, parsed.data) }
+  catch (error) { return { error: error instanceof Error ? error.message : 'The video could not be queued for processing.' } }
+}
+
+export async function getMediaProcessingJob(jobId: string) {
+  if (!z.string().uuid().safeParse(jobId).success) return { error: 'Invalid media job.' }
+  try { return await videoAssetsApi.mediaJob(await getToken(), jobId) }
+  catch (error) { return { error: error instanceof Error ? error.message : 'Processing status is unavailable.' } }
+}
+
+export async function getVideoBranding(): Promise<VideoBrandingDto | { error: string }> {
+  try { return await videoAssetsApi.branding(await getToken()) }
+  catch (error) { return { error: error instanceof Error ? error.message : 'Video branding is unavailable.' } }
+}
+
+export async function createIntroUpload(input: z.infer<typeof introSchema>) {
+  const parsed = introSchema.safeParse(input); if (!parsed.success) return { error: parsed.error.issues[0]?.message || 'Invalid intro video.' }
+  try { return await videoAssetsApi.createIntroUpload(await getToken(), parsed.data) }
+  catch (error) { return { error: error instanceof Error ? error.message : 'The intro upload could not be started.' } }
+}
+
+export async function completeIntroUpload(input: z.infer<typeof introSchema> & { storagePath: string; enabled: boolean }) {
+  const parsed = introSchema.extend({ storagePath: z.string().min(1).max(700), enabled: z.boolean() }).safeParse(input)
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || 'Invalid intro video.' }
+  try { const result = await videoAssetsApi.saveIntro(await getToken(), parsed.data); revalidatePath('/dashboard/videos/editor'); return result }
+  catch (error) { return { error: error instanceof Error ? error.message : 'The intro could not be configured.' } }
+}
+
+export async function setIntroEnabled(enabled: boolean) {
+  try { const result = await videoAssetsApi.toggleIntro(await getToken(), enabled); revalidatePath('/dashboard/videos/editor'); return result }
+  catch (error) { return { error: error instanceof Error ? error.message : 'The intro setting could not be changed.' } }
+}
+
+export async function removeVideoIntro() {
+  try { await videoAssetsApi.removeIntro(await getToken()); revalidatePath('/dashboard/videos/editor'); return { success: true } }
+  catch (error) { return { error: error instanceof Error ? error.message : 'The intro could not be removed.' } }
 }
 
 export async function deleteVideoAsset(assetId: string) {

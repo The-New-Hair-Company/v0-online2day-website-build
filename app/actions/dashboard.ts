@@ -1,5 +1,6 @@
 'use server'
 
+import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import {
   leadsApi,
@@ -21,11 +22,11 @@ import type {
   LeadRecord, VideoRecord, EmailRecord, EmailSendRecord, ConversationRecord, SiteRequestRecord, CrmSetupConfig
 } from '@/components/crm-dashboard/types'
 
-async function getToken(): Promise<string | null> {
+const getToken = cache(async (): Promise<string | null> => {
   const supabase = await createClient()
   const { data } = await supabase.auth.getSession()
   return data.session?.access_token ?? null
-}
+})
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -533,9 +534,10 @@ export async function getVideoMetrics() {
 export async function getEmailMetrics() {
   const token = await getToken()
   if (!token) return []
-  const [tmpl, sends] = await Promise.all([
+  const [tmpl, sends, mailbox] = await Promise.all([
     emailWorkspaceApi.listTemplates(token).catch(() => []),
     emailWorkspaceApi.listSends(token, 1_000).catch(() => []),
+    emailWorkspaceApi.mailbox(token, 'inbox', 1).catch(() => ({ messages: [], unread: 0 })),
   ])
   const totalSent = sends.length
   const totalOpen = sends.filter((send) => Boolean(send.opened_at)).length
@@ -546,6 +548,7 @@ export async function getEmailMetrics() {
   const replyRate = totalSent > 0 ? Math.round((totalReply / totalSent) * 100) : 0
 
   return [
+    { label: 'Unread', value: `${mailbox.unread}`, delta: mailbox.unread ? 'Needs attention' : 'All caught up' },
     { label: 'Templates', value: `${tmpl.length}`, delta: 'API synced' },
     { label: 'Emails sent', value: `${totalSent}`, delta: 'Recorded sends' },
     { label: 'Open rate', value: `${openRate}%`, delta: totalSent ? 'Measured events' : 'No sends yet' },

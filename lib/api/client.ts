@@ -1,3 +1,5 @@
+import { buildApiHeaders } from './request-headers'
+
 const API_BASE = process.env.DOTNET_API_URL ?? 'https://online2dayapi.fly.dev'
 
 // ── Shared fetch helpers ──────────────────────────────────────────────────────
@@ -51,14 +53,11 @@ async function apiFetch<T>(
   token: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const headers = buildApiHeaders(options.headers, options.body, token)
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     signal: options.signal ?? AbortSignal.timeout(8_000),
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...options.headers,
-    },
+    headers,
     cache: 'no-store',
   })
 
@@ -67,10 +66,11 @@ async function apiFetch<T>(
 
 // Public endpoints — no auth token required
 async function publicFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = buildApiHeaders(options.headers, options.body)
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     signal: options.signal ?? AbortSignal.timeout(8_000),
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers,
     next: { revalidate: 300 }, // cache public blog for 5 minutes on the edge
   })
 
@@ -139,6 +139,34 @@ export interface VideoAssetDto {
   } | null
 }
 
+export interface MediaProcessingJobDto {
+  id: string
+  video_asset_id: string
+  operation: 'render' | 'trim' | 'compose'
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled'
+  progress: number
+  error_code?: string | null
+  error_message?: string | null
+  output_storage_path?: string | null
+  output_mime_type?: string | null
+  output_size_bytes?: number | null
+  created_at?: string
+  started_at?: string | null
+  completed_at?: string | null
+}
+
+export interface VideoBrandingDto {
+  introEnabled: boolean
+  intro: null | {
+    filename: string
+    mimeType: string
+    sizeBytes: number
+    durationSeconds: number
+    metadata?: Record<string, unknown>
+    previewUrl?: string | null
+  }
+}
+
 export interface EmailTemplateDto {
   id: string
   name: string
@@ -171,6 +199,67 @@ export interface EmailSendDto {
   created_at: string
   lead?: { id: string; name: string | null; company: string | null; email: string | null } | null
   template?: { id: string; name: string | null } | null
+}
+
+export interface PlatformDocumentDto {
+  id: string
+  filename: string
+  safe_filename: string
+  mime_type: string
+  size_bytes: number
+  sha256: string
+  document_kind: 'attachment' | 'signature_original' | 'signature_completed'
+  page_count: number | null
+  created_at: string
+}
+
+export interface MailboxAttachmentDto {
+  id: string
+  disposition: string
+  content_id: string | null
+  document: Pick<PlatformDocumentDto, 'id' | 'filename' | 'safe_filename' | 'mime_type' | 'size_bytes'>
+}
+
+export interface MailboxMessageDto {
+  id: string
+  thread_id: string | null
+  lead_id: string | null
+  subject: string
+  plain_body: string
+  sanitised_html_body: string
+  from_address: string
+  from_name: string | null
+  to_addresses: string[]
+  cc_addresses: string[]
+  bcc_addresses: string[]
+  direction: 'inbound' | 'outbound'
+  status: string
+  provider_id: string | null
+  message_id: string | null
+  in_reply_to: string | null
+  reference_ids: string[]
+  is_read: boolean
+  read_at: string | null
+  folder: 'inbox' | 'sent' | 'drafts' | 'trash' | 'archive'
+  priority: 'low' | 'normal' | 'high'
+  sent_at: string | null
+  received_at: string | null
+  created_at: string
+  updated_at: string | null
+  attachments: MailboxAttachmentDto[]
+}
+
+export interface SignatureRequestDto {
+  id: string
+  title: string
+  message: string
+  status: 'draft' | 'sent' | 'viewed' | 'partially_signed' | 'completed' | 'declined' | 'expired' | 'cancelled'
+  expires_at: string
+  sent_at: string | null
+  completed_at: string | null
+  created_at: string
+  document: Pick<PlatformDocumentDto, 'id' | 'filename' | 'safe_filename' | 'size_bytes' | 'page_count' | 'sha256'>
+  recipients: Array<{ id: string; name: string; email: string; status: string; signing_order: number; viewed_at: string | null; signed_at: string | null; declined_at: string | null }>
 }
 
 export interface ConversationDto {
@@ -533,6 +622,34 @@ export const videoAssetsApi = {
   delete(token: string, assetId: string): Promise<void> {
     return apiFetch<void>(`/api/v1/online2day/video-assets/${assetId}`, token, { method: 'DELETE' })
   },
+
+  process(token: string, assetId: string, instructions: Record<string, unknown>): Promise<MediaProcessingJobDto> {
+    return apiFetch<MediaProcessingJobDto>(`/api/v1/online2day/video-assets/${assetId}/process`, token, { method: 'POST', body: JSON.stringify(instructions) })
+  },
+
+  mediaJob(token: string, jobId: string): Promise<MediaProcessingJobDto> {
+    return apiFetch<MediaProcessingJobDto>(`/api/v1/online2day/media-jobs/${jobId}`, token)
+  },
+
+  branding(token: string): Promise<VideoBrandingDto> {
+    return apiFetch<VideoBrandingDto>('/api/v1/online2day/video-branding', token)
+  },
+
+  createIntroUpload(token: string, data: { filename: string; mimeType: string; sizeBytes: number }): Promise<{ storagePath: string; uploadUrl: string; expiresIn: number }> {
+    return apiFetch('/api/v1/online2day/video-branding/intro/uploads', token, { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  saveIntro(token: string, data: { filename: string; mimeType: string; sizeBytes: number; storagePath: string; enabled: boolean }): Promise<VideoBrandingDto> {
+    return apiFetch('/api/v1/online2day/video-branding/intro', token, { method: 'PUT', body: JSON.stringify(data) })
+  },
+
+  toggleIntro(token: string, enabled: boolean): Promise<{ introEnabled: boolean }> {
+    return apiFetch('/api/v1/online2day/video-branding/intro', token, { method: 'PATCH', body: JSON.stringify({ enabled }) })
+  },
+
+  removeIntro(token: string): Promise<void> {
+    return apiFetch('/api/v1/online2day/video-branding/intro', token, { method: 'DELETE' })
+  },
 }
 
 // ── Online2Day email and dashboard workspaces (Azure gateway → Supabase) ─────
@@ -608,6 +725,46 @@ export const emailWorkspaceApi = {
       method: 'POST', body: JSON.stringify(data),
     })
   },
+
+  mailbox(token: string, folder: MailboxMessageDto['folder'], limit = 100): Promise<{ messages: MailboxMessageDto[]; unread: number }> {
+    return apiFetch(`/api/v1/online2day/mailbox?folder=${folder}&limit=${limit}`, token)
+  },
+
+  sendMailbox(token: string, data: Record<string, unknown>): Promise<{ success: boolean; id: string; messageId: string; status: string }> {
+    return apiFetch('/api/v1/online2day/mailbox/send', token, { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  saveDraft(token: string, data: Record<string, unknown>): Promise<MailboxMessageDto & { attachmentIds: string[] }> {
+    return apiFetch('/api/v1/online2day/mailbox/drafts', token, { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  markRead(token: string, id: string, read: boolean): Promise<{ success: boolean; read: boolean }> {
+    return apiFetch(`/api/v1/online2day/mailbox/${id}/read`, token, { method: 'PATCH', body: JSON.stringify({ read }) })
+  },
+
+  trash(token: string, id: string): Promise<void> { return apiFetch(`/api/v1/online2day/mailbox/${id}`, token, { method: 'DELETE' }) },
+  restore(token: string, id: string): Promise<{ success: boolean }> { return apiFetch(`/api/v1/online2day/mailbox/${id}/restore`, token, { method: 'POST' }) },
+  permanentDelete(token: string, id: string): Promise<void> { return apiFetch(`/api/v1/online2day/mailbox/${id}/permanent`, token, { method: 'DELETE' }) },
+
+  createDocumentUpload(token: string, data: { filename: string; mimeType: 'application/pdf'; sizeBytes: number; kind: 'attachment' | 'signature_original' }): Promise<{ storagePath: string; uploadUrl: string; expiresIn: number }> {
+    return apiFetch('/api/v1/online2day/documents/uploads', token, { method: 'POST', body: JSON.stringify(data) })
+  },
+  registerDocument(token: string, data: { filename: string; mimeType: 'application/pdf'; sizeBytes: number; kind: 'attachment' | 'signature_original'; storagePath: string; leadId?: string | null }): Promise<PlatformDocumentDto> {
+    return apiFetch('/api/v1/online2day/documents', token, { method: 'POST', body: JSON.stringify(data) })
+  },
+  documents(token: string): Promise<PlatformDocumentDto[]> { return apiFetch('/api/v1/online2day/documents', token) },
+  documentDownload(token: string, id: string): Promise<{ url: string; filename: string; expiresIn: number }> { return apiFetch(`/api/v1/online2day/documents/${id}/download`, token) },
+  deleteDocument(token: string, id: string): Promise<void> { return apiFetch(`/api/v1/online2day/documents/${id}`, token, { method: 'DELETE' }) },
+
+  signatureRequests(token: string): Promise<SignatureRequestDto[]> { return apiFetch('/api/v1/online2day/signature-requests', token) },
+  createSignatureRequest(token: string, data: Record<string, unknown>): Promise<{ id: string; status: string }> { return apiFetch('/api/v1/online2day/signature-requests', token, { method: 'POST', body: JSON.stringify(data) }) },
+  cancelSignatureRequest(token: string, id: string): Promise<{ success: boolean }> { return apiFetch(`/api/v1/online2day/signature-requests/${id}/cancel`, token, { method: 'PATCH', body: '{}' }) },
+}
+
+export const signaturePublicApi = {
+  get(token: string): Promise<Record<string, unknown>> { return publicFetch(`/api/v1/public/signatures/${encodeURIComponent(token)}`, { cache: 'no-store', next: undefined }) },
+  view(token: string): Promise<{ success: boolean }> { return publicFetch(`/api/v1/public/signatures/${encodeURIComponent(token)}/view`, { method: 'POST', cache: 'no-store', next: undefined }) },
+  complete(token: string, fields: Array<{ id: string; value: string; signatureMethod?: 'typed' | 'drawn' | 'uploaded' | null }>): Promise<{ success: boolean; status: string }> { return publicFetch(`/api/v1/public/signatures/${encodeURIComponent(token)}/complete`, { method: 'POST', body: JSON.stringify({ fields }), cache: 'no-store', next: undefined }) },
 }
 
 export const dashboardWorkspaceApi = {

@@ -1064,7 +1064,7 @@ function TopLeadsPanel({ leads }: { leads: Lead[] }) {
     <section className={styles.tableCard}>
       <div className={styles.panelHeader} style={{ padding: '16px 18px 0' }}>
         <h3 className={styles.panelTitle}>Top leads needing attention</h3>
-        <a className={styles.panelLink} href="/dashboard/leads">View all →</a>
+        <Link className={styles.panelLink} href="/dashboard/leads">View all →</Link>
       </div>
       <div style={{ padding: '10px 18px 16px' }}>
         {top.map((lead, i) => (

@@ -1,4 +1,5 @@
 import 'server-only'
+import { buildApiHeaders } from './request-headers'
 
 function apiBase() {
   const value = process.env.COMPANY_PLATFORM_API_URL || process.env.DOTNET_API_URL
@@ -13,9 +14,7 @@ type PlatformRequestOptions = RequestInit & {
 
 export async function platformServerFetch<T>(path: string, options: PlatformRequestOptions = {}): Promise<T> {
   const { accessToken, serviceRequest, ...requestInit } = options
-  const headers = new Headers(requestInit.headers)
-  headers.set('Content-Type', 'application/json')
-  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+  const headers = buildApiHeaders(requestInit.headers, requestInit.body, accessToken)
   if (serviceRequest) {
     const key = process.env.GATEWAY_SERVER_KEY
     if (!key) throw new Error('Gateway server authentication is not configured')

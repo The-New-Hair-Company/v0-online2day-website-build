@@ -38,13 +38,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ accepted: true, ignored: true })
     }
 
-    await platformServerFetch('/api/v1/online2day/email-events', {
+    const path = event.type === 'email.received'
+      ? '/api/v1/online2day/inbound-email-events'
+      : '/api/v1/online2day/email-events'
+    await platformServerFetch(path, {
       method: 'POST',
       serviceRequest: true,
       body: JSON.stringify({
         eventId,
         emailId: event.data.email_id,
-        eventType: event.type,
+        ...(event.type === 'email.received' ? {} : { eventType: event.type }),
         createdAt: event.created_at,
       }),
     })

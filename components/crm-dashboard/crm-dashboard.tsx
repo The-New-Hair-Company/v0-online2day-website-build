@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import type { ComponentType, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
@@ -63,6 +64,8 @@ import type {
   TableTab,
   VideoRecord,
 } from './types'
+
+const MailboxWorkspace = dynamic(() => import('./mailbox-workspace'), { ssr: false, loading: () => <div className={styles.panel} style={{ minHeight: 240, display: 'grid', placeItems: 'center' }}>Loading secure mailbox…</div> })
 
 // ─── STATIC CONFIG ────────────────────────────────────────────────────────────
 
@@ -699,7 +702,6 @@ function EmailsSection({
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(initialEmails[0]?.id || '')
   const [stage, setStage] = useState('All stages')
-  const [isComposerOpen, setIsComposerOpen] = useState(false)
   const [isTemplateEditorOpen, setIsTemplateEditorOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<EmailRecord | undefined>()
   const [deleteConfirmationId, setDeleteConfirmationId] = useState('')
@@ -759,10 +761,10 @@ function EmailsSection({
         </div>
         <div className={styles.workspaceActions}>
           <button className={styles.button} onClick={openNewTemplate} data-dashboard-native="true"><Plus size={16} /> New template</button>
-          <button className={styles.buttonPrimary} onClick={() => setIsComposerOpen(true)} data-dashboard-native="true"><Send size={16} /> New email</button>
         </div>
       </section>
       <MetricGrid items={metrics} />
+      <MailboxWorkspace leads={composerData.leads} setupConfig={setupConfig} />
       <div className={styles.emailWorkspaceGrid}>
         <div className={cx(styles.panel, styles.tablePanel)}>
           <div className={styles.panelHeaderPadded}>
@@ -840,7 +842,6 @@ function EmailsSection({
           </div>
           <div className={styles.templateActions}>
             <button className={styles.button} onClick={openEditTemplate}><PenSquare size={15} /> Edit</button>
-            <button className={styles.buttonPrimary} onClick={() => setIsComposerOpen(true)}><Send size={15} /> Send</button>
             <button className={styles.buttonGhost} onClick={removeTemplate} disabled={isDeleting}>
               <Trash2 size={15} /> {isDeleting ? 'Deleting…' : deleteConfirmationId === selectedEmail.id ? 'Confirm delete' : 'Delete'}
             </button>
@@ -858,15 +859,6 @@ function EmailsSection({
             setFeedback(message)
             router.refresh()
           }}
-        />
-      ) : null}
-      {isComposerOpen ? (
-        <EnterpriseEmailComposer
-          selectedTemplate={selectedEmail}
-          leads={composerData.leads}
-          videos={composerData.videos}
-          setupConfig={setupConfig}
-          onClose={() => setIsComposerOpen(false)}
         />
       ) : null}
     </>

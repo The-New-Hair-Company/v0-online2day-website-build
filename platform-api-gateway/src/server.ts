@@ -3,6 +3,8 @@ import cors from '@fastify/cors'
 import rateLimit from '@fastify/rate-limit'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { z } from 'zod'
+import { registerPlatformRoutes } from './platform-routes.js'
+import { registerMediaRoutes } from './media-routes.js'
 
 const required = (name: string) => {
   const value = process.env[name]?.trim()
@@ -64,8 +66,12 @@ const jwks = createRemoteJWKSet(new URL(`${config.supabaseIssuer}/.well-known/jw
   cooldownDuration: 60_000,
   timeoutDuration: 5_000,
 })
+const authenticatedUsers = new WeakMap<FastifyRequest, Record<string, unknown>>()
+const authorisedAdmins = new WeakSet<FastifyRequest>()
 
 async function requireSupabaseUser(request: FastifyRequest) {
+  const cached = authenticatedUsers.get(request)
+  if (cached) return cached
   const header = request.headers.authorization
   if (!header?.startsWith('Bearer ')) throw unauthorized()
   try {
@@ -74,6 +80,7 @@ async function requireSupabaseUser(request: FastifyRequest) {
       audience: config.supabaseAudience,
     })
     if (!verified.payload.sub) throw new Error('Missing subject')
+    authenticatedUsers.set(request, verified.payload)
     return verified.payload
   } catch {
     throw unauthorized()
@@ -82,22 +89,23 @@ async function requireSupabaseUser(request: FastifyRequest) {
 
 async function requireSupabaseAdmin(request: FastifyRequest) {
   const user = await requireSupabaseUser(request)
+  if (authorisedAdmins.has(request)) return user
   const userId = String(user.sub)
   const email = typeof user.email === 'string' ? user.email.trim().toLowerCase() : ''
-  if (email && config.adminEmails.has(email)) return user
+  if (email && config.adminEmails.has(email)) { authorisedAdmins.add(request); return user }
 
   const profiles = await supabaseFetch<Array<{ role: string | null }>>(
     `user_profiles?user_id=eq.${encodeURIComponent(userId)}&select=role&limit=1`,
     { headers: { Accept: 'application/json' } },
   )
-  if (profiles[0]?.role === 'admin') return user
+  if (profiles[0]?.role === 'admin') { authorisedAdmins.add(request); return user }
 
   if (email) {
     const licensed = await supabaseFetch<Array<{ role: string | null; status: string | null }>>(
       `licensed_users?email=eq.${encodeURIComponent(email)}&select=role,status&limit=1`,
       { headers: { Accept: 'application/json' } },
     )
-    if (licensed[0]?.role === 'admin' && licensed[0]?.status === 'active') return user
+    if (licensed[0]?.role === 'admin' && licensed[0]?.status === 'active') { authorisedAdmins.add(request); return user }
   }
   throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
 }
@@ -142,37 +150,34 @@ async function requestJson<T>(url: string, init: RequestInit, attempts = 3): Pro
 type HubSpotRecord = { id: string; properties?: Record<string, string | null> }
 
 function hubspotFetch<T>(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers)
+  headers.set('Authorization', `Bearer ${config.hubspotAccessToken}`)
+  if (init.body != null && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   return requestJson<T>(`https://api.hubapi.com${path}`, {
     ...init,
-    headers: {
-      Authorization: `Bearer ${config.hubspotAccessToken}`,
-      'Content-Type': 'application/json',
-      ...init.headers,
-    },
+    headers,
   })
 }
 
 async function supabaseFetch<T>(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers)
+  headers.set('apikey', config.supabaseServiceRoleKey)
+  headers.set('Authorization', `Bearer ${config.supabaseServiceRoleKey}`)
+  if (init.body != null && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   return requestJson<T>(`${config.supabaseUrl}/rest/v1/${path}`, {
     ...init,
-    headers: {
-      apikey: config.supabaseServiceRoleKey,
-      Authorization: `Bearer ${config.supabaseServiceRoleKey}`,
-      'Content-Type': 'application/json',
-      ...init.headers,
-    },
+    headers,
   }, 2)
 }
 
 async function supabaseStorageFetch<T>(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers)
+  headers.set('apikey', config.supabaseServiceRoleKey)
+  headers.set('Authorization', `Bearer ${config.supabaseServiceRoleKey}`)
+  if (init.body != null && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   return requestJson<T>(`${config.supabaseUrl}/storage/v1/${path}`, {
     ...init,
-    headers: {
-      apikey: config.supabaseServiceRoleKey,
-      Authorization: `Bearer ${config.supabaseServiceRoleKey}`,
-      'Content-Type': 'application/json',
-      ...init.headers,
-    },
+    headers,
   }, 2)
 }
 
@@ -567,6 +572,30 @@ async function syncEnquiry(enquiry: Enquiry) {
   return { contactId: contact.id, companyId: company?.id, dealId: deal.id }
 }
 
+registerPlatformRoutes(app, {
+  config: {
+    supabaseUrl: config.supabaseUrl,
+    supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+    resendApiKey: config.resendApiKey,
+    siteUrl: config.siteUrl,
+    emailFrom: config.emailFrom,
+    emailReplyTo: config.emailReplyTo,
+    gatewayServerKey: config.gatewayServerKey,
+  },
+  requireAdmin: requireSupabaseAdmin,
+  requireServerKey,
+  requestJson,
+  supabaseFetch,
+  supabaseStorageFetch,
+})
+
+registerMediaRoutes(app, {
+  config: { supabaseUrl: config.supabaseUrl, supabaseServiceRoleKey: config.supabaseServiceRoleKey },
+  requireAdmin: requireSupabaseAdmin,
+  supabaseFetch,
+  supabaseStorageFetch,
+})
+
 app.get('/health/live', async () => ({ status: 'Healthy' }))
 app.get('/health/ready', async (_request, reply) => {
   const started = performance.now()
@@ -804,15 +833,20 @@ app.delete('/api/v1/online2day/video-assets/:id', {
   preHandler: requireSupabaseAdmin,
 }, async (request, reply) => {
   const params = z.object({ id: z.string().uuid() }).parse(request.params)
-  const rows = await supabaseFetch<Array<Pick<VideoAssetRow, 'storage_path'>>>(
-    `lead_assets?id=eq.${encodeURIComponent(params.id)}&type=eq.video&select=storage_path&limit=1`,
+  const rows = await supabaseFetch<Array<Pick<VideoAssetRow, 'storage_path' | 'metadata'>>>(
+    `lead_assets?id=eq.${encodeURIComponent(params.id)}&type=eq.video&select=storage_path,metadata&limit=1`,
     { headers: { Accept: 'application/json' } },
   )
   const asset = rows[0]
   if (!asset) return reply.code(404).send({ error: 'Video asset not found.' })
-  if (asset.storage_path) {
-    const objectPath = asset.storage_path.split('/').map(encodeURIComponent).join('/')
-    await supabaseStorageFetch(`object/lead-videos/${objectPath}`, { method: 'DELETE' })
+  let metadata: Record<string, unknown> = {}
+  try { metadata = typeof asset.metadata === 'string' ? JSON.parse(asset.metadata) : asset.metadata || {} } catch { metadata = {} }
+  const paths = Array.from(new Set([asset.storage_path, metadata.originalStoragePath, metadata.thumbnailStoragePath, metadata.previewStoragePath].filter((value): value is string => typeof value === 'string' && Boolean(value))))
+  for (const path of paths) {
+    const shared = await supabaseFetch<Array<{ id: string }>>(`lead_assets?id=neq.${encodeURIComponent(params.id)}&storage_path=eq.${encodeURIComponent(path)}&select=id&limit=1`, { headers: { Accept: 'application/json' } })
+    if (shared.length) continue
+    const objectPath = path.split('/').map(encodeURIComponent).join('/')
+    await supabaseStorageFetch(`object/lead-videos/${objectPath}`, { method: 'DELETE' }).catch((error) => request.log.warn({ err: error, videoAssetId: params.id, storagePath: path }, 'Video file cleanup failed'))
   }
   await supabaseFetch(`lead_assets?id=eq.${encodeURIComponent(params.id)}&type=eq.video`, {
     method: 'DELETE', headers: { Prefer: 'return=minimal' },
