@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef } from 'react'
 import Link from 'next/link'
 import {
   Upload, Film, Copy, Check, Send, ArrowLeft,
   Loader2, User, ExternalLink, X
 } from 'lucide-react'
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
-import { uploadAdminVideo, sendVideoViaChat } from '@/lib/actions/video-actions'
+import { registerUploadedVideo, sendVideoViaChat } from '@/lib/actions/video-actions'
+import { safeVideoObjectName, uploadVideoResumable } from '@/lib/video/resumable-upload'
 
 type ClientUser = { user_id: string; full_name: string | null; email: string | null; role: string | null }
 
@@ -18,6 +19,8 @@ export default function VideoUploadClient({ clientUsers }: Props) {
   const [file, setFile] = useState<File | null>(null)
   const [title, setTitle] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
   const [uploadError, setUploadError] = useState('')
   const [slug, setSlug] = useState<string | null>(null)
   const [assetId, setAssetId] = useState<string | null>(null)
@@ -29,21 +32,45 @@ export default function VideoUploadClient({ clientUsers }: Props) {
   const [sendResult, setSendResult] = useState<{ ok: boolean; msg: string } | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
+  const uploadAbortRef = useRef<AbortController | null>(null)
+
+  function stageFile(picked: File) {
+    if (!['video/mp4', 'video/quicktime', 'video/webm'].includes(picked.type)) {
+      setUploadError('Choose an MP4, MOV or WebM video.')
+      return
+    }
+    if (picked.size > 2 * 1024 * 1024 * 1024) {
+      setUploadError('Videos must be 2 GB or smaller.')
+      return
+    }
+    setFile(picked)
+    setTitle(t => t || picked.name.replace(/\.[^.]+$/, ''))
+    setUploadError('')
+    const preview = document.createElement('video')
+    const objectUrl = URL.createObjectURL(picked)
+    preview.preload = 'metadata'
+    preview.onloadedmetadata = () => {
+      setDuration(Number.isFinite(preview.duration) ? preview.duration : 0)
+      URL.revokeObjectURL(objectUrl)
+    }
+    preview.onerror = () => URL.revokeObjectURL(objectUrl)
+    preview.src = objectUrl
+  }
 
   const shareUrl = slug
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/v/${slug}`
     : ''
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
     const dropped = e.dataTransfer.files[0]
-    if (dropped) { setFile(dropped); setTitle(t => t || dropped.name.replace(/\.[^.]+$/, '')) }
-  }, [])
+    if (dropped) stageFile(dropped)
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0]
-    if (picked) { setFile(picked); setTitle(t => t || picked.name.replace(/\.[^.]+$/, '')) }
+    if (picked) stageFile(picked)
   }
 
   async function handleUpload() {
@@ -51,16 +78,31 @@ export default function VideoUploadClient({ clientUsers }: Props) {
     setUploading(true)
     setUploadError('')
 
-    const fd = new FormData()
-    fd.append('video', file)
-    fd.append('title', title || file.name)
-
-    const result = await uploadAdminVideo(fd)
-    setUploading(false)
-
-    if (result.error) { setUploadError(result.error); return }
-    if (result.slug) setSlug(result.slug)
-    if (result.assetId) setAssetId(result.assetId)
+    setUploadProgress(0)
+    const nextSlug = `shared-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    const objectPath = `shared/${nextSlug}-${safeVideoObjectName(file.name)}`
+    const controller = new AbortController()
+    uploadAbortRef.current = controller
+    try {
+      await uploadVideoResumable({ file, objectPath, onProgress: setUploadProgress, signal: controller.signal })
+      const result = await registerUploadedVideo({
+        leadId: null,
+        name: title || file.name,
+        storagePath: objectPath,
+        slug: nextSlug,
+        contentType: file.type,
+        size: file.size,
+        duration,
+      })
+      if (result.error) throw new Error(result.error)
+      setSlug(result.asset?.slug || nextSlug)
+      setAssetId(result.asset?.id || null)
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'The video upload failed.')
+    } finally {
+      setUploading(false)
+      uploadAbortRef.current = null
+    }
   }
 
   async function handleCopy() {
@@ -85,13 +127,13 @@ export default function VideoUploadClient({ clientUsers }: Props) {
 
   function reset() {
     setFile(null); setTitle(''); setSlug(null); setUploadError('')
-    setAssetId(null)
+    setAssetId(null); setUploadProgress(0); setDuration(0)
     setSelectedUser(''); setSendResult(null); setSendOpen(false)
   }
 
   return (
-    <div className="flex h-screen bg-background" style={{ fontFamily: 'Inter, sans-serif' }}>
-      <DashboardSidebar active="videos" />
+    <div className="flex min-h-screen bg-background max-[980px]:block" style={{ fontFamily: 'Inter, sans-serif' }}>
+      <div className="max-[980px]:hidden"><DashboardSidebar active="videos" /></div>
 
       <main className="flex-1 overflow-auto p-8 max-w-3xl mx-auto w-full">
         <div className="mb-8 flex items-center gap-4">
@@ -175,8 +217,14 @@ export default function VideoUploadClient({ clientUsers }: Props) {
               className="flex items-center gap-2 bg-primary text-primary-foreground px-8 py-3 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {uploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
-              {uploading ? 'Uploading...' : 'Upload Video'}
+              {uploading ? `Uploading ${uploadProgress}%` : 'Upload Video'}
             </button>
+            {uploading ? (
+              <div className="space-y-2">
+                <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{ width: `${uploadProgress}%` }} /></div>
+                <button type="button" onClick={() => uploadAbortRef.current?.abort()} className="text-sm text-red-400 hover:text-red-300">Cancel upload</button>
+              </div>
+            ) : null}
           </div>
         ) : (
           /* Success state */
