@@ -292,6 +292,7 @@ export function VideoEditorClient({ leads, videos, setupConfig }: {
       if ('error' in result && result.error) throw new Error(result.error)
       if (!result.assetId) throw new Error('The API did not return the saved project.')
       setAssetId(result.assetId); setAssetSlug(result.slug || currentSlug); setDirty(false); localStorage.removeItem('o2d-video-studio-draft-v2')
+      window.history.replaceState(null, '', `/dashboard/videos/editor?asset=${result.assetId}`)
       setMessage({ kind: 'ok', text: 'Project saved to the video library.' })
       return { assetId: result.assetId, slug: result.slug || currentSlug }
     } catch (error) {
