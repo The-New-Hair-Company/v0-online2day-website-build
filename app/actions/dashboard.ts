@@ -320,8 +320,8 @@ export async function getEmailComposerData() {
         name: video.name || 'Untitled video',
         slug: video.slug || '',
         createdAt: video.created_at || '',
-        storagePath: video.storage_path || '',
-        previewUrl: previewUrls.get(video.id) || video.url || '',
+        storagePath: previewUrls.get(video.id) ? (video.storage_path || '') : '',
+        previewUrl: previewUrls.get(video.id) || '',
         metadata: videoMetadata(video.metadata),
       })),
     }

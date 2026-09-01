@@ -812,7 +812,7 @@ app.get('/api/v1/online2day/video-assets/:id/playback', {
     // entire video library, while preserving genuine upstream failures.
     if (error instanceof Error && /NoSuchKey|Object not found/i.test(error.message)) {
       request.log.warn({ assetId: params.id, storagePath: asset.storage_path }, 'Video storage object is missing')
-      return { url: asset.url || null, expiresIn: null }
+      return { url: null, expiresIn: null }
     }
     throw error
   }
