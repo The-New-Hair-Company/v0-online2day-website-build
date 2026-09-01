@@ -884,6 +884,17 @@ function relativeDisplayTime(value: string) {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
+function formatDashboardDateTime(value: string) {
+  return new Date(value).toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/London',
+  })
+}
+
 function EmailTemplateEditor({
   template,
   onClose,
@@ -1458,7 +1469,7 @@ function IntegrationStatusBar({ status }: { status: IntegrationStatus }) {
         <strong>{status.pending}</strong>
       </div>
       <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 14 }}>
-        {latestCheck ? `Last checked ${new Date(latestCheck.checkedAt).toLocaleString('en-GB')}` : 'No health check recorded'}
+        {latestCheck ? `Last checked ${formatDashboardDateTime(latestCheck.checkedAt)}` : 'No health check recorded'}
       </span>
     </div>
   )
@@ -1512,7 +1523,7 @@ function IntegrationsSection({ integrationStatus = { connected: 0, suggested: 0,
               <div key={`${check.provider}-${check.checkedAt}`} className={styles.listRow}>
                 <div className={styles.identity}>
                   <strong>{check.provider}</strong>
-                  <div className={styles.subtle}>{new Date(check.checkedAt).toLocaleString('en-GB')}</div>
+                  <div className={styles.subtle}>{formatDashboardDateTime(check.checkedAt)}</div>
                 </div>
                 <span className={cx(styles.pill, toneFor(check.status))}>{check.status}</span>
                 <span className={styles.subtle}>{check.latencyMs !== null ? `${check.latencyMs}ms` : 'n/a'}</span>
