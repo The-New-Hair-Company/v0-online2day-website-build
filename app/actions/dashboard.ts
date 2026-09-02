@@ -28,6 +28,18 @@ const getToken = cache(async (): Promise<string | null> => {
   return data.session?.access_token ?? null
 })
 
+const getAuthContext = cache(async () => {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return { supabase, user }
+})
+
+const getRawLeads = cache(async () => {
+  const token = await getToken()
+  if (!token) return []
+  return leadsApi.list(token).catch(() => [])
+})
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function formatDuration(seconds: number): string {
@@ -109,11 +121,8 @@ export async function getCrmSetupConfig(): Promise<CrmSetupConfig> {
 // ─── LEADS ────────────────────────────────────────────────────────────────────
 
 export async function getLeads(): Promise<Lead[]> {
-  const token = await getToken()
-  if (!token) return []
-  try {
-    const data = await leadsApi.list(token)
-    return data.map((row): Lead => ({
+  const data = await getRawLeads()
+  return data.map((row): Lead => ({
       id: row.id,
       contactName: row.name || 'Unknown',
       role: row.role || 'Contact',
@@ -130,8 +139,7 @@ export async function getLeads(): Promise<Lead[]> {
       value: row.value ? `£${Number(row.value).toLocaleString()}` : '£0',
       nextAction: row.nextAction || 'Follow up',
       email: row.email || undefined,
-    }))
-  } catch { return [] }
+  }))
 }
 
 export async function getLead(id: string): Promise<Lead | null> {
@@ -164,11 +172,8 @@ export async function getLead(id: string): Promise<Lead | null> {
 }
 
 export async function getLeadRecords(): Promise<LeadRecord[]> {
-  const token = await getToken()
-  if (!token) return []
-  try {
-    const data = await leadsApi.list(token)
-    return data.map((row): LeadRecord => ({
+  const data = await getRawLeads()
+  return data.map((row): LeadRecord => ({
       id: row.id,
       contactName: row.name || 'Unknown',
       role: row.role || 'Contact',
@@ -182,8 +187,7 @@ export async function getLeadRecords(): Promise<LeadRecord[]> {
       engagement: row.engagement || 0,
       value: row.value ? `£${Number(row.value).toLocaleString()}` : '£0',
       nextAction: row.nextAction || 'Follow up',
-    }))
-  } catch { return [] }
+  }))
 }
 
 // ─── VIDEOS ──────────────────────────────────────────────────────────────────
@@ -395,14 +399,16 @@ export async function getSiteRequests(): Promise<SiteRequestRecord[]> {
 
 export async function getDashboardMetrics() {
   const token = await getToken()
-  const leads = token ? await leadsApi.list(token).catch(() => []) : []
+  const [leads, support] = await Promise.all([
+    getRawLeads(),
+    token ? dashboardWorkspaceApi.support(token, 'leads').catch(() => null) : Promise.resolve(null),
+  ])
 
   // Snapshot data for delta comparison (7 days ago)
   const lastWeekDate = new Date()
   lastWeekDate.setDate(lastWeekDate.getDate() - 7)
   const lastWeekStr = lastWeekDate.toISOString().split('T')[0]
 
-  const support = token ? await dashboardWorkspaceApi.support(token, 'leads').catch(() => null) : null
   const snapshots = (support?.snapshots || []).filter((snapshot) => snapshot.snapshot_date >= lastWeekStr)
 
   const snapshotMap: Record<string, number[]> = {}
@@ -594,7 +600,7 @@ export async function getIntegrationStatus() {
   const token = await getToken()
   if (!token) return { connected: 0, suggested: 0, pending: 0, healthChecks: [] }
   const supportStarted = Date.now()
-  let support = await dashboardWorkspaceApi.support(token).catch(() => null)
+  const support = await dashboardWorkspaceApi.support(token, 'integrations').catch(() => null)
   const integrations = support?.integrations || []
   const connected = integrations.filter(i => i.status === 'connected' || i.status === 'Configured').length
   const pending = integrations.filter(i => i.status === 'pending').length
@@ -650,14 +656,18 @@ export async function getIntegrationStatus() {
   }
 
   await dashboardWorkspaceApi.saveHealthChecks(token, checks).catch(() => null)
-  support = await dashboardWorkspaceApi.support(token).catch(() => support)
-  const history = (support?.healthChecks || []).slice(0, 6).map((row) => ({
-    provider: row.provider || 'Unknown',
-    status: (row.status || 'unknown') as 'healthy' | 'degraded' | 'down' | 'unknown',
-    latencyMs: row.latency_ms ?? null,
-    checkedAt: row.checked_at || nowIso,
-    detail: row.detail || 'No detail available.',
-  }))
+  const history = [
+    ...checks,
+    ...(support?.healthChecks || []).map((row) => ({
+      provider: row.provider || 'Unknown',
+      status: (row.status || 'unknown') as 'healthy' | 'degraded' | 'down' | 'unknown',
+      latencyMs: row.latency_ms ?? null,
+      checkedAt: row.checked_at || nowIso,
+      detail: row.detail || 'No detail available.',
+    })),
+  ]
+    .sort((left, right) => new Date(right.checkedAt).getTime() - new Date(left.checkedAt).getTime())
+    .slice(0, 6)
 
   return { connected, suggested, pending, healthChecks: history.length ? history : checks }
 }
@@ -693,11 +703,8 @@ export async function getRecentActivity(): Promise<ActivityItem[]> {
 }
 
 export async function getRecommendations(): Promise<Recommendation[]> {
-  const token = await getToken()
-  if (!token) return []
-  try {
-    const leads = await leadsApi.list(token)
-    return leads
+  const leads = await getRawLeads()
+  return [...leads]
       .sort((a, b) => (b.score || 0) - (a.score || 0))
       .slice(0, 5)
       .map((lead) => {
@@ -717,13 +724,12 @@ export async function getRecommendations(): Promise<Recommendation[]> {
           action: 'Create video', icon: 'video' as IconName, tone: 'blue' as const,
         }
       })
-  } catch { return [] }
 }
 
 export async function getGoals() {
   const token = await getToken()
   if (!token) return []
-  const support = await dashboardWorkspaceApi.support(token).catch(() => null)
+  const support = await dashboardWorkspaceApi.support(token, 'goals').catch(() => null)
   return (support?.goals || []).map(g => {
     const current = Number(g.current_value)
     const target = Number(g.target_value)
@@ -770,17 +776,11 @@ export async function getLeadEvents(leadId: string): Promise<LeadEventRow[]> {
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 
-export async function isAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+const getAdminStatus = cache(async () => {
+  const { supabase, user } = await getAuthContext()
   if (!user) return false
   const email = normalizeEmail(user.email)
-  if (isFoundingAdminEmail(email)) {
-    await supabase
-      .from('user_profiles')
-      .upsert({ user_id: user.id, email, role: 'admin' }, { onConflict: 'user_id' })
-    return true
-  }
+  if (isFoundingAdminEmail(email)) return true
 
   const { data: profile } = await supabase
     .from('user_profiles').select('role').eq('user_id', user.id).single()
@@ -793,11 +793,14 @@ export async function isAdmin() {
     .single()
 
   return licensedUser?.role === 'admin' && licensedUser?.status === 'active'
+})
+
+export async function isAdmin() {
+  return getAdminStatus()
 }
 
-export async function canUseSystem() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+const getSystemAccess = cache(async () => {
+  const { supabase, user } = await getAuthContext()
   if (!user) return false
   const email = normalizeEmail(user.email)
   if (isFoundingAdminEmail(email)) return true
@@ -816,6 +819,18 @@ export async function canUseSystem() {
     .single()
 
   return licensedUser?.status === 'active' || licensedUser?.status === 'pending'
+})
+
+export async function canUseSystem() {
+  return getSystemAccess()
+}
+
+export async function getDashboardAuthorization() {
+  const { user } = await getAuthContext()
+  return {
+    authenticated: Boolean(user),
+    isAdmin: user ? await getAdminStatus() : false,
+  }
 }
 
 export type DashboardAccessProfile = {
@@ -855,11 +870,11 @@ function normalizeMatrixRole(value?: string | null) {
   return 'Sales'
 }
 
-export async function getDashboardAccessProfile(): Promise<DashboardAccessProfile> {
-  const supabase = await createClient()
-  const [{ data: auth }, admin] = await Promise.all([supabase.auth.getUser(), isAdmin()])
-  const user = auth.user
-  const licensed = user ? await canUseSystem() : false
+const getDashboardAccessProfileCached = cache(async (): Promise<DashboardAccessProfile> => {
+  const { supabase, user } = await getAuthContext()
+  const [admin, licensed] = user
+    ? await Promise.all([getAdminStatus(), getSystemAccess()])
+    : [false, false]
   const fallbackModules = {
     overview: licensed,
     leads: licensed,
@@ -925,6 +940,10 @@ export async function getDashboardAccessProfile(): Promise<DashboardAccessProfil
       blog: false,
     },
   }
+})
+
+export async function getDashboardAccessProfile(): Promise<DashboardAccessProfile> {
+  return getDashboardAccessProfileCached()
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────

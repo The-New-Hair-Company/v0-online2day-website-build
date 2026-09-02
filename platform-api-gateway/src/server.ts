@@ -1180,24 +1180,30 @@ app.get('/api/v1/online2day/dashboard-support', {
   preHandler: requireSupabaseAdmin,
 }, async (request) => {
   const query = z.object({ section: z.string().trim().max(80).optional() }).parse(request.query)
+  const scope = query.section?.toLowerCase()
+  const hasResourceScope = scope === 'leads' || scope === 'integrations' || scope === 'goals'
+  const includeSnapshots = !hasResourceScope || scope === 'leads'
+  const includeIntegrations = !hasResourceScope || scope === 'integrations'
+  const includeGoals = !hasResourceScope || scope === 'goals'
+  const includeHealthChecks = !hasResourceScope || scope === 'integrations'
   const snapshotFilter = query.section ? `&section=eq.${encodeURIComponent(query.section)}` : ''
   const [snapshots, integrations, goals, healthChecks] = await Promise.all([
-    supabaseFetch<Array<Record<string, unknown>>>(
+    includeSnapshots ? supabaseFetch<Array<Record<string, unknown>>>(
       `metric_snapshots?select=section,metric_label,value_numeric,snapshot_date${snapshotFilter}&order=snapshot_date.asc&limit=1000`,
       { headers: { Accept: 'application/json' } },
-    ),
-    supabaseFetch<Array<Record<string, unknown>>>(
+    ) : Promise.resolve([]),
+    includeIntegrations ? supabaseFetch<Array<Record<string, unknown>>>(
       'integrations?select=id,name,type,status,last_synced_at,updated_at&order=name.asc&limit=100',
       { headers: { Accept: 'application/json' } },
-    ),
-    supabaseFetch<Array<Record<string, unknown>>>(
+    ) : Promise.resolve([]),
+    includeGoals ? supabaseFetch<Array<Record<string, unknown>>>(
       'goals?select=id,label,target_value,current_value,unit,period_start,period_end,created_at,updated_at&order=created_at.asc&limit=100',
       { headers: { Accept: 'application/json' } },
-    ),
-    supabaseFetch<Array<Record<string, unknown>>>(
+    ) : Promise.resolve([]),
+    includeHealthChecks ? supabaseFetch<Array<Record<string, unknown>>>(
       'integration_health_checks?select=provider,status,latency_ms,checked_at,detail&order=checked_at.desc&limit=12',
       { headers: { Accept: 'application/json' } },
-    ).catch(() => []),
+    ).catch(() => []) : Promise.resolve([]),
   ])
   return {
     snapshots,

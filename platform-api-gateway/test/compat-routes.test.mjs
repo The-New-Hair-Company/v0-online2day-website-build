@@ -28,7 +28,7 @@ test('compatibility leads API maps persisted CRM rows for dashboard reports', as
 })
 
 test('enterprise state, preferences and report snapshots use durable API storage', async () => {
-  const { app, calls } = buildFake(async (path, init) => {
+  const { app, calls } = buildFake(async (path) => {
     if (path.startsWith('enterprise_state?key=')) return [{ id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', key: 'enabled_features', value: ['one'], updated_at: '2026-09-01T00:00:00.000Z' }]
     if (path === 'report_snapshots?select=*' && init.method === 'POST') return [{ id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', user_id: owner, period_label: 'Weekly', kpis: { leads: 9 }, created_by: owner, created_at: '2026-09-01T00:00:00.000Z' }]
     return []
@@ -78,5 +78,35 @@ test('licensed users are stored durably and protected admins cannot be removed',
   assert.deepEqual(listed.json().map((user) => user.email).sort(), ['new.user@example.com', 'viewer@example.com'])
   const protectedDelete = await app.inject({ method: 'DELETE', url: '/api/v1/admin/licensed-users/info%40online2day.com' })
   assert.equal(protectedDelete.statusCode, 403)
+  await app.close()
+})
+
+test('dashboard tasks and activity feed use durable Supabase compatibility routes', async () => {
+  const taskId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+  const leadId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  const { app, calls } = buildFake(async (path) => {
+    if (path.startsWith('lead_tasks?is_done=eq.false')) return [{
+      id: taskId, lead_id: leadId, assigned_to: owner, title: 'Follow up',
+      due_at: '2026-09-03T09:00:00.000Z', is_done: false,
+      created_at: '2026-09-02T09:00:00.000Z', updated_at: null,
+    }]
+    if (path.startsWith('activity_feed?select=*')) return [{
+      id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', actor_name: 'Online2Day',
+      type: 'lead.updated', entity_type: 'lead', entity_id: leadId,
+      entity_name: 'Prospect', description: 'Stage changed',
+      created_at: '2026-09-02T10:00:00.000Z',
+    }]
+    return []
+  })
+  const tasks = await app.inject({ method: 'GET', url: '/api/v1/tasks/upcoming?limit=10' })
+  assert.equal(tasks.statusCode, 200)
+  assert.equal(tasks.json()[0].leadId, leadId)
+  assert.equal(tasks.json()[0].isCompleted, false)
+  const activity = await app.inject({ method: 'GET', url: '/api/v1/activity-feed?limit=10' })
+  assert.equal(activity.statusCode, 200)
+  assert.equal(activity.json()[0].description, 'Stage changed')
+  const complete = await app.inject({ method: 'POST', url: `/api/v1/leads/${leadId}/tasks/${taskId}/complete` })
+  assert.equal(complete.statusCode, 204)
+  assert.ok(calls.some((call) => call.path.includes(`lead_tasks?id=eq.${taskId}`) && JSON.parse(call.init.body).is_done === true))
   await app.close()
 })

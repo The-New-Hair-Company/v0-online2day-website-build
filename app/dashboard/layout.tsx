@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
-import { isAdmin } from '@/app/actions/dashboard'
+import { getDashboardAuthorization } from '@/app/actions/dashboard'
 import { getAdminPrefs } from '@/lib/actions/settings-actions'
 
 export default async function DashboardLayout({
@@ -8,17 +7,16 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  // Defence-in-depth: middleware already guards this, but verify server-side too
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Defence-in-depth: middleware already guards this, but verify server-side too.
+  // The request-scoped helper is shared with child server components, avoiding
+  // repeated Auth and role lookups without caching permissions between requests.
+  const authorization = await getDashboardAuthorization()
 
-  if (!user) {
+  if (!authorization.authenticated) {
     redirect('/auth/login')
   }
 
-  const admin = await isAdmin()
-
-  if (!admin) {
+  if (!authorization.isAdmin) {
     // Authenticated but not an admin — send to their portal, not the login page
     redirect('/user-dashboard')
   }

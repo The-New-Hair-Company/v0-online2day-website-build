@@ -7,11 +7,14 @@ export const metadata = {
 }
 
 export default async function DashboardLeadsPage() {
-  const initialLeads = await getLeads()
-  const { metrics, pipelineStages, pipelineSummary, sourcePerformance, ownerPerformance } = await getDashboardMetrics()
-  const tasks = await getTasks()
-  const recentActivity = await getRecentActivity()
-  const recommendations = await getRecommendations()
+  const [initialLeads, dashboardMetrics, tasks, recentActivity, recommendations] = await Promise.all([
+    getLeads(),
+    getDashboardMetrics(),
+    getTasks(),
+    getRecentActivity(),
+    getRecommendations(),
+  ])
+  const { metrics, pipelineStages, pipelineSummary, sourcePerformance, ownerPerformance } = dashboardMetrics
 
   return (
     <LeadsDashboard 

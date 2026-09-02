@@ -73,6 +73,34 @@ function blogDto(row: BlogRow) {
   }
 }
 
+function taskDto(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    leadId: row.lead_id,
+    title: row.title,
+    description: null,
+    dueDate: row.due_at ?? null,
+    assignedTo: row.assigned_to ?? null,
+    completedAt: null,
+    isCompleted: Boolean(row.is_done),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at ?? null,
+  }
+}
+
+function activityDto(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    actorName: row.actor_name,
+    type: row.type,
+    entityType: row.entity_type ?? null,
+    entityId: row.entity_id ?? null,
+    entityName: row.entity_name ?? null,
+    description: row.description ?? null,
+    createdAt: row.created_at,
+  }
+}
+
 const leadWrite = z.object({
   name: z.string().trim().min(1).max(200), email: z.string().trim().email().max(254).nullable().optional(),
   phone: z.string().trim().max(80).nullable().optional(), company: z.string().trim().max(240).nullable().optional(),
@@ -197,6 +225,97 @@ export function registerCompatRoutes(app: FastifyInstance, deps: CompatRouteDeps
     const user = await deps.requireAdmin(request); const { id } = z.object({ id: uuid }).parse(request.params)
     const body = z.object({ type: z.string().trim().min(1).max(120), note: z.string().max(20_000).nullable().optional(), metadata: z.string().max(100_000).nullable().optional() }).parse(request.body)
     await deps.supabaseFetch('lead_events', { method: 'POST', body: JSON.stringify({ lead_id: id, type: body.type, note: body.note ?? null, metadata: body.metadata ? JSON.parse(body.metadata) : null, created_by: String(user.sub) }) }); return reply.code(201).send()
+  })
+
+  app.get('/api/v1/tasks/upcoming', { preHandler: deps.requireAdmin }, async (request) => {
+    const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(100).default(20) }).parse(request.query)
+    const rows = await deps.supabaseFetch<Array<Record<string, unknown>>>(
+      `lead_tasks?is_done=eq.false&select=*&order=due_at.asc.nullslast,created_at.desc&limit=${limit}`,
+    )
+    return rows.map(taskDto)
+  })
+
+  app.get('/api/v1/leads/:id/tasks', { preHandler: deps.requireAdmin }, async (request) => {
+    const { id } = z.object({ id: uuid }).parse(request.params)
+    const rows = await deps.supabaseFetch<Array<Record<string, unknown>>>(
+      `lead_tasks?lead_id=eq.${id}&select=*&order=is_done.asc,due_at.asc.nullslast,created_at.desc&limit=500`,
+    )
+    return rows.map(taskDto)
+  })
+
+  app.post('/api/v1/leads/:id/tasks', { preHandler: deps.requireAdmin }, async (request, reply) => {
+    const actor = await deps.requireAdmin(request)
+    const { id } = z.object({ id: uuid }).parse(request.params)
+    const body = z.object({
+      title: z.string().trim().min(1).max(500),
+      description: z.string().max(10_000).nullable().optional(),
+      dueDate: z.string().datetime().nullable().optional(),
+      assignedTo: uuid.nullable().optional(),
+    }).parse(request.body)
+    const rows = await deps.supabaseFetch<Array<Record<string, unknown>>>('lead_tasks?select=*', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        lead_id: id,
+        title: body.title,
+        due_at: body.dueDate ?? null,
+        assigned_to: body.assignedTo ?? String(actor.sub),
+        is_done: false,
+      }),
+    })
+    return reply.code(201).send(taskDto(createdRow(rows, 'Lead task')))
+  })
+
+  app.post('/api/v1/leads/:leadId/tasks/:taskId/complete', { preHandler: deps.requireAdmin }, async (request, reply) => {
+    const { leadId, taskId } = z.object({ leadId: uuid, taskId: uuid }).parse(request.params)
+    await deps.supabaseFetch(`lead_tasks?id=eq.${taskId}&lead_id=eq.${leadId}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ is_done: true, updated_at: now() }),
+    })
+    return reply.code(204).send()
+  })
+
+  app.post('/api/v1/leads/:leadId/tasks/:taskId/uncomplete', { preHandler: deps.requireAdmin }, async (request, reply) => {
+    const { leadId, taskId } = z.object({ leadId: uuid, taskId: uuid }).parse(request.params)
+    await deps.supabaseFetch(`lead_tasks?id=eq.${taskId}&lead_id=eq.${leadId}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ is_done: false, updated_at: now() }),
+    })
+    return reply.code(204).send()
+  })
+
+  app.get('/api/v1/activity-feed', { preHandler: deps.requireAdmin }, async (request) => {
+    const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50) }).parse(request.query)
+    const rows = await deps.supabaseFetch<Array<Record<string, unknown>>>(
+      `activity_feed?select=*&order=created_at.desc&limit=${limit}`,
+    )
+    return rows.map(activityDto)
+  })
+
+  app.post('/api/v1/activity-feed', { preHandler: deps.requireAdmin }, async (request, reply) => {
+    const body = z.object({
+      actorName: z.string().trim().min(1).max(200),
+      type: z.string().trim().min(1).max(120),
+      entityType: z.string().trim().max(120).nullable().optional(),
+      entityId: uuid.nullable().optional(),
+      entityName: z.string().trim().max(240).nullable().optional(),
+      description: z.string().max(10_000).nullable().optional(),
+    }).parse(request.body)
+    await deps.supabaseFetch('activity_feed', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        actor_name: body.actorName,
+        type: body.type,
+        entity_type: body.entityType ?? null,
+        entity_id: body.entityId ?? null,
+        entity_name: body.entityName ?? null,
+        description: body.description ?? null,
+      }),
+    })
+    return reply.code(201).send()
   })
 
   app.get('/api/v1/enterprise/state/:key', { preHandler: deps.requireAdmin }, async (request) => {
