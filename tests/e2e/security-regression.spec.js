@@ -15,7 +15,8 @@ test.describe('Security regression checks', () => {
 
   test('download agreements route enforces throttling under burst traffic', async ({ request }) => {
     const responses = await Promise.all(
-      Array.from({ length: 30 }).map(() =>
+      // The GET allowance is 30 requests per minute; the 31st must be rejected.
+      Array.from({ length: 31 }).map(() =>
         request.get('/api/download-agreements?ids=not-a-uuid'),
       ),
     )
