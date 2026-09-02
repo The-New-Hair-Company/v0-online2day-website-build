@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { enforceRateLimit, getClientIp } from '@/lib/security/rate-limit'
+import { enforceRateLimit, getClientIp, rateLimitHeaders, type RateLimitResult } from '@/lib/security/rate-limit'
 
 export function isSameOrigin(request: Request) {
   const origin = request.headers.get('origin')
@@ -12,7 +12,7 @@ export function isSameOrigin(request: Request) {
   }
 }
 
-export function enforceAuthRateLimit(
+export async function enforceAuthRateLimit(
   request: Request,
   action: string,
   limit: number,
@@ -22,6 +22,20 @@ export function enforceAuthRateLimit(
     limit,
     windowMs: 15 * 60 * 1000,
   })
+}
+
+export function authRateLimitJson(result: RateLimitResult, limit: number, message: string) {
+  const unavailable = result.unavailable === true
+  return NextResponse.json(
+    { error: unavailable ? 'Request protection is temporarily unavailable. Please try again.' : message },
+    {
+      status: unavailable ? 503 : 429,
+      headers: {
+        'Cache-Control': 'no-store',
+        ...rateLimitHeaders(result, limit),
+      },
+    },
+  )
 }
 
 export function authJson(body: unknown, status = 200) {

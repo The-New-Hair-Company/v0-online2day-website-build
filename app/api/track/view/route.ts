@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { enforceRateLimit, getClientIp } from '@/lib/security/rate-limit'
+import { enforceRateLimit, getClientIp, rateLimitHeaders } from '@/lib/security/rate-limit'
 import { recordSecurityEvent } from '@/lib/security/security-events'
 import { platformServerFetch } from '@/lib/api/platform-server'
 
@@ -8,14 +8,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 export async function POST(request: Request) {
   try {
     const ip = getClientIp(request)
-    const rate = enforceRateLimit({
-      key: `track-view:${ip}`,
+    const rate = await enforceRateLimit({
+      key: `anonymous:track-view:${ip}`,
       limit: 60,
       windowMs: 60_000,
     })
     if (!rate.ok) {
       await recordSecurityEvent({ type: 'rate_limit', route: '/api/track/view', ip, detail: 'Rate limit exceeded' })
-      return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+      return NextResponse.json(
+        { error: rate.unavailable ? 'Request protection is temporarily unavailable. Please try again.' : 'Too many requests' },
+        { status: rate.unavailable ? 503 : 429, headers: rateLimitHeaders(rate, 60) },
+      )
     }
 
     const { assetId } = await request.json()
@@ -34,7 +37,7 @@ export async function POST(request: Request) {
       {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate',
-          'X-RateLimit-Remaining': String(rate.remaining),
+          ...rateLimitHeaders(rate, 60),
         },
       },
     )

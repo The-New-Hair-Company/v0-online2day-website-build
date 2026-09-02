@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createHubSpotContactFromSignUp } from '@/app/actions/hubspot'
 import {
   authJson,
+  authRateLimitJson,
   authRedirectUrl,
   enforceAuthRateLimit,
   isSameOrigin,
@@ -15,9 +16,8 @@ const signupSchema = z.object({
 
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) return authJson({ error: 'Invalid request origin.' }, 403)
-  if (!enforceAuthRateLimit(request, 'signup', 5).ok) {
-    return authJson({ error: 'Too many signup attempts. Please try again later.' }, 429)
-  }
+  const rate = await enforceAuthRateLimit(request, 'signup', 5)
+  if (!rate.ok) return authRateLimitJson(rate, 5, 'Too many signup attempts. Please try again later.')
 
   const input = signupSchema.safeParse(await request.json().catch(() => null))
   if (!input.success) {

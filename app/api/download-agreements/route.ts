@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { enforceRateLimit, getClientIp } from '@/lib/security/rate-limit'
+import { enforceRateLimit, getClientIp, rateLimitHeaders, type RateLimitResult } from '@/lib/security/rate-limit'
 import { recordSecurityEvent } from '@/lib/security/security-events'
 import { getEnterpriseStateValue, setEnterpriseStateValue } from '@/lib/actions/enterprise-actions'
 import { renderAgreementSummaryHtml } from '@/lib/security/agreement-export'
@@ -156,22 +156,25 @@ async function resolveQueuedExport(jobId: string, userId: string): Promise<{ sta
 
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request)
-  const rate = enforceRateLimit({
-    key: `download-agreements:${ip}`,
-    limit: 20,
-    windowMs: 60_000,
-  })
-  if (!rate.ok) {
-    await recordSecurityEvent({ type: 'rate_limit', route: '/api/download-agreements', ip, detail: 'Rate limit exceeded' })
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
-  }
-
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
+    const anonymousRate = await enforceRateLimit({
+      key: `anonymous:download-agreements:post:${ip}`,
+      limit: 20,
+      windowMs: 60_000,
+    })
+    if (!anonymousRate.ok) return downloadRateLimitResponse(anonymousRate, 20, ip)
     await recordSecurityEvent({ type: 'failed_auth', route: '/api/download-agreements', ip, detail: 'Unauthorized request' })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const [rate, expensiveRate] = await Promise.all([
+    enforceRateLimit({ key: `authenticated:download-agreements:post:${user.id}`, limit: 30, windowMs: 60_000 }),
+    enforceRateLimit({ key: `expensive:agreement-export:${user.id}`, limit: 10, windowMs: 60_000 }),
+  ])
+  if (!rate.ok) return downloadRateLimitResponse(rate, 30, ip)
+  if (!expensiveRate.ok) return downloadRateLimitResponse(expensiveRate, 10, ip)
 
   const payload = await request.json().catch(() => ({}))
   const ids = parseIds(Array.isArray(payload?.ids) ? payload.ids.join(',') : null)
@@ -209,7 +212,7 @@ export async function POST(request: NextRequest) {
     {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate',
-        'X-RateLimit-Remaining': String(rate.remaining),
+        ...rateLimitHeaders(expensiveRate, 10),
       },
     },
   )
@@ -217,22 +220,25 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   const ip = getClientIp(request)
-  const rate = enforceRateLimit({
-    key: `download-agreements:${ip}`,
-    limit: 30,
-    windowMs: 60_000,
-  })
-  if (!rate.ok) {
-    await recordSecurityEvent({ type: 'rate_limit', route: '/api/download-agreements', ip, detail: 'Rate limit exceeded' })
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
-  }
-
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
+    const anonymousRate = await enforceRateLimit({
+      key: `anonymous:download-agreements:get:${ip}`,
+      limit: 30,
+      windowMs: 60_000,
+    })
+    if (!anonymousRate.ok) return downloadRateLimitResponse(anonymousRate, 30, ip)
     await recordSecurityEvent({ type: 'failed_auth', route: '/api/download-agreements', ip, detail: 'Unauthorized request' })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const rate = await enforceRateLimit({
+    key: `authenticated:download-agreements:get:${user.id}`,
+    limit: 120,
+    windowMs: 60_000,
+  })
+  if (!rate.ok) return downloadRateLimitResponse(rate, 120, ip)
 
   const jobId = request.nextUrl.searchParams.get('jobId')
   if (!jobId) {
@@ -263,7 +269,17 @@ export async function GET(request: NextRequest) {
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Disposition': `attachment; filename="online2day-agreements-${Date.now()}.html"`,
       'Cache-Control': 'no-store, no-cache, must-revalidate',
-      'X-RateLimit-Remaining': String(rate.remaining),
+      ...rateLimitHeaders(rate, 120),
     },
   })
+}
+
+async function downloadRateLimitResponse(rate: RateLimitResult, limit: number, ip: string) {
+  if (!rate.unavailable) {
+    await recordSecurityEvent({ type: 'rate_limit', route: '/api/download-agreements', ip, detail: 'Rate limit exceeded' })
+  }
+  return NextResponse.json(
+    { error: rate.unavailable ? 'Request protection is temporarily unavailable. Please try again.' : 'Too many requests' },
+    { status: rate.unavailable ? 503 : 429, headers: rateLimitHeaders(rate, limit) },
+  )
 }

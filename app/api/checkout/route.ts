@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { enforceRateLimit, getClientIp } from '@/lib/security/rate-limit'
+import { enforceRateLimit, getClientIp, rateLimitHeaders } from '@/lib/security/rate-limit'
 
 const checkoutSchema = z.object({
   plan: z.enum(['launch', 'growth']),
@@ -53,9 +53,12 @@ export async function POST(request: Request) {
   }
 
   const ip = getClientIp(request)
-  const limit = enforceRateLimit({ key: `checkout:${ip}`, limit: 10, windowMs: 10 * 60 * 1000 })
+  const limit = await enforceRateLimit({ key: `expensive:checkout:${ip}`, limit: 10, windowMs: 10 * 60 * 1000 })
   if (!limit.ok) {
-    return NextResponse.json({ error: 'Too many checkout attempts. Please try again later.' }, { status: 429 })
+    return NextResponse.json(
+      { error: limit.unavailable ? 'Request protection is temporarily unavailable. Please try again.' : 'Too many checkout attempts. Please try again later.' },
+      { status: limit.unavailable ? 503 : 429, headers: rateLimitHeaders(limit, 10) },
+    )
   }
 
   let raw: unknown

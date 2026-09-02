@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { authJson, enforceAuthRateLimit, isSameOrigin } from '@/lib/auth/api'
+import { authJson, authRateLimitJson, enforceAuthRateLimit, isSameOrigin } from '@/lib/auth/api'
 
 const loginSchema = z.object({
   email: z.string().trim().email().max(254),
@@ -9,9 +9,8 @@ const loginSchema = z.object({
 
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) return authJson({ error: 'Invalid request origin.' }, 403)
-  if (!enforceAuthRateLimit(request, 'login', 10).ok) {
-    return authJson({ error: 'Too many login attempts. Please try again later.' }, 429)
-  }
+  const rate = await enforceAuthRateLimit(request, 'login', 10)
+  if (!rate.ok) return authRateLimitJson(rate, 10, 'Too many login attempts. Please try again later.')
 
   const input = loginSchema.safeParse(await request.json().catch(() => null))
   if (!input.success) return authJson({ error: 'Enter a valid email and password.' }, 400)

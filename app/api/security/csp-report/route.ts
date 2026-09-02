@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getClientIp } from '@/lib/security/rate-limit'
+import { enforceRateLimit, getClientIp, rateLimitHeaders } from '@/lib/security/rate-limit'
 import { recordSecurityEvent } from '@/lib/security/security-events'
 
 type CspReportEnvelope = {
@@ -8,6 +8,17 @@ type CspReportEnvelope = {
 
 export async function POST(request: Request) {
   const ip = getClientIp(request)
+  const rate = await enforceRateLimit({
+    key: `anonymous:csp-report:${ip}`,
+    limit: 120,
+    windowMs: 60_000,
+  })
+  if (!rate.ok) {
+    return NextResponse.json(
+      { error: rate.unavailable ? 'Request protection is temporarily unavailable.' : 'Too many reports' },
+      { status: rate.unavailable ? 503 : 429, headers: rateLimitHeaders(rate, 120) },
+    )
+  }
   try {
     const body = await request.json() as CspReportEnvelope
     const report = body?.['csp-report'] || {}

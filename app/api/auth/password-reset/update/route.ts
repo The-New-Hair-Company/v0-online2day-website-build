@@ -1,14 +1,13 @@
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { authJson, enforceAuthRateLimit, isSameOrigin } from '@/lib/auth/api'
+import { authJson, authRateLimitJson, enforceAuthRateLimit, isSameOrigin } from '@/lib/auth/api'
 
 const updateSchema = z.object({ password: z.string().min(8).max(128) })
 
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) return authJson({ error: 'Invalid request origin.' }, 403)
-  if (!enforceAuthRateLimit(request, 'password-reset-update', 5).ok) {
-    return authJson({ error: 'Too many password update attempts. Please try again later.' }, 429)
-  }
+  const rate = await enforceAuthRateLimit(request, 'password-reset-update', 5)
+  if (!rate.ok) return authRateLimitJson(rate, 5, 'Too many password update attempts. Please try again later.')
 
   const input = updateSchema.safeParse(await request.json().catch(() => null))
   if (!input.success) return authJson({ error: 'Use a password of at least 8 characters.' }, 400)

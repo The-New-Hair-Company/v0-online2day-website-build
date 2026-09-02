@@ -1,14 +1,11 @@
-type Bucket = {
-  count: number
+import { createHmac } from 'node:crypto'
+import { createAdminClient } from '@/lib/supabase/admin-client'
+
+export type RateLimitResult = {
+  ok: boolean
+  remaining: number
   resetAt: number
-}
-
-const STORE_KEY = '__o2d_rate_limit_store__'
-
-function getStore() {
-  const g = globalThis as unknown as Record<string, Map<string, Bucket> | undefined>
-  if (!g[STORE_KEY]) g[STORE_KEY] = new Map<string, Bucket>()
-  return g[STORE_KEY] as Map<string, Bucket>
+  unavailable?: boolean
 }
 
 export function getClientIp(request: Request) {
@@ -17,25 +14,56 @@ export function getClientIp(request: Request) {
   return request.headers.get('x-real-ip') || 'unknown'
 }
 
-export function enforceRateLimit(input: {
+function privateBucketKey(key: string) {
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!secret) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for distributed rate limiting')
+  return `v1:${createHmac('sha256', secret).update(key).digest('hex')}`
+}
+
+export async function enforceRateLimit(input: {
   key: string
   limit: number
   windowMs: number
-}) {
-  const now = Date.now()
-  const store = getStore()
-  const bucket = store.get(input.key)
+}): Promise<RateLimitResult> {
+  try {
+    const supabase = createAdminClient()
+    const { data, error } = await supabase.rpc('consume_api_rate_limit', {
+      p_bucket_key: privateBucketKey(input.key),
+      p_limit: input.limit,
+      p_window_ms: input.windowMs,
+    })
+    if (error) throw error
 
-  if (!bucket || now >= bucket.resetAt) {
-    store.set(input.key, { count: 1, resetAt: now + input.windowMs })
-    return { ok: true as const, remaining: input.limit - 1, resetAt: now + input.windowMs }
+    const row = Array.isArray(data) ? data[0] : data
+    const resetAt = Date.parse(String(row?.reset_at || ''))
+    if (!row || !Number.isFinite(resetAt)) throw new Error('Invalid rate-limit response')
+
+    return {
+      ok: Boolean(row.allowed),
+      remaining: Math.max(0, Number(row.remaining) || 0),
+      resetAt,
+    }
+  } catch (error) {
+    console.error('Distributed rate limiter unavailable', error instanceof Error ? error.message : 'Unknown error')
+    return {
+      ok: false,
+      remaining: 0,
+      resetAt: Date.now() + 1_000,
+      unavailable: true,
+    }
   }
+}
 
-  if (bucket.count >= input.limit) {
-    return { ok: false as const, remaining: 0, resetAt: bucket.resetAt }
+export function rateLimitHeaders(result: RateLimitResult, limit: number) {
+  const retryAfter = Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1000))
+  const headers: Record<string, string> = {
+    'RateLimit-Limit': String(limit),
+    'RateLimit-Remaining': String(result.remaining),
+    'RateLimit-Reset': String(retryAfter),
+    'X-RateLimit-Limit': String(limit),
+    'X-RateLimit-Remaining': String(result.remaining),
+    'X-RateLimit-Reset': String(Math.ceil(result.resetAt / 1000)),
   }
-
-  bucket.count += 1
-  store.set(input.key, bucket)
-  return { ok: true as const, remaining: input.limit - bucket.count, resetAt: bucket.resetAt }
+  if (!result.ok) headers['Retry-After'] = String(retryAfter)
+  return headers
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { enforceRateLimit, getClientIp } from '@/lib/security/rate-limit'
+import { enforceRateLimit, getClientIp, rateLimitHeaders } from '@/lib/security/rate-limit'
 import { platformServerFetch } from '@/lib/api/platform-server'
 
 const requestSchema = z.object({
@@ -58,9 +58,12 @@ export async function POST(request: Request) {
   }
 
   const ip = getClientIp(request)
-  const limit = enforceRateLimit({ key: `requirements:${ip}`, limit: 5, windowMs: 15 * 60 * 1000 })
+  const limit = await enforceRateLimit({ key: `expensive:requirements:${ip}`, limit: 5, windowMs: 15 * 60 * 1000 })
   if (!limit.ok) {
-    return NextResponse.json({ error: 'Too many attempts. Please try again later.' }, { status: 429 })
+    return NextResponse.json(
+      { error: limit.unavailable ? 'Request protection is temporarily unavailable. Please try again.' : 'Too many attempts. Please try again later.' },
+      { status: limit.unavailable ? 503 : 429, headers: rateLimitHeaders(limit, 5) },
+    )
   }
 
   let raw: unknown
