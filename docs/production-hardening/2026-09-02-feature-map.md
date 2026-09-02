@@ -62,7 +62,12 @@ All material Enterprise actions now await the server response before success fee
 
 ## Regression evidence
 
-- Gateway build and 30 integration/unit tests pass.
+- Gateway build and 31 integration/unit tests pass.
 - Frontend typecheck, quiet lint, 7 unit tests and the 59-route production build pass.
 - Responsive Playwright checks pass at 375×667, 390×844, 768×1024, 1024×768, 1280×720, 1366×768, 1440×900 and 1920×1080 at default browser zoom.
 - The responsive pass found and fixed the 768px marketing-header overflow and verified the public chat remains fully inside every tested viewport.
+- The authenticated live-dashboard pass covered Leads, Videos, Emails, Messages, Enterprise, Blog and Settings. It found and fixed an intrinsic-width leak in the Leads table card; production now measures 1,280px page width in a 1,280px viewport while retaining a 1,442px internally scrollable data table.
+- Production light and dark dashboard themes were both exercised after deployment with their semantic backgrounds/text colours applied and zero page-level horizontal overflow.
+- Vercel promoted commit `b29a88b` to the `www.online2day.com` production deployment with Ready status. Azure Container Apps revision `online2day-platform-gateway--0000026` is Healthy on image `production-readiness-20260902-r2`.
+- A 20-request concurrent branding/API burst completed 20/20 with HTTP 200 (0.220s mean, 0.252s maximum), rate-limit headers were present, and the protected conversation route returned HTTP 401 without a bearer token.
+- Post-deployment Supabase integrity remained at 7 conversations, 21 messages and 9 emails; all three readiness migrations are recorded, the singleton branding row and `blog-media` bucket exist, and the required service-role grants remain effective.
