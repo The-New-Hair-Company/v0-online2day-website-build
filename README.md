@@ -62,6 +62,7 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=       # server-side only
 SUPABASE_SECRET_KEY=             # server-side only; preferred for new Supabase projects
+# The Vercel integration's O2D_DB-prefixed equivalents are also supported.
 COMPANY_PLATFORM_API_URL=        # Azure API gateway base URL
 GATEWAY_SERVER_KEY=              # server-to-server workflow authentication
 RESEND_API_KEY=                  # email sends

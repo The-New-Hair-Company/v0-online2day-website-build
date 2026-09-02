@@ -15,7 +15,11 @@ export function getClientIp(request: Request) {
 }
 
 function privateBucketKey(key: string) {
-  const secret = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+  const secret =
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.O2D_DB_SUPABASE_SECRET_KEY ||
+    process.env.O2D_DB_SUPABASE_SERVICE_ROLE_KEY
   if (!secret) throw new Error('A Supabase server key is required for distributed rate limiting')
   return `v1:${createHmac('sha256', secret).update(key).digest('hex')}`
 }

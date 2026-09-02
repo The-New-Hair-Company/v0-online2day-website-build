@@ -2,6 +2,7 @@
 
 import * as tus from 'tus-js-client'
 import { createClient } from '@/lib/supabase/client'
+import { supabaseUrl } from '@/lib/supabase/config'
 
 type UploadOptions = {
   file: File
@@ -15,7 +16,6 @@ export async function uploadVideoResumable({ file, objectPath, onProgress, signa
   const { data: { session }, error } = await supabase.auth.getSession()
   if (error || !session?.access_token) throw new Error('Your session has expired. Sign in again before uploading.')
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   if (!supabaseUrl) throw new Error('Video storage is not configured.')
   const projectRef = new URL(supabaseUrl).hostname.split('.')[0]
   if (!projectRef) throw new Error('Video storage project is invalid.')
