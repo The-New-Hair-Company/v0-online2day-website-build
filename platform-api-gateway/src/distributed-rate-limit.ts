@@ -4,6 +4,22 @@ type RateLimitResult = { current: number; ttl: number }
 type Callback = (error: Error | null, result?: RateLimitResult) => void
 type CounterFetcher = (keyHash: string, windowMs: number) => Promise<RateLimitResult>
 
+export function sharedBucketToCounter(
+  row: { remaining: number; reset_at: string } | undefined,
+  ceiling: number,
+  nowMs = Date.now(),
+): RateLimitResult {
+  const resetAt = Date.parse(row?.reset_at || '')
+  const remaining = Number(row?.remaining)
+  if (!row || !Number.isFinite(resetAt) || !Number.isFinite(remaining)) {
+    throw new Error('Invalid shared rate-limit response.')
+  }
+  return {
+    current: Math.max(1, ceiling - Math.max(0, remaining)),
+    ttl: Math.max(1, resetAt - nowMs),
+  }
+}
+
 function hash(value: string) {
   return createHash('sha256').update(value).digest('hex')
 }

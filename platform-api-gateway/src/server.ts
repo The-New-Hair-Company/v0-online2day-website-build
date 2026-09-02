@@ -7,7 +7,7 @@ import { registerPlatformRoutes } from './platform-routes.js'
 import { registerMediaRoutes } from './media-routes.js'
 import { registerCompatRoutes } from './compat-routes.js'
 import { registerCommunicationRoutes } from './communication-routes.js'
-import { createDistributedRateLimitStore, rateLimitIdentity } from './distributed-rate-limit.js'
+import { createDistributedRateLimitStore, rateLimitIdentity, sharedBucketToCounter } from './distributed-rate-limit.js'
 
 const required = (name: string) => {
   const value = process.env[name]?.trim()
@@ -57,10 +57,11 @@ await app.register(cors, {
 })
 
 const DistributedRateLimitStore = createDistributedRateLimitStore(async (keyHash, windowMs) => {
-  const result = await supabaseFetch<{ current: number; ttl: number }>('rpc/consume_rate_limit', {
-    method: 'POST', body: JSON.stringify({ p_key_hash: keyHash, p_window_ms: windowMs }),
+  const ceiling = 10_000
+  const rows = await supabaseFetch<Array<{ remaining: number; reset_at: string }>>('rpc/consume_api_rate_limit', {
+    method: 'POST', body: JSON.stringify({ p_bucket_key: keyHash, p_limit: ceiling, p_window_ms: windowMs }),
   })
-  return result
+  return sharedBucketToCounter(rows[0], ceiling)
 })
 
 await app.register(rateLimit, {
