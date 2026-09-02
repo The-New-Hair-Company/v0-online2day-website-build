@@ -66,6 +66,8 @@ SUPABASE_SECRET_KEY=             # server-side only; preferred for new Supabase 
 COMPANY_PLATFORM_API_URL=        # Azure API gateway base URL
 GATEWAY_SERVER_KEY=              # server-to-server workflow authentication
 RESEND_API_KEY=                  # email sends
+WHATSAPP_APP_SECRET=             # validates Meta webhook signatures in Vercel
+WHATSAPP_VERIFY_TOKEN=           # Meta webhook subscription challenge token
 NEXT_PUBLIC_SITE_URL=https://www.online2day.com
 ```
 

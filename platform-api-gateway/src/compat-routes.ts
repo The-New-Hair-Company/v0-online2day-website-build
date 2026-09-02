@@ -1,11 +1,14 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
+import sanitizeHtml from 'sanitize-html'
 
 type SupabaseRequest = <T>(path: string, init?: RequestInit) => Promise<T>
 type CompatRouteDeps = {
   requireAdmin: (request: FastifyRequest) => Promise<Record<string, unknown>>
   supabaseFetch: SupabaseRequest
+  supabaseStorageFetch?: SupabaseRequest
+  supabaseUrl?: string
 }
 
 const uuid = z.string().uuid()
@@ -68,6 +71,12 @@ function blogDto(row: BlogRow) {
     authorName: row.author_name ?? 'Online2Day Team', authorRole: row.author_role ?? 'Online2Day',
     tags: Array.isArray(row.tags) ? row.tags : [], readTime: row.read_time ?? null,
     isPublished: Boolean(row.published), publishedAt: row.published_at ?? null,
+    publishStatus: row.publish_status ?? (row.published ? 'published' : 'draft'),
+    scheduledAt: row.scheduled_at ?? null, archivedAt: row.archived_at ?? null,
+    canonicalUrl: row.canonical_url ?? null, focusKeyword: row.focus_keyword ?? null,
+    ogImageUrl: row.og_image_url ?? null, coverAltText: row.cover_alt_text ?? null,
+    ogTitle: row.og_title ?? null, ogDescription: row.og_description ?? null,
+    noindex: Boolean(row.noindex),
     seoTitle: row.seo_title ?? null, seoDesc: row.seo_desc ?? null,
     createdAt: row.created_at, updatedAt: row.updated_at ?? null,
   }
@@ -135,54 +144,75 @@ const blogWrite = z.object({
   slug: z.string().trim().min(1).max(180).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   title: z.string().trim().min(1).max(240), excerpt: z.string().max(2_000).nullable().optional(),
   content: z.string().max(1_000_000).nullable().optional(), category: z.string().max(120).nullable().optional(),
-  coverUrl: z.string().max(2_000).nullable().optional(), authorName: z.string().max(160).nullable().optional(),
+  coverUrl: z.string().url().max(2_000).nullable().optional(), authorName: z.string().max(160).nullable().optional(),
   authorRole: z.string().max(160).nullable().optional(), tags: z.array(z.string().trim().max(80)).max(30).optional(),
   readTime: z.number().int().min(1).max(240).nullable().optional(), seoTitle: z.string().max(240).nullable().optional(),
   seoDesc: z.string().max(500).nullable().optional(),
+  canonicalUrl: z.string().url().max(2_000).nullable().optional(),
+  focusKeyword: z.string().trim().max(160).nullable().optional(),
+  ogImageUrl: z.string().url().max(2_000).nullable().optional(),
+  coverAltText: z.string().trim().max(500).nullable().optional(),
+  ogTitle: z.string().trim().max(240).nullable().optional(),
+  ogDescription: z.string().trim().max(500).nullable().optional(),
+  noindex: z.boolean().optional(),
 })
 
+const blogHtmlOptions: sanitizeHtml.IOptions = {
+  allowedTags: ['p','br','h2','h3','h4','strong','em','u','s','blockquote','pre','code','ul','ol','li','a','hr','img','table','thead','tbody','tr','th','td','div','iframe'],
+  allowedAttributes: {
+    a: ['href','target','rel'],
+    img: ['src','alt','title','class','width','height'],
+    table: ['class'],
+    th: ['colspan','rowspan'], td: ['colspan','rowspan'],
+    div: ['data-youtube-video'],
+    iframe: ['src','width','height','allowfullscreen','title','loading','referrerpolicy','frameborder','allow'],
+    '*': ['style'],
+  },
+  allowedStyles: { '*': { 'text-align': [/^left$/, /^center$/, /^right$/] } },
+  allowedSchemes: ['http','https','mailto'],
+  allowedIframeHostnames: ['www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com'],
+  transformTags: { a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer' }) },
+}
+
 function blogPayload(body: z.infer<typeof blogWrite>) {
-  return { slug: body.slug, title: body.title, excerpt: body.excerpt ?? null, content: body.content ?? null,
+  return { slug: body.slug, title: body.title, excerpt: body.excerpt ?? null,
+    content: body.content ? sanitizeHtml(body.content, blogHtmlOptions) : null,
     category: body.category ?? null, cover_url: body.coverUrl ?? null, author_name: body.authorName || 'Online2Day Team',
     author_role: body.authorRole || 'Online2Day', tags: body.tags || [], read_time: body.readTime ?? null,
-    seo_title: body.seoTitle ?? null, seo_desc: body.seoDesc ?? null, updated_at: now() }
+    seo_title: body.seoTitle ?? null, seo_desc: body.seoDesc ?? null,
+    canonical_url: body.canonicalUrl ?? null, focus_keyword: body.focusKeyword ?? null,
+    og_image_url: body.ogImageUrl ?? null, cover_alt_text: body.coverAltText ?? null,
+    og_title: body.ogTitle ?? null, og_description: body.ogDescription ?? null,
+    noindex: body.noindex ?? false, updated_at: now() }
 }
 
 export function registerCompatRoutes(app: FastifyInstance, deps: CompatRouteDeps) {
   async function readLicensedUsers(): Promise<LicensedUserRow[]> {
-    const rows = await deps.supabaseFetch<Array<{ key: string; value: unknown }>>('enterprise_state?select=key,value&limit=1000')
-    const candidates = rows.flatMap((row) => {
-      if (row.key === 'licensed_users' && Array.isArray(row.value)) return row.value
-      return row.key.startsWith('licensed_user.') ? [row.value] : []
-    })
-    const users = new Map<string, LicensedUserRow>()
-    for (const candidate of candidates) {
-      if (!candidate || typeof candidate !== 'object') continue
-      const item = candidate as Partial<LicensedUserRow>
-      const parsed = licensedUserInput.safeParse(item)
-      if (!parsed.success || typeof item.id !== 'string' || !uuid.safeParse(item.id).success) continue
+    const rows = await deps.supabaseFetch<Array<Record<string, unknown>>>('licensed_users?select=id,email,full_name,role,status,seat_type,last_seen_at,created_at,updated_at&order=created_at.asc&limit=500')
+    return rows.flatMap((item) => {
+      const parsed = licensedUserInput.safeParse({ email: item.email, role: item.role, fullName: item.full_name, seatType: item.seat_type })
+      if (!parsed.success || typeof item.id !== 'string' || !uuid.safeParse(item.id).success) return []
       const role = foundingAdmins.has(parsed.data.email) ? 'admin' : parsed.data.role
-      users.set(parsed.data.email, {
+      return [{
         id: item.id,
         email: parsed.data.email,
         fullName: parsed.data.fullName ?? null,
         role,
         status: item.status === 'pending' || item.status === 'suspended' || item.status === 'revoked' ? item.status : 'active',
         seatType: seatType(role),
-        invitedBy: typeof item.invitedBy === 'string' ? item.invitedBy : null,
-        lastSeenAt: typeof item.lastSeenAt === 'string' ? item.lastSeenAt : null,
-        createdAt: typeof item.createdAt === 'string' ? item.createdAt : now(),
-        updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : null,
-      })
-    }
-    return [...users.values()]
+        invitedBy: null,
+        lastSeenAt: typeof item.last_seen_at === 'string' ? item.last_seen_at : null,
+        createdAt: typeof item.created_at === 'string' ? item.created_at : now(),
+        updatedAt: typeof item.updated_at === 'string' ? item.updated_at : null,
+      }]
+    })
   }
 
   async function writeLicensedUser(user: LicensedUserRow) {
-    await deps.supabaseFetch('enterprise_state?on_conflict=key', {
+    await deps.supabaseFetch('licensed_users?on_conflict=email', {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ key: `licensed_user.${user.email}`, value: user, updated_at: now() }),
+      body: JSON.stringify({ id: user.id, email: user.email, full_name: user.fullName, role: user.role, status: user.status, seat_type: user.seatType, last_seen_at: user.lastSeenAt, created_at: user.createdAt, updated_at: user.updatedAt || now() }),
     })
   }
 
@@ -391,7 +421,7 @@ export function registerCompatRoutes(app: FastifyInstance, deps: CompatRouteDeps
     if (foundingAdmins.has(email)) return reply.code(403).send({ error: 'Protected admin accounts cannot be removed.' })
     const users = await readLicensedUsers()
     if (!users.some((user) => user.email === email)) return reply.code(404).send({ error: 'Licensed user not found.' })
-    await deps.supabaseFetch(`enterprise_state?key=eq.${encodeURIComponent(`licensed_user.${email}`)}`, { method: 'DELETE' }); return reply.code(204).send()
+    await deps.supabaseFetch(`licensed_users?email=eq.${encodeURIComponent(email)}`, { method: 'DELETE' }); return reply.code(204).send()
   })
 
   app.get('/api/v1/admin/preferences', { preHandler: deps.requireAdmin }, async (request) => {
@@ -429,22 +459,63 @@ export function registerCompatRoutes(app: FastifyInstance, deps: CompatRouteDeps
     const rows = await deps.supabaseFetch<Array<Record<string, unknown>>>('report_snapshots?select=*', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ user_id: String(user.sub), period_label: body.type, kpis, created_by: String(user.sub) }) }); const row = createdRow(rows, 'Report snapshot'); return reply.code(201).send({ id: row.id, type: row.period_label, data: JSON.stringify(row.kpis ?? {}), capturedBy: row.created_by ?? row.user_id, createdAt: row.created_at })
   })
 
-  app.get('/api/v1/blog', async () => (await deps.supabaseFetch<BlogRow[]>('blog_posts?published=eq.true&select=*&order=published_at.desc.nullslast,created_at.desc&limit=100')).map(blogDto))
+  app.get('/api/v1/blog', async () => (await deps.supabaseFetch<BlogRow[]>(`blog_posts?published=eq.true&published_at=lte.${encodeURIComponent(now())}&select=*&order=published_at.desc.nullslast,created_at.desc&limit=100`)).map(blogDto))
   app.get('/api/v1/blog/:slug', async (request, reply) => {
-    const slug = z.string().trim().min(1).max(180).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).parse((request.params as { slug: string }).slug); const rows = await deps.supabaseFetch<BlogRow[]>(`blog_posts?slug=eq.${encodeURIComponent(slug)}&published=eq.true&select=*&limit=1`); return rows[0] ? blogDto(rows[0]) : reply.code(404).send({ error: 'Post not found.' })
+    const slug = z.string().trim().min(1).max(180).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).parse((request.params as { slug: string }).slug)
+    const rows = await deps.supabaseFetch<BlogRow[]>(`blog_posts?slug=eq.${encodeURIComponent(slug)}&published=eq.true&published_at=lte.${encodeURIComponent(now())}&select=*&limit=1`)
+    if (rows[0]) return blogDto(rows[0])
+    const redirects = await deps.supabaseFetch<Array<{ post_id: string }>>(`blog_slug_redirects?old_slug=eq.${encodeURIComponent(slug)}&select=post_id&limit=1`)
+    if (!redirects[0]) return reply.code(404).send({ error: 'Post not found.' })
+    const redirected = await deps.supabaseFetch<BlogRow[]>(`blog_posts?id=eq.${redirects[0].post_id}&published=eq.true&published_at=lte.${encodeURIComponent(now())}&select=*&limit=1`)
+    return redirected[0] ? blogDto(redirected[0]) : reply.code(404).send({ error: 'Post not found.' })
   })
   app.get('/api/v1/admin/blog', { preHandler: deps.requireAdmin }, async () => (await deps.supabaseFetch<BlogRow[]>('blog_posts?select=*&order=created_at.desc&limit=500')).map(blogDto))
   app.get('/api/v1/admin/blog/:id', { preHandler: deps.requireAdmin }, async (request, reply) => {
     const { id } = z.object({ id: uuid }).parse(request.params); const rows = await deps.supabaseFetch<BlogRow[]>(`blog_posts?id=eq.${id}&select=*&limit=1`); return rows[0] ? blogDto(rows[0]) : reply.code(404).send({ error: 'Post not found.' })
   })
   app.post('/api/v1/admin/blog', { preHandler: deps.requireAdmin }, async (request, reply) => {
-    const body = blogWrite.parse(request.body); const rows = await deps.supabaseFetch<BlogRow[]>('blog_posts?select=*', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ ...blogPayload(body), published: false }) }); return reply.code(201).send(blogDto(createdRow(rows, 'Blog post')))
+    const user = await deps.requireAdmin(request); const body = blogWrite.parse(request.body); const rows = await deps.supabaseFetch<BlogRow[]>('blog_posts?select=*', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ ...blogPayload(body), published: false, publish_status: 'draft', updated_by: String(user.sub) }) }); return reply.code(201).send(blogDto(createdRow(rows, 'Blog post')))
   })
   app.put('/api/v1/admin/blog/:id', { preHandler: deps.requireAdmin }, async (request, reply) => {
-    const { id } = z.object({ id: uuid }).parse(request.params); const body = blogWrite.parse(request.body); const rows = await deps.supabaseFetch<BlogRow[]>(`blog_posts?id=eq.${id}&select=*`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(blogPayload(body)) }); if (!rows[0]) return reply.code(404).send({ error: 'Post not found.' }); return reply.code(204).send()
+    const user = await deps.requireAdmin(request); const { id } = z.object({ id: uuid }).parse(request.params); const body = blogWrite.parse(request.body); const rows = await deps.supabaseFetch<BlogRow[]>(`blog_posts?id=eq.${id}&select=*`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ ...blogPayload(body), updated_by: String(user.sub) }) }); if (!rows[0]) return reply.code(404).send({ error: 'Post not found.' }); return reply.code(204).send()
   })
   app.patch('/api/v1/admin/blog/:id/publish', { preHandler: deps.requireAdmin }, async (request, reply) => {
-    const { id } = z.object({ id: uuid }).parse(request.params); const { publish } = z.object({ publish: z.boolean() }).parse(request.body); await deps.supabaseFetch(`blog_posts?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify({ published: publish, published_at: publish ? now() : null, updated_at: now() }) }); return reply.code(204).send()
+    const { id } = z.object({ id: uuid }).parse(request.params); const { publish } = z.object({ publish: z.boolean() }).parse(request.body)
+    if (publish) {
+      const posts = await deps.supabaseFetch<Array<{ cover_url?: string | null; cover_alt_text?: string | null }>>(`blog_posts?id=eq.${id}&select=cover_url,cover_alt_text&limit=1`)
+      if (!posts[0]) return reply.code(404).send({ error: 'Post not found.' })
+      if (posts[0].cover_url && !posts[0].cover_alt_text?.trim()) return reply.code(400).send({ error: 'Cover image alt text is required before publishing.' })
+    }
+    await deps.supabaseFetch(`blog_posts?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify({ published: publish, publish_status: publish ? 'published' : 'draft', published_at: publish ? now() : null, scheduled_at: null, archived_at: null, updated_at: now() }) }); return reply.code(204).send()
+  })
+  app.patch('/api/v1/admin/blog/:id/lifecycle', { preHandler: deps.requireAdmin }, async (request, reply) => {
+    const { id } = z.object({ id: uuid }).parse(request.params)
+    const body = z.discriminatedUnion('status', [
+      z.object({ status: z.literal('draft') }), z.object({ status: z.literal('published') }),
+      z.object({ status: z.literal('archived') }),
+      z.object({ status: z.literal('scheduled'), scheduledAt: z.string().datetime().refine((date) => new Date(date).getTime() > Date.now(), 'Schedule time must be in the future.') }),
+    ]).parse(request.body)
+    if (body.status === 'published' || body.status === 'scheduled') {
+      const posts = await deps.supabaseFetch<Array<{ cover_url?: string | null; cover_alt_text?: string | null }>>(`blog_posts?id=eq.${id}&select=cover_url,cover_alt_text&limit=1`)
+      if (!posts[0]) return reply.code(404).send({ error: 'Post not found.' })
+      if (posts[0].cover_url && !posts[0].cover_alt_text?.trim()) return reply.code(400).send({ error: 'Cover image alt text is required before publishing.' })
+    }
+    const schedule = body.status === 'scheduled' ? body.scheduledAt : null
+    const publishedAt = body.status === 'published' ? now() : schedule
+    await deps.supabaseFetch(`blog_posts?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify({
+      publish_status: body.status, published: body.status === 'published' || body.status === 'scheduled',
+      published_at: publishedAt, scheduled_at: schedule, archived_at: body.status === 'archived' ? now() : null, updated_at: now(),
+    }) })
+    return reply.code(204).send()
+  })
+  app.post('/api/v1/admin/blog/media/uploads', { preHandler: deps.requireAdmin }, async (request, reply) => {
+    if (!deps.supabaseStorageFetch || !deps.supabaseUrl) throw Object.assign(new Error('Blog media storage is unavailable.'), { statusCode: 503 })
+    const user = await deps.requireAdmin(request)
+    const body = z.object({ filename: z.string().min(1).max(200), mimeType: z.enum(['image/jpeg','image/png','image/webp','image/gif']), sizeBytes: z.number().int().positive().max(10 * 1024 * 1024) }).parse(request.body)
+    const extension = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' } as const)[body.mimeType]
+    const storagePath = `${String(user.sub)}/${new Date().getUTCFullYear()}/${randomUUID()}.${extension}`
+    const signed = await deps.supabaseStorageFetch<{ url: string }>(`object/upload/sign/blog-media/${storagePath.split('/').map(encodeURIComponent).join('/')}`, { method: 'POST', body: '{}' })
+    return reply.code(201).send({ storagePath, uploadUrl: new URL(signed.url, `${deps.supabaseUrl}/storage/v1/`).toString(), publicUrl: `${deps.supabaseUrl}/storage/v1/object/public/blog-media/${storagePath}`, expiresIn: 7_200 })
   })
   app.delete('/api/v1/admin/blog/:id', { preHandler: deps.requireAdmin }, async (request, reply) => {
     const { id } = z.object({ id: uuid }).parse(request.params); await deps.supabaseFetch(`blog_posts?id=eq.${id}`, { method: 'DELETE' }); return reply.code(204).send()

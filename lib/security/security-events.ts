@@ -24,6 +24,7 @@ function minuteBucket() {
 }
 
 export async function recordSecurityEvent(input: SecurityEventInput) {
+  try {
   const supabase = await createClient()
   const nowIso = new Date().toISOString()
   const bucket = minuteBucket()
@@ -81,6 +82,15 @@ export async function recordSecurityEvent(input: SecurityEventInput) {
       }),
       created_at: nowIso,
     } as any)
+  }
+  } catch (error) {
+    // Telemetry must never change the response of the protected operation.
+    // Keep this metadata-only log free of message bodies, credentials and tokens.
+    console.error('Security event could not be persisted', {
+      type: input.type,
+      route: input.route,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    })
   }
 }
 

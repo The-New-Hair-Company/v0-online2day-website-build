@@ -1,7 +1,9 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { prefsApi, licensedUsersApi } from '@/lib/api/client'
+import { prefsApi, licensedUsersApi, siteBrandingApi, type SiteBrandingDto } from '@/lib/api/client'
+import { normaliseBranding } from '@/lib/branding'
 import {
   DEFAULT_LICENSE_SEAT_LIMIT,
   FOUNDING_ADMIN_EMAILS,
@@ -242,6 +244,22 @@ export async function setAdminPrefs(prefs: Record<string, string>) {
     return { success: true }
   } catch (e) {
     return { error: (e as Error).message }
+  }
+}
+
+export async function getSiteBranding(): Promise<SiteBrandingDto> {
+  return normaliseBranding(await siteBrandingApi.get().catch(() => null))
+}
+
+export async function saveSiteBranding(branding: SiteBrandingDto) {
+  try {
+    const token = await getToken()
+    const normalised = normaliseBranding(branding)
+    await siteBrandingApi.update(token, normalised)
+    revalidatePath('/', 'layout')
+    return { success: true, branding: normalised }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Brand colours could not be saved.' }
   }
 }
 

@@ -39,22 +39,22 @@ export default async function UserDashboardLayout({
   ]
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex min-h-dvh flex-col bg-background md:h-dvh md:flex-row">
       {/* Sidebar */}
-      <aside className="w-64 bg-card text-card-foreground flex flex-col border-r border-border">
-        <div className="p-6 border-b border-border">
+      <aside className="flex w-full shrink-0 flex-col border-b border-border bg-card text-card-foreground md:w-64 md:border-b-0 md:border-r">
+        <div className="border-b border-border px-4 py-3 md:p-6">
           <h2 className="text-xl font-bold text-primary">Online2Day</h2>
           <p className="text-xs text-muted-foreground mt-0.5">Client Portal</p>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex gap-1 overflow-x-auto px-3 py-2 md:flex-1 md:flex-col md:space-y-1 md:overflow-y-auto md:py-4">
           {navItems.map(({ href, label, icon: Icon }) => (
             <UserNavLink key={href} href={href} label={label} icon={Icon} />
           ))}
         </nav>
 
         {/* User footer */}
-        <div className="p-4 border-t border-border space-y-3">
+        <div className="flex items-center gap-3 border-t border-border p-3 md:block md:space-y-3 md:p-4">
           <div className="flex items-center gap-3 px-1">
             <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">
               {initials}
@@ -64,10 +64,10 @@ export default async function UserDashboardLayout({
               <p className="text-xs text-muted-foreground truncate">{displayEmail}</p>
             </div>
           </div>
-          <form action="/auth/signout" method="post">
+          <form action="/auth/signout" method="post" className="ml-auto md:ml-0">
             <button
               type="submit"
-              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+              className="flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:w-full"
             >
               <LogOut size={16} />
               Sign Out
@@ -77,7 +77,7 @@ export default async function UserDashboardLayout({
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto bg-background flex flex-col">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto bg-background">
         {children}
       </main>
     </div>

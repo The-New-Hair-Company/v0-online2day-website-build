@@ -1,14 +1,14 @@
 .shell {
-  --bg: #05070b;
-  --panel: rgba(13, 18, 28, 0.92);
-  --panel-2: rgba(10, 16, 27, 0.78);
-  --line: rgba(115, 144, 190, 0.18);
+  --bg: var(--brand-background, #05070b);
+  --panel: color-mix(in oklch, var(--brand-surface, #0d121c), transparent 4%);
+  --panel-2: color-mix(in oklch, var(--brand-surface-alt, #0a101b), transparent 8%);
+  --line: color-mix(in oklch, var(--brand-border, #273247), transparent 18%);
   --line-strong: rgba(77, 132, 255, 0.48);
-  --text: #f7f9ff;
-  --muted: #8f98aa;
+  --text: var(--brand-text, #f7f9ff);
+  --muted: var(--brand-muted, #8f98aa);
   --muted-2: #697386;
-  --blue: #2f6bff;
-  --blue-2: #62a0ff;
+  --blue: var(--brand-primary, #2f6bff);
+  --blue-2: var(--brand-primary-hover, #62a0ff);
   --green: #22c55e;
   --red: #ef4444;
   --orange: #f59e0b;
@@ -29,13 +29,13 @@
 :global(html[data-theme='light']) .detailShell,
 :global(html[data-theme='light']) .settingsShell,
 :global(html[data-theme='light']) .pricingShell {
-  --bg: #f4f7fb;
-  --panel: rgba(255, 255, 255, 0.96);
-  --panel-2: rgba(244, 248, 255, 0.94);
-  --line: rgba(126, 145, 178, 0.28);
+  --bg: var(--brand-background, #f4f7fb);
+  --panel: color-mix(in oklch, var(--brand-surface, #fff), transparent 2%);
+  --panel-2: color-mix(in oklch, var(--brand-surface-alt, #eef3fb), transparent 3%);
+  --line: color-mix(in oklch, var(--brand-border, #cbd5e1), transparent 8%);
   --line-strong: rgba(37, 99, 235, 0.46);
-  --text: #111827;
-  --muted: #526070;
+  --text: var(--brand-text, #111827);
+  --muted: var(--brand-muted, #526070);
   --muted-2: #718096;
   color: var(--text);
   background:
@@ -89,11 +89,13 @@
   top: 0;
   height: 100vh;
   border-right: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(12, 17, 27, 0.94), rgba(8, 12, 19, 0.96));
+  background: linear-gradient(180deg, color-mix(in oklch, var(--panel), var(--bg) 14%), var(--bg));
   display: flex;
   flex-direction: column;
   padding: 20px 14px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .mobileDashboardHeader,
@@ -126,6 +128,7 @@
 .nav {
   display: grid;
   gap: 8px;
+  flex: 0 0 auto;
 }
 
 .navSection {
@@ -389,7 +392,8 @@
 
 .main {
   min-width: 0;
-  padding: 40px 48px 180px;
+  width: 100%;
+  padding: clamp(24px, 3vw, 40px) clamp(20px, 3.5vw, 48px) 180px;
   max-width: 1680px;
 }
 
@@ -2474,12 +2478,19 @@
 /* ─── LEAD DETAIL PAGE ─────────────────────────────────────────────────────── */
 
 .detailShell {
+  --bg: var(--brand-background, #05070b);
+  --panel: var(--brand-surface, #0d121c);
+  --panel-2: var(--brand-surface-alt, #0a101b);
+  --line: var(--brand-border, #273247);
+  --text: var(--brand-text, #f7f9ff);
+  --muted: var(--brand-muted, #8f98aa);
+  --blue: var(--brand-primary, #2f6bff);
   min-height: 100vh;
   color: var(--text, #f7f9ff);
   background:
     radial-gradient(circle at 24% -8%, rgba(47, 107, 255, 0.18), transparent 28%),
     radial-gradient(circle at 80% 10%, rgba(23, 215, 193, 0.08), transparent 24%),
-    #05070b;
+    var(--bg);
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -2802,11 +2813,18 @@
 /* ─── SETTINGS PAGE ────────────────────────────────────────────────────────── */
 
 .settingsShell {
+  --bg: var(--brand-background, #05070b);
+  --panel: var(--brand-surface, #0d121c);
+  --panel-2: var(--brand-surface-alt, #0a101b);
+  --line: var(--brand-border, #273247);
+  --text: var(--brand-text, #f7f9ff);
+  --muted: var(--brand-muted, #8f98aa);
+  --blue: var(--brand-primary, #2f6bff);
   min-height: 100vh;
-  color: #f7f9ff;
+  color: var(--text);
   background:
     radial-gradient(circle at 24% -8%, rgba(47, 107, 255, 0.18), transparent 28%),
-    #05070b;
+    var(--bg);
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -2814,7 +2832,9 @@
 }
 
 .settingsMain {
-  padding: 40px 48px 80px;
+  width: 100%;
+  min-width: 0;
+  padding: clamp(24px, 3vw, 40px) clamp(18px, 3.5vw, 48px) 80px;
   max-width: 1120px;
 }
 
@@ -2824,6 +2844,8 @@
   margin-bottom: 32px;
   border-bottom: 1px solid rgba(115, 144, 190, 0.18);
   padding-bottom: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .settingsTab {
@@ -3264,12 +3286,17 @@
 /* ─── PRICING PAGE ─────────────────────────────────────────────────────────── */
 
 .pricingShell {
+  --bg: var(--brand-background, #05070b);
+  --panel: var(--brand-surface, #0d121c);
+  --line: var(--brand-border, #273247);
+  --text: var(--brand-text, #f7f9ff);
+  --muted: var(--brand-muted, #8f98aa);
   min-height: 100vh;
-  color: #f7f9ff;
+  color: var(--text);
   background:
     radial-gradient(circle at 20% -5%, rgba(47, 107, 255, 0.22), transparent 30%),
     radial-gradient(circle at 80% 10%, rgba(23, 215, 193, 0.1), transparent 25%),
-    #05070b;
+    var(--bg);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
   letter-spacing: -0.01em;
 }
@@ -4725,4 +4752,114 @@
   .mobileNavDrawer {
     animation: none;
   }
+}
+
+/* Semantic brand editor */
+.brandingEditor {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+
+.brandingHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.brandingHeader .settingRowInfo strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.brandingGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.colourField {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.colourField > div {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.colourField input[type='color'] {
+  width: 44px;
+  height: 42px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.colourField input:not([type='color']) {
+  min-width: 0;
+  height: 42px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
+.brandingPreview {
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid;
+  border-radius: 12px;
+}
+
+.brandingPreview > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid;
+  border-radius: 10px;
+}
+
+.brandingPreview span {
+  flex: 1;
+  font-size: 12px;
+}
+
+.brandingPreview button {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 800;
+}
+
+.brandingPreview small { color: inherit; opacity: .72; }
+
+@media (max-width: 700px) {
+  .brandingHeader,
+  .brandingPreview > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .brandingGrid { grid-template-columns: 1fr; }
+  .brandingPreview button { width: 100%; }
 }

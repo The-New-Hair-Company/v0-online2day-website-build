@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Check, Crown, KeyRound, Mail, ShieldCheck, Trash2, Type, UserPlus, Users } from 'lucide-react'
+import { AlertTriangle, Check, Crown, KeyRound, Mail, Palette, RotateCcw, ShieldCheck, Trash2, Type, UserPlus, Users } from 'lucide-react'
 import { DashboardSidebar } from '@/components/leads/DashboardSidebar'
 import styles from '@/components/leads/LeadsDashboard.module.css'
 import { getAuditLog, logAuditEntry } from '@/lib/actions/audit-actions'
-import { addLicensedUser, getAdminPrefs, getLicenseManagementState, removeLicensedUser, setAdminPrefs, updateLicensedUserRole } from '@/lib/actions/settings-actions'
+import { addLicensedUser, getAdminPrefs, getLicenseManagementState, getSiteBranding, removeLicensedUser, saveSiteBranding, setAdminPrefs, updateLicensedUserRole } from '@/lib/actions/settings-actions'
+import { BRAND_TOKEN_NAMES, DEFAULT_SITE_BRANDING, brandingCss, contrastRatio } from '@/lib/branding'
+import type { SiteBrandingDto, SiteBrandingTokens } from '@/lib/api/client'
 import { clearAsyncFailureQueue, getAsyncFailureQueue } from '@/lib/actions/reliability-actions'
 import { clearSecurityEvents, getSecurityEvents } from '@/lib/security/security-events'
 
@@ -74,7 +76,7 @@ function scaleFromTextSize(size: TextSize) {
 }
 
 export function SettingsClient() {
-  const [activeTab, setActiveTab] = useState<'setup' | 'appearance' | 'license'>('setup')
+  const [activeTab, setActiveTab] = useState<'setup' | 'appearance' | 'health' | 'license'>('setup')
   const [theme, setTheme] = useState<ThemeChoice>('dark')
   const [textSize, setTextSize] = useState<TextSize>('md')
   const [textScale, setTextScale] = useState(100)
@@ -82,6 +84,10 @@ export function SettingsClient() {
   const [motion, setMotion] = useState<AccessibilitySettings['motion']>('standard')
   const [font, setFont] = useState<AccessibilitySettings['font']>('standard')
   const [lineHeight, setLineHeight] = useState<AccessibilitySettings['lineHeight']>('standard')
+  const [branding, setBranding] = useState<SiteBrandingDto>(DEFAULT_SITE_BRANDING)
+  const [brandingMode, setBrandingMode] = useState<'light' | 'dark'>('dark')
+  const [brandingBusy, setBrandingBusy] = useState(false)
+  const [brandingNotice, setBrandingNotice] = useState('')
   const [licenseKey, setLicenseKey] = useState('')
   const [licenseStatus, setLicenseStatus] = useState<'active' | 'trial' | 'none'>('trial')
   const [licenseState, setLicenseState] = useState<LicenseManagementState>(defaultLicenseState)
@@ -190,6 +196,10 @@ export function SettingsClient() {
       }
     })
     getLicenseManagementState().then(setLicenseState)
+    getSiteBranding().then((value) => {
+      setBranding(value)
+      applyBrandingPreview(value)
+    })
     getAuditLog(12).then((items) => {
       const normalised = (items || []).map((item: any) => ({
         id: String(item.id ?? `${item.action}-${item.created_at}`),
@@ -306,6 +316,45 @@ export function SettingsClient() {
     })
   }
 
+  function applyBrandingPreview(next: SiteBrandingDto) {
+    const style = document.getElementById('o2d-site-branding')
+    if (style) style.textContent = brandingCss(next)
+  }
+
+  function updateBrandToken(mode: 'light' | 'dark', name: keyof SiteBrandingTokens, value: string) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(value)) return
+    const next = { ...branding, [mode]: { ...branding[mode], [name]: value } }
+    setBranding(next)
+    setBrandingNotice('Previewing unsaved colours.')
+    applyBrandingPreview(next)
+  }
+
+  async function persistBranding() {
+    const active = branding[brandingMode]
+    if (contrastRatio(active.text, active.background) < 4.5 || contrastRatio(active.primaryText, active.primary) < 3) {
+      setBrandingNotice('Increase text/background or button contrast before saving. Body text needs 4.5:1 and controls need 3:1.')
+      return
+    }
+    setBrandingBusy(true)
+    const result = await saveSiteBranding(branding)
+    setBrandingBusy(false)
+    if ('error' in result && result.error) {
+      setBrandingNotice(String(result.error))
+      return
+    }
+    if (result.branding) {
+      setBranding(result.branding)
+      applyBrandingPreview(result.branding)
+    }
+    setBrandingNotice('Brand colours saved and applied site-wide.')
+  }
+
+  function resetBranding() {
+    setBranding(DEFAULT_SITE_BRANDING)
+    applyBrandingPreview(DEFAULT_SITE_BRANDING)
+    setBrandingNotice('Default colours are previewing. Save to publish them.')
+  }
+
   async function activateLicense() {
     if (!licenseKey.trim()) return
     await setAdminPrefs({ 'license.key': licenseKey.trim(), 'license.status': 'active' })
@@ -372,6 +421,7 @@ export function SettingsClient() {
         <div className={styles.settingsTabs} role="tablist">
           <button className={`${styles.settingsTab} ${activeTab === 'setup' ? styles.settingsTabActive : ''}`} onClick={() => setActiveTab('setup')}>Setup Center</button>
           <button className={`${styles.settingsTab} ${activeTab === 'appearance' ? styles.settingsTabActive : ''}`} onClick={() => setActiveTab('appearance')}>Appearance</button>
+          <button className={`${styles.settingsTab} ${activeTab === 'health' ? styles.settingsTabActive : ''}`} onClick={() => setActiveTab('health')}>System health</button>
           <button className={`${styles.settingsTab} ${activeTab === 'license' ? styles.settingsTabActive : ''}`} onClick={() => setActiveTab('license')}>License</button>
         </div>
 
@@ -400,6 +450,7 @@ export function SettingsClient() {
                 </div>
                 {setupProgress === 100 ? <span className={styles.gdprBadge}><Check size={13} />Ready</span> : null}
               </div>
+              <div hidden>
               <div className={styles.licenseCard} style={{ alignItems: 'flex-start' }}>
                 <div className={styles.licenseInfo}>
                   <strong>Recent audit activity</strong>
@@ -508,6 +559,7 @@ export function SettingsClient() {
                   ))}
                 </div>
               </div>
+              </div>
               <div className={styles.formGrid2}>
                 <div className={styles.formRow}><label>Company name</label><input className={styles.formInput} value={companyName} onChange={(event) => setCompanyName(event.target.value)} /></div>
                 <div className={styles.formRow}><label>Timezone</label><input className={styles.formInput} value={timezone} onChange={(event) => setTimezone(event.target.value)} placeholder="Europe/London" /></div>
@@ -580,6 +632,61 @@ export function SettingsClient() {
                   ))}
                 </div>
               </div>
+              <div className={styles.brandingEditor}>
+                <div className={styles.brandingHeader}>
+                  <div className={styles.settingRowInfo}>
+                    <strong><Palette size={16} /> Site-wide brand colours</strong>
+                    <span>These semantic colours update the public website, dashboard, editor, forms and account pages. Preview changes before publishing.</span>
+                  </div>
+                  <div className={styles.themeOptions} role="group" aria-label="Colour palette to edit">
+                    {(['dark', 'light'] as const).map((mode) => (
+                      <button key={mode} className={`${styles.btnSecondary} ${brandingMode === mode ? styles.filterActive : ''}`} onClick={() => setBrandingMode(mode)}>
+                        {mode === 'dark' ? 'Dark palette' : 'Light palette'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className={styles.brandingGrid}>
+                  {BRAND_TOKEN_NAMES.map((name) => {
+                    const labels: Record<keyof SiteBrandingTokens, string> = {
+                      background: 'Page background', surface: 'Cards and panels', surfaceAlt: 'Secondary surfaces', text: 'Primary text',
+                      muted: 'Secondary text', primary: 'Buttons and links', primaryText: 'Button text', primaryHover: 'Hover and focus', border: 'Borders and dividers',
+                    }
+                    return (
+                      <label key={`${brandingMode}-${name}`} className={styles.colourField}>
+                        <span>{labels[name]}</span>
+                        <div>
+                          <input type="color" value={branding[brandingMode][name]} onChange={(event) => updateBrandToken(brandingMode, name, event.target.value)} aria-label={`${labels[name]} colour picker`} />
+                          <input
+                            key={`${brandingMode}-${name}-${branding[brandingMode][name]}`}
+                            defaultValue={branding[brandingMode][name]}
+                            pattern="#[0-9a-fA-F]{6}"
+                            maxLength={7}
+                            aria-label={`${labels[name]} hex value`}
+                            onBlur={(event) => /^#[0-9a-fA-F]{6}$/.test(event.currentTarget.value) ? updateBrandToken(brandingMode, name, event.currentTarget.value) : (event.currentTarget.value = branding[brandingMode][name])}
+                            onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+                          />
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+                <div className={styles.brandingPreview} style={{ background: branding[brandingMode].background, color: branding[brandingMode].text, borderColor: branding[brandingMode].border }}>
+                  <div style={{ background: branding[brandingMode].surface, borderColor: branding[brandingMode].border }}>
+                    <strong>Live interface preview</strong>
+                    <span style={{ color: branding[brandingMode].muted }}>Readable secondary copy and consistent surfaces.</span>
+                    <button style={{ background: branding[brandingMode].primary, color: branding[brandingMode].primaryText }}>Primary action</button>
+                  </div>
+                  <small>
+                    Text contrast {contrastRatio(branding[brandingMode].text, branding[brandingMode].background).toFixed(1)}:1 · Button contrast {contrastRatio(branding[brandingMode].primaryText, branding[brandingMode].primary).toFixed(1)}:1
+                  </small>
+                </div>
+                {brandingNotice ? <div className={styles.licenseNotice} role="status"><Check size={15} /><span>{brandingNotice}</span></div> : null}
+                <div className={styles.licenseActions}>
+                  <button className={styles.btnPrimary} onClick={persistBranding} disabled={brandingBusy}>{brandingBusy ? 'Publishing…' : 'Publish brand colours'}</button>
+                  <button className={styles.btnSecondary} onClick={resetBranding}><RotateCcw size={14} /> Reset defaults</button>
+                </div>
+              </div>
               <div className={styles.settingRow}>
                 <div className={styles.settingRowInfo}><strong>Text size</strong><span>Scale interface copy for comfort.</span></div>
                 <div className={styles.textScaleControl}>
@@ -611,6 +718,38 @@ export function SettingsClient() {
                   <button className={`${styles.btnSecondary} ${lineHeight === 'relaxed' ? styles.filterActive : ''}`} onClick={() => saveAccessibility({ lineHeight: lineHeight === 'relaxed' ? 'standard' : 'relaxed' })}>Relax spacing</button>
                 </div>
               </div>
+            </div>
+          </section>
+        ) : activeTab === 'health' ? (
+          <section className={styles.settingsSection}>
+            <header className={styles.settingsSectionHeader}>
+              <h2>System health</h2>
+              <p>Operational status first, with administrator diagnostics available only when you need them.</p>
+            </header>
+            <div className={styles.settingsSectionBody}>
+              <div className={asyncFailures.some((item) => !item.recoverable) ? styles.licenseWarning : styles.licenseCard}>
+                <div className={styles.licenseIcon}>{asyncFailures.some((item) => !item.recoverable) ? <AlertTriangle size={22} /> : <ShieldCheck size={22} />}</div>
+                <div className={styles.licenseInfo}>
+                  <strong>{asyncFailures.some((item) => !item.recoverable) ? 'System attention required' : 'All systems operational'}</strong>
+                  <span>{asyncFailures.length ? `${asyncFailures.length} background ${asyncFailures.length === 1 ? 'event is' : 'events are'} available for administrator review.` : 'No background failures are queued and no active security events require attention.'}</span>
+                </div>
+                <span className={styles.gdprBadge}>{asyncFailures.some((item) => !item.recoverable) ? 'Degraded' : 'Healthy'}</span>
+              </div>
+              <details className={styles.licenseCard}>
+                <summary><strong>Advanced diagnostics</strong><span className={styles.subtle}> Audit, recoverable failures and security telemetry</span></summary>
+                <div className={styles.licenseActions} style={{ marginTop: 16 }}>
+                  <button className={styles.btnSecondary} onClick={async () => setAsyncFailures(await getAsyncFailureQueue(20))}>Refresh diagnostics</button>
+                  <button className={styles.btnSecondary} onClick={async () => { await clearAsyncFailureQueue(); setAsyncFailures([]) }}>Clear recoverable queue</button>
+                  <button className={styles.btnSecondary} onClick={async () => { await clearSecurityEvents(); setSecurityEvents([]) }}>Clear security events</button>
+                </div>
+                <div className={styles.licenseUserTable} style={{ width: '100%', marginTop: 16 }}>
+                  <div className={styles.licenseUserHeader} style={{ gridTemplateColumns: '1fr 1fr 1fr' }}><span>Classification</span><span>Area</span><span>Time</span></div>
+                  {asyncFailures.map((item, index) => <div key={`failure-${item.createdAt}-${index}`} className={styles.licenseUserRow} style={{ gridTemplateColumns: '1fr 1fr 1fr' }}><strong>{item.recoverable ? 'Warning' : 'Error'}</strong><span title={item.errorMessage}>{item.action.replace(/_/g, ' ')}</span><span>{new Date(item.createdAt).toLocaleString()}</span></div>)}
+                  {securityEvents.map((item, index) => <div key={`security-${item.createdAt}-${index}`} className={styles.licenseUserRow} style={{ gridTemplateColumns: '1fr 1fr 1fr' }}><strong>Security</strong><span title={item.detail}>{item.type.replace(/_/g, ' ')}</span><span>{new Date(item.createdAt).toLocaleString()}</span></div>)}
+                  {!asyncFailures.length && !securityEvents.length ? <div className={styles.licenseUserRow} style={{ gridTemplateColumns: '1fr' }}><span>No diagnostic events to display.</span></div> : null}
+                </div>
+                <details style={{ marginTop: 16 }}><summary>Recent administrator audit trail</summary><div className={styles.licenseUserTable} style={{ width: '100%', marginTop: 10 }}>{auditItems.map((item) => <div key={item.id} className={styles.licenseUserRow} style={{ gridTemplateColumns: '1fr 1fr 1fr' }}><strong>{item.action.replace(/_/g, ' ')}</strong><span>{item.resource.replace(/_/g, ' ')}</span><span>{new Date(item.created_at).toLocaleString()}</span></div>)}</div></details>
+              </details>
             </div>
           </section>
         ) : (

@@ -40,7 +40,7 @@ import {
 } from 'lucide-react'
 import styles from './dashboard.module.css'
 import { createEmailTemplate, deleteEmailTemplate, sendEnterpriseEmail, updateEmailTemplate } from '@/lib/actions/email-actions'
-import { markConversationRead, sendConversationReply } from '@/lib/actions/message-actions'
+import { getWhatsAppConnectionStatus, getWorkspaceMembers, markConversationRead, sendConversationReply, sendWhatsAppConversationReply, startInternalConversation } from '@/lib/actions/message-actions'
 import { deleteVideoAsset } from '@/lib/actions/video-actions'
 import { updateSiteRequest } from '@/lib/actions/site-request-actions'
 import { openExternalSafely } from '@/lib/security/external-links'
@@ -1096,9 +1096,18 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
   const [query, setQuery] = useState('')
   const [replyText, setReplyText] = useState('')
   const [messageFeedback, setMessageFeedback] = useState('')
+  const [showInternalComposer, setShowInternalComposer] = useState(false)
+  const [workspaceMembers, setWorkspaceMembers] = useState<Array<{ id: string; name: string; email: string; role: string }>>([])
+  const [internalRecipient, setInternalRecipient] = useState('')
+  const [internalMessage, setInternalMessage] = useState('')
+  const [whatsAppConfigured, setWhatsAppConfigured] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    getWhatsAppConnectionStatus().then((status) => setWhatsAppConfigured(status.configured))
+  }, [])
 
   const selectedConversation = initialConversations.find((c) => c.id === selectedId) ?? initialConversations[0]
 
@@ -1115,15 +1124,48 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
   function handleSendReply() {
     const text = replyText.trim()
     if (!text || !selectedConversation || isPending) return
+    if (selectedConversation.channel.toLowerCase() === 'email') {
+      setMessageFeedback('Use the Email workspace to send a provider-backed reply with the correct subject and thread headers.')
+      return
+    }
     startTransition(async () => {
       setMessageFeedback('')
-      const result = await sendConversationReply(selectedConversation.id, text)
+      const result = selectedConversation.channel.toLowerCase() === 'whatsapp'
+        ? await sendWhatsAppConversationReply(selectedConversation.id, selectedConversation.contactPhone || '', text)
+        : await sendConversationReply(selectedConversation.id, text)
       if ('error' in result && result.error) {
         setMessageFeedback(String(result.error))
         return
       }
       setReplyText('')
       setMessageFeedback('Reply sent through the Online2Day API.')
+      router.refresh()
+    })
+  }
+
+  async function openInternalComposer() {
+    setShowInternalComposer(true)
+    setMessageFeedback('')
+    const result = await getWorkspaceMembers()
+    if ('error' in result && result.error) {
+      setMessageFeedback(String(result.error))
+      return
+    }
+    setWorkspaceMembers(result.members || [])
+    setInternalRecipient((current) => current || result.members?.[0]?.id || '')
+  }
+
+  function createInternalConversation() {
+    if (!internalRecipient || !internalMessage.trim() || isPending) return
+    startTransition(async () => {
+      const result = await startInternalConversation(internalRecipient, internalMessage)
+      if ('error' in result && result.error) {
+        setMessageFeedback(String(result.error))
+        return
+      }
+      setShowInternalComposer(false)
+      setInternalMessage('')
+      setMessageFeedback('Private workspace conversation created.')
       router.refresh()
     })
   }
@@ -1156,6 +1198,9 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
   function channelLabel(channel: string) {
     const c = channel?.toLowerCase() || ''
     if (c.includes('email')) return 'Email'
+    if (c.includes('whatsapp')) return 'WhatsApp'
+    if (c.includes('internal')) return 'Internal'
+    if (c.includes('support')) return 'Support'
     if (c.includes('chat') || c.includes('web')) return 'Web chat'
     if (c.includes('phone')) return 'Phone'
     return channel || 'Chat'
@@ -1170,6 +1215,7 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
           <strong>{stats.total} conversation{stats.total !== 1 ? 's' : ''}</strong>
           {stats.unread > 0 && <span className={cx(styles.pill, styles.pillRed)}>{stats.unread} unread</span>}
           {stats.high > 0 && <span className={cx(styles.pill, styles.pillYellow)}>{stats.high} urgent</span>}
+          <button type="button" className={styles.buttonPrimary} onClick={() => void openInternalComposer()}><UserPlus size={14} /> New internal</button>
         </div>
 
         <div className={styles.toolbar}>
@@ -1196,7 +1242,7 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
                   <strong>{c.name}</strong>
                   <span className={styles.convTime}>{c.time}</span>
                 </div>
-                <div className={styles.convCompany}>{c.company}</div>
+                <div className={styles.convCompany}>{c.company} · {channelLabel(c.channel)}</div>
                 <div className={styles.convPreview}>{c.preview}</div>
               </div>
               <div className={styles.convBadges}>
@@ -1262,7 +1308,7 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  disabled={isPending}
+                  disabled={isPending || selectedConversation.channel.toLowerCase() === 'email'}
                   rows={3}
                 />
               </div>
@@ -1273,11 +1319,13 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
                 <button
                   className={styles.buttonPrimary}
                   onClick={handleSendReply}
-                  disabled={isPending || !replyText.trim()}
+                  disabled={isPending || !replyText.trim() || selectedConversation.channel.toLowerCase() === 'email' || (selectedConversation.channel.toLowerCase() === 'whatsapp' && !whatsAppConfigured)}
                 >
                   <Send size={14} />{isPending ? 'Sending...' : 'Send'}
                 </button>
               </div>
+              {selectedConversation.channel.toLowerCase() === 'whatsapp' && !whatsAppConfigured ? <div className={styles.inlineFeedback} role="status">WhatsApp history is visible, but sending is disabled until Meta Cloud API credentials and the signed webhook are configured.</div> : null}
+              {selectedConversation.channel.toLowerCase() === 'email' ? <div className={styles.inlineFeedback} role="status">Email replies require provider threading. <Link href="/dashboard/emails">Open the Email workspace</Link> to reply safely.</div> : null}
               {messageFeedback ? <div className={styles.inlineFeedback} role="status">{messageFeedback}</div> : null}
             </div>
           </>
@@ -1333,6 +1381,22 @@ function MessagesSection({ initialConversations = [] }: { initialConversations?:
           </RightPanel>
         </div>
       )}
+      {showInternalComposer ? (
+        <div className={styles.modalOverlay} onClick={(event) => event.target === event.currentTarget && setShowInternalComposer(false)}>
+          <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="internal-message-title">
+            <header className={styles.modalHeader}>
+              <div><h2 id="internal-message-title">New internal conversation</h2><p>Only active licensed workspace members are available.</p></div>
+              <button className={styles.modalClose} onClick={() => setShowInternalComposer(false)} aria-label="Close"><X size={18} /></button>
+            </header>
+            <div className={styles.modalBody}>
+              <label className={styles.formRow}><span>Workspace member</span><select className={styles.formInput} value={internalRecipient} onChange={(event) => setInternalRecipient(event.target.value)}><option value="">Choose a member</option>{workspaceMembers.map((member) => <option key={member.id} value={member.id}>{member.name} · {member.role}</option>)}</select></label>
+              <label className={styles.formRow}><span>Message</span><textarea className={styles.formTextarea} value={internalMessage} onChange={(event) => setInternalMessage(event.target.value)} rows={6} maxLength={5000} placeholder="Write a private workspace message…" /></label>
+              {!workspaceMembers.length ? <p className={styles.subtle}>No other licensed accounts have completed sign-up yet.</p> : null}
+            </div>
+            <footer className={styles.modalFooter}><button className={styles.btnSecondary} onClick={() => setShowInternalComposer(false)}>Cancel</button><button className={styles.btnPrimary} onClick={createInternalConversation} disabled={!internalRecipient || !internalMessage.trim() || isPending}>{isPending ? 'Starting…' : 'Start conversation'}</button></footer>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }

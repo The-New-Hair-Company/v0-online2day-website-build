@@ -1,6 +1,6 @@
 import { buildApiHeaders } from './request-headers'
 
-const API_BASE = process.env.DOTNET_API_URL ?? 'https://online2dayapi.fly.dev'
+const API_BASE = process.env.COMPANY_PLATFORM_API_URL ?? process.env.DOTNET_API_URL ?? 'https://online2dayapi.fly.dev'
 
 // ── Shared fetch helpers ──────────────────────────────────────────────────────
 
@@ -266,6 +266,8 @@ export interface ConversationDto {
   id: string
   lead_id: string | null
   contact_name: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
   company: string | null
   channel: string | null
   status: string | null
@@ -281,12 +283,70 @@ export interface ConversationDto {
     id: string
     conversation_user_id: string | null
     sender_id: string | null
+    recipient_id?: string | null
+    sender_type?: string | null
+    channel?: string | null
     content: string | null
     is_read: boolean | null
+    delivery_status?: string | null
+    external_provider_id?: string | null
+    external_status?: string | null
     created_at: string
     message_type: string | null
     attachment_label: string | null
+    attachment_url?: string | null
   }>
+}
+
+export type SiteBrandingTokens = {
+  background: string
+  surface: string
+  surfaceAlt: string
+  text: string
+  muted: string
+  primary: string
+  primaryText: string
+  primaryHover: string
+  border: string
+}
+
+export type SiteBrandingDto = {
+  light: SiteBrandingTokens
+  dark: SiteBrandingTokens
+  updatedAt?: string
+}
+
+export type MessagingMessageDto = {
+  id: string
+  conversationId: string | null
+  senderId: string | null
+  recipientId: string | null
+  senderType: string
+  channel: string
+  content: string
+  isMine: boolean
+  isRead: boolean
+  deliveryStatus: string
+  externalProviderId: string | null
+  externalStatus: string | null
+  attachmentLabel: string | null
+  attachmentUrl: string | null
+  createdAt: string
+}
+
+export type MyConversationDto = {
+  id: string
+  name: string
+  company: string | null
+  channel: string
+  status: string
+  priority: string
+  unread: number
+  preview: string
+  lastMessageAt: string | null
+  contactEmail: string | null
+  contactPhone: string | null
+  messages: MessagingMessageDto[]
 }
 
 export interface SiteRequestDto {
@@ -810,6 +870,77 @@ export const dashboardWorkspaceApi = {
   },
 }
 
+export const siteBrandingApi = {
+  get(): Promise<SiteBrandingDto | null> {
+    return publicFetch<SiteBrandingDto | null>('/api/v1/online2day/site-branding')
+  },
+
+  update(token: string, branding: SiteBrandingDto): Promise<void> {
+    return apiFetch<void>('/api/v1/online2day/site-branding', token, {
+      method: 'PUT', body: JSON.stringify(branding),
+    })
+  },
+}
+
+export const messagingApi = {
+  conversations(token: string): Promise<MyConversationDto[]> {
+    return apiFetch<MyConversationDto[]>('/api/v1/online2day/me/conversations', token)
+  },
+
+  ensureSupport(token: string): Promise<{ conversationId: string }> {
+    return apiFetch<{ conversationId: string }>('/api/v1/online2day/me/support', token, { method: 'POST', body: '{}' })
+  },
+
+  reply(token: string, conversationId: string, content: string): Promise<MessagingMessageDto> {
+    return apiFetch<MessagingMessageDto>(`/api/v1/online2day/my-conversations/${conversationId}/reply`, token, {
+      method: 'POST', body: JSON.stringify({ content }),
+    })
+  },
+
+  markRead(token: string, conversationId: string): Promise<{ success: boolean }> {
+    return apiFetch(`/api/v1/online2day/my-conversations/${conversationId}/read`, token, { method: 'POST', body: '{}' })
+  },
+
+  members(token: string): Promise<Array<{ id: string; name: string; email: string; role: string }>> {
+    return apiFetch('/api/v1/online2day/workspace-members', token)
+  },
+
+  startInternal(token: string, recipientId: string, content: string): Promise<{ conversationId: string; message: MessagingMessageDto }> {
+    return apiFetch('/api/v1/online2day/internal-conversations', token, {
+      method: 'POST', body: JSON.stringify({ recipientId, content }),
+    })
+  },
+
+  recipients(token: string): Promise<Array<{ id: string; email: string; name: string; role: string }>> {
+    return apiFetch('/api/v1/online2day/message-recipients', token)
+  },
+
+  sendToUser(token: string, recipientId: string, content: string): Promise<MessagingMessageDto> {
+    return apiFetch(`/api/v1/online2day/users/${recipientId}/messages`, token, { method: 'POST', body: JSON.stringify({ content }) })
+  },
+
+  whatsappStatus(token: string): Promise<{ configured: boolean; provider: string }> {
+    return apiFetch('/api/v1/online2day/whatsapp/status', token)
+  },
+
+  sendWhatsApp(token: string, conversationId: string, to: string, content: string): Promise<MessagingMessageDto> {
+    return apiFetch(`/api/v1/online2day/conversations/${conversationId}/whatsapp`, token, {
+      method: 'POST', body: JSON.stringify({ to, content }),
+    })
+  },
+}
+
+export type UserNotificationDto = { id: string; user_id: string; title: string; detail: string | null; source: string | null; severity: string | null; read_at: string | null; created_at: string }
+
+export const notificationApi = {
+  list(token: string): Promise<UserNotificationDto[]> { return apiFetch('/api/v1/online2day/me/notifications', token) },
+  create(token: string, input: { userId?: string; title: string; detail?: string; source?: string; severity?: 'info' | 'warning' | 'critical' }): Promise<UserNotificationDto> {
+    return apiFetch('/api/v1/online2day/me/notifications', token, { method: 'POST', body: JSON.stringify(input) })
+  },
+  markAllRead(token: string): Promise<{ success: boolean }> { return apiFetch('/api/v1/online2day/me/notifications/read', token, { method: 'PATCH', body: '{}' }) },
+  markRead(token: string, id: string): Promise<{ success: boolean }> { return apiFetch(`/api/v1/online2day/me/notifications/${id}/read`, token, { method: 'PATCH', body: '{}' }) },
+}
+
 // ── Lead Tasks API ────────────────────────────────────────────────────────────
 
 export const tasksApi = {
@@ -997,8 +1128,18 @@ export interface BlogPostDto {
   readTime?: number | null
   isPublished: boolean
   publishedAt?: string | null
+  publishStatus: 'draft' | 'scheduled' | 'published' | 'archived'
+  scheduledAt?: string | null
+  archivedAt?: string | null
   seoTitle?: string | null
   seoDesc?: string | null
+  canonicalUrl?: string | null
+  focusKeyword?: string | null
+  ogImageUrl?: string | null
+  coverAltText?: string | null
+  ogTitle?: string | null
+  ogDescription?: string | null
+  noindex?: boolean
   createdAt: string
   updatedAt?: string | null
 }
@@ -1016,6 +1157,13 @@ export interface BlogPostWriteDto {
   readTime?: number | null
   seoTitle?: string | null
   seoDesc?: string | null
+  canonicalUrl?: string | null
+  focusKeyword?: string | null
+  ogImageUrl?: string | null
+  coverAltText?: string | null
+  ogTitle?: string | null
+  ogDescription?: string | null
+  noindex?: boolean
 }
 
 // Public — no token, cached at edge for 5 min
@@ -1058,6 +1206,14 @@ export const blogAdminApi = {
       method: 'PATCH',
       body: JSON.stringify({ publish }),
     })
+  },
+
+  setLifecycle(token: string, id: string, data: { status: 'draft' | 'published' | 'archived' } | { status: 'scheduled'; scheduledAt: string }): Promise<void> {
+    return apiFetch<void>(`/api/v1/admin/blog/${id}/lifecycle`, token, { method: 'PATCH', body: JSON.stringify(data) })
+  },
+
+  createMediaUpload(token: string, data: { filename: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; sizeBytes: number }): Promise<{ storagePath: string; uploadUrl: string; publicUrl: string; expiresIn: number }> {
+    return apiFetch('/api/v1/admin/blog/media/uploads', token, { method: 'POST', body: JSON.stringify(data) })
   },
 
   delete(token: string, id: string): Promise<void> {

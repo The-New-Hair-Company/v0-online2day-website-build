@@ -6,6 +6,8 @@ import { z } from 'zod'
 import { registerPlatformRoutes } from './platform-routes.js'
 import { registerMediaRoutes } from './media-routes.js'
 import { registerCompatRoutes } from './compat-routes.js'
+import { registerCommunicationRoutes } from './communication-routes.js'
+import { createDistributedRateLimitStore, rateLimitIdentity } from './distributed-rate-limit.js'
 
 const required = (name: string) => {
   const value = process.env[name]?.trim()
@@ -26,6 +28,9 @@ const config = {
   siteUrl: (process.env.SITE_URL || 'https://www.online2day.com').replace(/\/$/, ''),
   emailFrom: process.env.EMAIL_FROM?.trim() || 'Online2Day <hello@online2day.com>',
   emailReplyTo: process.env.EMAIL_REPLY_TO?.trim() || 'hello@online2day.com',
+  whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN?.trim() || '',
+  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() || '',
+  whatsappApiVersion: process.env.WHATSAPP_API_VERSION?.trim() || 'v23.0',
   hubspotOwnerEmail: process.env.HUBSPOT_OWNER_EMAIL?.trim().toLowerCase(),
   hubspotDealPipeline: process.env.HUBSPOT_DEAL_PIPELINE || 'default',
   hubspotNewEnquiryStage: process.env.HUBSPOT_NEW_ENQUIRY_STAGE || 'appointmentscheduled',
@@ -51,10 +56,21 @@ await app.register(cors, {
   maxAge: 3600,
 })
 
+const DistributedRateLimitStore = createDistributedRateLimitStore(async (keyHash, windowMs) => {
+  const result = await supabaseFetch<{ current: number; ttl: number }>('rpc/consume_rate_limit', {
+    method: 'POST', body: JSON.stringify({ p_key_hash: keyHash, p_window_ms: windowMs }),
+  })
+  return result
+})
+
 await app.register(rateLimit, {
   global: true,
   max: 300,
   timeWindow: '1 minute',
+  store: DistributedRateLimitStore,
+  skipOnError: false,
+  keyGenerator: (request) => rateLimitIdentity(request.ip, request.headers.authorization),
+  errorResponseBuilder: (_request, context) => ({ statusCode: 429, error: 'Too Many Requests', message: 'Request limit exceeded.', retryAfterSeconds: Math.max(1, Math.ceil(context.ttl / 1000)) }),
 })
 
 app.addHook('onSend', async (_request, reply, payload) => {
@@ -69,6 +85,7 @@ const jwks = createRemoteJWKSet(new URL(`${config.supabaseIssuer}/.well-known/jw
 })
 const authenticatedUsers = new WeakMap<FastifyRequest, Record<string, unknown>>()
 const authorisedAdmins = new WeakSet<FastifyRequest>()
+const authorisedWorkspaceMembers = new WeakSet<FastifyRequest>()
 
 async function requireSupabaseUser(request: FastifyRequest) {
   const cached = authenticatedUsers.get(request)
@@ -109,6 +126,20 @@ async function requireSupabaseAdmin(request: FastifyRequest) {
     if (licensed[0]?.role === 'admin' && licensed[0]?.status === 'active') { authorisedAdmins.add(request); return user }
   }
   throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
+}
+
+async function requireWorkspaceMember(request: FastifyRequest) {
+  const user = await requireSupabaseUser(request)
+  if (authorisedWorkspaceMembers.has(request) || authorisedAdmins.has(request)) return user
+  const email = typeof user.email === 'string' ? user.email.trim().toLowerCase() : ''
+  if (!email) throw Object.assign(new Error('A verified workspace email is required.'), { statusCode: 403 })
+  const licensed = await supabaseFetch<Array<{ status: string | null }>>(
+    `licensed_users?email=eq.${encodeURIComponent(email)}&status=eq.active&select=status&limit=1`,
+    { headers: { Accept: 'application/json' } },
+  )
+  if (!licensed[0]) throw Object.assign(new Error('This account is not an active workspace member.'), { statusCode: 403 })
+  authorisedWorkspaceMembers.add(request)
+  return user
 }
 
 function unauthorized() {
@@ -600,10 +631,24 @@ registerMediaRoutes(app, {
 registerCompatRoutes(app, {
   requireAdmin: requireSupabaseAdmin,
   supabaseFetch,
+  supabaseStorageFetch,
+  supabaseUrl: config.supabaseUrl,
 })
 
-app.get('/health/live', async () => ({ status: 'Healthy' }))
-app.get('/health/ready', async (_request, reply) => {
+registerCommunicationRoutes(app, {
+  requireUser: requireSupabaseUser,
+  requireAdmin: requireSupabaseAdmin,
+  requireWorkspaceMember,
+  requireServerKey,
+  supabaseFetch,
+  requestJson,
+  whatsappAccessToken: config.whatsappAccessToken,
+  whatsappPhoneNumberId: config.whatsappPhoneNumberId,
+  whatsappApiVersion: config.whatsappApiVersion,
+})
+
+app.get('/health/live', { config: { rateLimit: false } }, async () => ({ status: 'Healthy' }))
+app.get('/health/ready', { config: { rateLimit: false } }, async (_request, reply) => {
   const started = performance.now()
   const response = await fetch(new URL('/health/ready', config.coreApiUrl), { signal: AbortSignal.timeout(5_000) }).catch(() => null)
   if (!response?.ok) return reply.code(503).send({ status: 'Unhealthy', coreApi: false })
@@ -1029,67 +1074,24 @@ app.post('/api/v1/online2day/email-events', {
   config: { rateLimit: { max: 240, timeWindow: '1 minute' } },
 }, async (request, reply) => {
   const body = emailEventSchema.parse(request.body)
-  const pattern = encodeURIComponent(`*:${body.emailId}`)
-  const records = await supabaseFetch<Array<{
-    id: string
-    template_id: string | null
-    status: string | null
-    opened_at: string | null
-    clicked_at: string | null
-  }>>(
-    `emails?status=like.${pattern}&select=id,template_id,status,opened_at,clicked_at&limit=1`,
-    { headers: { Accept: 'application/json' } },
-  )
-  const record = records[0]
-  if (!record) return reply.code(202).send({ accepted: true, matched: false })
-
-  const occurredAt = body.createdAt || new Date().toISOString()
-  const eventState = body.eventType.replace('email.', '')
-  const stateRank: Record<string, number> = {
-    sent: 0, delivered: 1, delivery_delayed: 1, opened: 2, clicked: 3,
-    bounced: 4, complained: 4, failed: 4, suppressed: 4,
-  }
-  const currentState = String(record.status || 'sent').split(':')[0] || 'sent'
-  const patch: Record<string, unknown> = {}
-  if ((stateRank[eventState] ?? 0) >= (stateRank[currentState] ?? 0)) {
-    patch.status = `${eventState}:${body.emailId}`
-  }
-  const firstOpen = body.eventType === 'email.opened' && !record.opened_at
-  const firstClick = body.eventType === 'email.clicked' && !record.clicked_at
-  if (firstOpen) patch.opened_at = occurredAt
-  if (firstClick) patch.clicked_at = occurredAt
-
-  if (Object.keys(patch).length > 0) {
-    await supabaseFetch(`emails?id=eq.${encodeURIComponent(record.id)}`, {
-      method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(patch),
-    })
-  }
-
-  if (record.template_id && (firstOpen || firstClick)) {
-    const templates = await supabaseFetch<Array<{ open_count: number | null; click_count: number | null }>>(
-      `email_templates?id=eq.${encodeURIComponent(record.template_id)}&select=open_count,click_count&limit=1`,
-      { headers: { Accept: 'application/json' } },
-    )
-    const template = templates[0]
-    if (template) {
-      await supabaseFetch(`email_templates?id=eq.${encodeURIComponent(record.template_id)}`, {
-        method: 'PATCH',
-        headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({
-          ...(firstOpen ? { open_count: Math.max(0, template.open_count || 0) + 1 } : {}),
-          ...(firstClick ? { click_count: Math.max(0, template.click_count || 0) + 1 } : {}),
-          updated_at: new Date().toISOString(),
-        }),
-      })
-    }
-  }
-  return { accepted: true, matched: true, eventId: body.eventId }
+  const result = await supabaseFetch<Record<string, unknown>>('rpc/record_email_provider_event', {
+    method: 'POST',
+    body: JSON.stringify({
+      p_provider: 'resend',
+      p_provider_event_id: body.eventId,
+      p_provider_email_id: body.emailId,
+      p_event_type: body.eventType,
+      p_occurred_at: body.createdAt || new Date().toISOString(),
+      p_metadata: {},
+    }),
+  })
+  return reply.code(result.matched === false ? 202 : 200).send({ accepted: true, eventId: body.eventId, ...result })
 })
 
 app.get('/api/v1/online2day/conversations', {
   preHandler: requireSupabaseAdmin,
 }, async () => supabaseFetch<Array<Record<string, unknown>>>(
-  'conversations?select=id,lead_id,contact_name,company,channel,status,priority,score,unread_count,last_message_preview,last_message_at,resolved_at,created_at,updated_at,messages(id,conversation_user_id,sender_id,content,is_read,created_at,message_type,attachment_label)&order=last_message_at.desc&limit=200',
+  'conversations?select=id,lead_id,contact_name,contact_email,contact_phone,company,channel,status,priority,score,unread_count,last_message_preview,last_message_at,resolved_at,created_at,updated_at,messages(id,conversation_user_id,sender_id,recipient_id,sender_type,channel,content,is_read,delivery_status,external_provider_id,external_status,created_at,message_type,attachment_label,attachment_url)&order=last_message_at.desc&limit=200&messages.order=created_at.asc&messages.limit=250',
   { headers: { Accept: 'application/json' } },
 ))
 
@@ -1099,8 +1101,8 @@ app.post('/api/v1/online2day/conversations/:id/reply', {
   const user = await requireSupabaseAdmin(request)
   const params = z.object({ id: z.string().uuid() }).parse(request.params)
   const body = z.object({ content: z.string().trim().min(1).max(5_000) }).parse(request.body)
-  const conversations = await supabaseFetch<Array<{ id: string; status: string | null }>>(
-    `conversations?id=eq.${encodeURIComponent(params.id)}&select=id,status&limit=1`,
+  const conversations = await supabaseFetch<Array<{ id: string; status: string | null; channel: string | null }>>(
+    `conversations?id=eq.${encodeURIComponent(params.id)}&select=id,status,channel&limit=1`,
     { headers: { Accept: 'application/json' } },
   )
   if (!conversations[0]) return reply.code(404).send({ error: 'Conversation not found.' })
@@ -1108,15 +1110,24 @@ app.post('/api/v1/online2day/conversations/:id/reply', {
     `messages?conversation_id=eq.${encodeURIComponent(params.id)}&select=conversation_user_id&order=created_at.desc&limit=1`,
     { headers: { Accept: 'application/json' } },
   )
-  const conversationUserId = previousMessages[0]?.conversation_user_id || String(user.sub)
+  const conversationUserId = previousMessages[0]?.conversation_user_id || null
+  let recipientId = conversationUserId
+  if (String(conversations[0].channel || '').toLowerCase() === 'internal') {
+    const participants = await supabaseFetch<Array<{ user_id: string }>>(`conversation_participants?conversation_id=eq.${encodeURIComponent(params.id)}&user_id=neq.${encodeURIComponent(String(user.sub))}&select=user_id&limit=1`)
+    recipientId = participants[0]?.user_id || null
+  }
   const now = new Date().toISOString()
   await supabaseFetch('messages', {
     method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({
       conversation_id: params.id,
       conversation_user_id: conversationUserId,
       sender_id: String(user.sub),
+      recipient_id: recipientId,
+      sender_type: 'agent',
+      channel: String(conversations[0].channel || 'Web').toLowerCase() === 'internal' ? 'internal' : String(conversations[0].channel || 'Web').toLowerCase() === 'support' ? 'support' : 'web',
       content: body.content,
       is_read: true,
+      delivery_status: 'sent',
       message_type: 'text',
     }),
   })

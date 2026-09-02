@@ -10,6 +10,7 @@ import {
   videoAssetsApi,
   emailWorkspaceApi,
   dashboardWorkspaceApi,
+  messagingApi,
   type VideoAssetDto,
 } from '@/lib/api/client'
 import { platformServerFetch } from '@/lib/api/platform-server'
@@ -340,6 +341,15 @@ export async function getConversations(): Promise<ConversationRecord[]> {
   const token = await getToken()
   if (!token) return []
   try {
+    if (!(await getAdminStatus())) {
+      const own = await messagingApi.conversations(token)
+      return own.map((conversation): ConversationRecord => ({
+        id: conversation.id, name: conversation.name, company: conversation.company || 'Online2Day workspace',
+        preview: conversation.preview, time: relativeTime(conversation.lastMessageAt), priority: (conversation.priority as 'High' | 'Medium' | 'Low') || 'Medium',
+        score: 0, channel: conversation.channel, status: conversation.status, contactEmail: conversation.contactEmail || '', contactPhone: conversation.contactPhone || '', unread: conversation.unread,
+        messages: conversation.messages.map((message) => ({ id: message.id, sender: message.isMine ? 'agent' : 'client', text: message.content, time: relativeTime(message.createdAt), attachmentLabel: message.attachmentLabel || undefined, deliveryStatus: message.deliveryStatus, channel: message.channel })),
+      }))
+    }
     const data = await dashboardWorkspaceApi.conversations(token)
     return data.map((conv): ConversationRecord => ({
     id: conv.id,
@@ -351,15 +361,19 @@ export async function getConversations(): Promise<ConversationRecord[]> {
     score: conv.score || 0,
     channel: conv.channel || 'Web',
     status: conv.status || 'Open',
+    contactEmail: conv.contact_email || '',
+    contactPhone: conv.contact_phone || '',
     unread: conv.unread_count || 0,
     messages: (conv.messages || [])
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
       .map((m) => ({
       id: m.id,
-      sender: m.conversation_user_id === m.sender_id ? 'client' as const : 'agent' as const,
+      sender: m.sender_type === 'visitor' || m.sender_type === 'provider' || (m.conversation_user_id && m.conversation_user_id === m.sender_id) ? 'client' as const : 'agent' as const,
       text: m.content || '',
       time: relativeTime(m.created_at),
       attachmentLabel: m.attachment_label || undefined,
+      deliveryStatus: m.delivery_status || undefined,
+      channel: m.channel || undefined,
     })),
     }))
   } catch {

@@ -6,8 +6,9 @@ import { Plus, FileText, Eye, EyeOff, Calendar } from 'lucide-react'
 export default async function AdminBlogPage() {
   const posts = await listAllBlogPosts().catch(() => [])
 
-  const published = posts.filter(p => p.isPublished).length
-  const drafts = posts.filter(p => !p.isPublished).length
+  const published = posts.filter(p => p.publishStatus === 'published').length
+  const scheduled = posts.filter(p => p.publishStatus === 'scheduled').length
+  const drafts = posts.filter(p => p.publishStatus === 'draft').length
 
   return (
     <div className="p-6 md:p-8 max-w-5xl mx-auto">
@@ -16,7 +17,7 @@ export default async function AdminBlogPage() {
         <div>
           <h1 className="text-2xl font-bold">Blog Posts</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {published} published · {drafts} draft{drafts !== 1 ? 's' : ''}
+            {published} published · {scheduled} scheduled · {drafts} draft{drafts !== 1 ? 's' : ''}
           </p>
         </div>
         <Link
@@ -64,9 +65,9 @@ export default async function AdminBlogPage() {
                         {post.category}
                       </span>
                     )}
-                    {!post.isPublished && (
+                    {post.publishStatus !== 'published' && (
                       <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground border border-border flex-shrink-0">
-                        Draft
+                        {post.publishStatus.charAt(0).toUpperCase() + post.publishStatus.slice(1)}
                       </span>
                     )}
                   </div>
@@ -80,6 +81,7 @@ export default async function AdminBlogPage() {
                         })}
                       </span>
                     )}
+                    {post.publishStatus === 'scheduled' && post.scheduledAt ? <span>Goes live {new Date(post.scheduledAt).toLocaleString('en-GB')}</span> : null}
                     {post.readTime && <span className="flex-shrink-0">{post.readTime} min read</span>}
                   </div>
                 </div>

@@ -46,6 +46,18 @@ export async function togglePublish(id: string, publish: boolean): Promise<void>
   revalidatePath('/dashboard/blog')
 }
 
+export async function setBlogLifecycle(id: string, data: { status: 'draft' | 'published' | 'archived' } | { status: 'scheduled'; scheduledAt: string }): Promise<void> {
+  const token = await getToken()
+  await blogAdminApi.setLifecycle(token, id, data)
+  revalidatePath('/blog')
+  revalidatePath('/dashboard/blog')
+}
+
+export async function createBlogMediaUpload(file: { filename: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; sizeBytes: number }) {
+  const token = await getToken()
+  return blogAdminApi.createMediaUpload(token, file)
+}
+
 export async function deleteBlogPost(id: string): Promise<void> {
   const token = await getToken()
   await blogAdminApi.delete(token, id)

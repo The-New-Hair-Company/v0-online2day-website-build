@@ -1,11 +1,12 @@
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { ArrowLeft, Calendar, Clock, Tag } from 'lucide-react'
 import { blogPublicApi } from '@/lib/api/client'
+import { PublicChatWidget } from '@/components/chat/PublicChatWidget'
 
 const SITE_URL = 'https://www.online2day.com'
 export const dynamic = 'force-dynamic'
@@ -21,17 +22,20 @@ export async function generateMetadata({
 
   const title = post.seoTitle || `${post.title} | online2day`
   const description = post.seoDesc || post.excerpt || 'An article from the online2day team.'
+  const socialTitle = post.ogTitle || post.seoTitle || post.title
+  const socialDescription = post.ogDescription || description
   const url = `${SITE_URL}/blog/${post.slug}`
-  const images = post.coverUrl
-    ? [{ url: post.coverUrl, width: 1200, height: 630, alt: post.title }]
+  const socialImage = post.ogImageUrl || post.coverUrl
+  const images = socialImage
+    ? [{ url: socialImage, width: 1200, height: 630, alt: post.title }]
     : []
 
   return {
     title,
     description,
     openGraph: {
-      title: post.seoTitle || post.title,
-      description,
+      title: socialTitle,
+      description: socialDescription,
       type: 'article',
       url,
       publishedTime: post.publishedAt ?? undefined,
@@ -42,11 +46,12 @@ export async function generateMetadata({
     },
     twitter: {
       card: post.coverUrl ? 'summary_large_image' : 'summary',
-      title: post.seoTitle || post.title,
-      description,
-      images: post.coverUrl ? [post.coverUrl] : [],
+      title: socialTitle,
+      description: socialDescription,
+      images: socialImage ? [socialImage] : [],
     },
-    alternates: { canonical: url },
+    alternates: { canonical: post.canonicalUrl || url },
+    robots: post.noindex ? { index: false, follow: true } : { index: true, follow: true },
   }
 }
 
@@ -58,23 +63,41 @@ export default async function BlogPostPage({
   const { slug } = await params
   const post = await blogPublicApi.getBySlug(slug).catch(() => null)
   if (!post) notFound()
+  if (post.slug !== slug) redirect(`/blog/${post.slug}`)
 
-  const articleSchema = {
+  const allPosts = await blogPublicApi.listPublished().catch(() => [])
+  const relatedPosts = allPosts
+    .filter((candidate) => candidate.id !== post.id)
+    .map((candidate) => ({
+      post: candidate,
+      relevance: (candidate.category && candidate.category === post.category ? 2 : 0)
+        + candidate.tags.filter((tag) => post.tags.includes(tag)).length,
+    }))
+    .filter((candidate) => candidate.relevance > 0)
+    .sort((a, b) => b.relevance - a.relevance)
+    .slice(0, 3)
+    .map((candidate) => candidate.post)
+
+  const structuredData = {
     '@context': 'https://schema.org',
-    '@type': 'Article',
-    headline: post.title,
-    description: post.excerpt,
-    author: { '@type': 'Person', name: post.authorName },
-    publisher: {
-      '@type': 'Organization',
-      name: 'Online2Day',
-      url: SITE_URL,
-      logo: { '@type': 'ImageObject', url: `${SITE_URL}/logo.png` },
-    },
-    datePublished: post.publishedAt,
-    image: post.coverUrl,
-    url: `${SITE_URL}/blog/${post.slug}`,
-    keywords: post.tags.join(', '),
+    '@graph': [
+      {
+        '@type': 'BlogPosting', headline: post.title, description: post.excerpt,
+        author: { '@type': 'Person', name: post.authorName },
+        publisher: { '@type': 'Organization', name: 'Online2Day', url: SITE_URL, logo: { '@type': 'ImageObject', url: `${SITE_URL}/logo.png` } },
+        datePublished: post.publishedAt, dateModified: post.updatedAt || post.publishedAt,
+        image: post.coverUrl, mainEntityOfPage: `${SITE_URL}/blog/${post.slug}`,
+        keywords: post.tags.join(', '),
+      },
+      {
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Home', item: SITE_URL },
+          { '@type': 'ListItem', position: 2, name: 'Blog', item: `${SITE_URL}/blog` },
+          { '@type': 'ListItem', position: 3, name: post.title, item: `${SITE_URL}/blog/${post.slug}` },
+        ],
+      },
+    ],
   }
 
   const pubDate = post.publishedAt
@@ -87,14 +110,14 @@ export default async function BlogPostPage({
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, '\\u003c') }}
       />
       <Header />
       <main className="min-h-screen pt-24">
         <article>
           {post.coverUrl && (
             <div className="relative h-64 md:h-[480px] w-full">
-              <Image src={post.coverUrl} alt={post.title} fill className="object-cover" priority />
+              <Image src={post.coverUrl} alt={post.coverAltText || post.title} fill className="object-cover" priority />
               <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
             </div>
           )}
@@ -154,6 +177,19 @@ export default async function BlogPostPage({
                 </div>
               )}
 
+              {relatedPosts.length > 0 && (
+                <aside className="mt-12 border-t border-border pt-8" aria-labelledby="related-articles">
+                  <h2 id="related-articles" className="mb-4 text-xl font-bold">Related articles</h2>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {relatedPosts.map((related) => (
+                      <Link key={related.id} href={`/blog/${related.slug}`} className="rounded-xl border border-border bg-card p-4 text-sm font-semibold transition-colors hover:border-primary/50 hover:text-primary">
+                        {related.title}
+                      </Link>
+                    ))}
+                  </div>
+                </aside>
+              )}
+
               <div className="mt-14 rounded-xl border border-border bg-card p-6 flex items-start gap-4">
                 <div className="h-12 w-12 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center flex-shrink-0">
                   <span className="text-lg font-bold text-primary">
@@ -189,6 +225,7 @@ export default async function BlogPostPage({
         </article>
       </main>
       <Footer />
+      <PublicChatWidget />
     </>
   )
 }

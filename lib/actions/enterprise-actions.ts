@@ -1,6 +1,6 @@
 'use server'
 
-import { enterpriseApi, reportsApi, leadsApi } from '@/lib/api/client'
+import { enterpriseApi, reportsApi, leadsApi, notificationApi } from '@/lib/api/client'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
@@ -163,51 +163,28 @@ export type UserNotification = {
 }
 
 export async function getUserNotifications(): Promise<UserNotification[]> {
-  const supabase = await createClient()
-  const { data: auth } = await supabase.auth.getUser()
-  if (!auth.user) return []
-  const { data } = await supabase
-    .from('notifications').select('*').eq('user_id', auth.user.id)
-    .order('created_at', { ascending: false }).limit(50)
-  return (data || []).map((n: any) => ({ ...n, readAt: n.read_at ?? null, createdAt: n.created_at ?? new Date().toISOString() })) as UserNotification[]
+  try {
+    const token = await getToken()
+    return (await notificationApi.list(token)).map((notification) => ({ ...notification, readAt: notification.read_at, createdAt: notification.created_at }))
+  } catch { return [] }
 }
 
 export async function addUserNotification(input: { userId?: string; title: string; detail?: string; source?: string; severity?: string }) {
-  const supabase = await createClient()
-  let userId = input.userId
-  if (!userId) {
-    const { data: auth } = await supabase.auth.getUser()
-    userId = auth.user?.id
+  try {
+    const severity = input.severity === 'warning' || input.severity === 'critical' ? input.severity : 'info'
+    await notificationApi.create(await getToken(), { ...input, severity }); return { success: true }
   }
-  if (!userId) return { error: 'No user ID' }
-  const { error } = await supabase.from('notifications').insert({
-    user_id: userId,
-    title: input.title,
-    detail: input.detail || null,
-    source: input.source || 'system',
-    severity: input.severity || 'info',
-  })
-  if (error) return { error: error.message }
-  return { success: true }
+  catch (error) { return { error: error instanceof Error ? error.message : 'Notification could not be saved.' } }
 }
 
 export async function markAllNotificationsRead() {
-  const supabase = await createClient()
-  const { data: auth } = await supabase.auth.getUser()
-  if (!auth.user) return { error: 'Not authenticated' }
-  const { error } = await supabase
-    .from('notifications').update({ read_at: new Date().toISOString() })
-    .eq('user_id', auth.user.id).is('read_at', null)
-  if (error) return { error: error.message }
-  return { success: true }
+  try { await notificationApi.markAllRead(await getToken()); return { success: true } }
+  catch (error) { return { error: error instanceof Error ? error.message : 'Notifications could not be updated.' } }
 }
 
 export async function markNotificationRead(notificationId: string) {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from('notifications').update({ read_at: new Date().toISOString() }).eq('id', notificationId)
-  if (error) return { error: error.message }
-  return { success: true }
+  try { await notificationApi.markRead(await getToken(), notificationId); return { success: true } }
+  catch (error) { return { error: error instanceof Error ? error.message : 'Notification could not be updated.' } }
 }
 
 // ─── REPORT SNAPSHOTS ─────────────────────────────────────────────────────────

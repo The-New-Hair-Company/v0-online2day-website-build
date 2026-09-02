@@ -22,3 +22,14 @@ Optional HubSpot settings:
 - `HUBSPOT_OWNER_EMAIL`
 - `HUBSPOT_DEAL_PIPELINE`
 - `HUBSPOT_NEW_ENQUIRY_STAGE`
+
+Optional WhatsApp Cloud API settings (all are required before WhatsApp sending is enabled):
+
+- `WHATSAPP_ACCESS_TOKEN`
+- `WHATSAPP_PHONE_NUMBER_ID`
+- `WHATSAPP_API_VERSION` (defaults to `v23.0`)
+
+Configure Meta's callback URL as `https://www.online2day.com/api/webhooks/whatsapp`.
+The Vercel application validates Meta's signature before forwarding the event to
+this gateway, so `WHATSAPP_APP_SECRET` and `WHATSAPP_VERIFY_TOKEN` belong in
+Vercel rather than this service.

@@ -7,6 +7,8 @@ import AuthRecoveryHandler from '@/components/auth-recovery-handler'
 import { AccessibilitySettingsButton } from '@/components/accessibility-settings'
 import { SiteChrome } from '@/components/site-chrome'
 import { site } from '@/lib/site'
+import { siteBrandingApi } from '@/lib/api/client'
+import { brandingCss } from '@/lib/branding'
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.online2day.com'),
@@ -35,13 +37,16 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const branding = await siteBrandingApi.get().catch(() => null)
+
   return (
-    <html lang="en-GB" className="dark" suppressHydrationWarning>
+    <html lang="en-GB" className="dark" data-theme="dark" suppressHydrationWarning>
+      <head><style id="o2d-site-branding" dangerouslySetInnerHTML={{ __html: brandingCss(branding) }} /></head>
       <body className="font-sans antialiased">
         <Script src="/accessibility-init.js" strategy="beforeInteractive" />
         <AuthRecoveryHandler />

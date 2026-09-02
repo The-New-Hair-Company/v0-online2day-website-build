@@ -65,11 +65,14 @@ import {
   setPermissionMatrix,
   getReleaseNotesDraft,
   setReleaseNotesDraft,
+  getEnterpriseStateValue,
+  setEnterpriseStateValue,
   addUserNotification,
   type EnterpriseSnippet,
   type PermissionMatrixValue,
 } from '@/lib/actions/enterprise-actions'
 import { logAuditEntry, getAuditLog } from '@/lib/actions/audit-actions'
+import { getIntegrationStatus } from '@/app/actions/dashboard'
 
 type Category =
   | 'Calendar & meetings'
@@ -204,11 +207,10 @@ export function EnterpriseCommandCenter() {
   const [tasks, setTasks] = useState<TaskItem[]>([])
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([])
   const [notes, setNotes] = useState('Decision:\n\nRisk:\n\nNext step:\n')
-  const [workspaceStatus, setWorkspaceStatus] = useState('Review complete: 50 functional enterprise enhancements identified.')
+  const [workspaceStatus, setWorkspaceStatus] = useState('Enterprise workflows are loaded. Provider-backed checks run only when requested.')
   const [timerActive, setTimerActive] = useState(false)
   const [incidentVisible, setIncidentVisible] = useState(false)
-  const [healthScore, setHealthScore] = useState(82)
-  const [riskScore, setRiskScore] = useState(24)
+  const [healthScore, setHealthScore] = useState<number | null>(null)
   const [roi, setRoi] = useState(0)
   const [roiOpen, setRoiOpen] = useState(false)
   const [roiInputs, setRoiInputs] = useState({ leads: 40, convRate: 12, dealSize: 2800, hrsSaved: 5 })
@@ -245,6 +247,10 @@ export function EnterpriseCommandCenter() {
     getSharedSnippets().then(setSnippets)
     getPermissionMatrix().then((matrix) => setPermissionMatrixState(matrix.length ? matrix : defaultPermissionMatrix))
     getReleaseNotesDraft().then(setReleaseNotes)
+    getEnterpriseStateValue('shared_notes').then((value) => {
+      if (typeof value === 'string') setNotes(value)
+    })
+    getEnterpriseStateValue('incident_banner_visible').then((value) => setIncidentVisible(value === true))
     getAuditLog(18).then((rows) =>
       setAuditLog(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -285,7 +291,12 @@ export function EnterpriseCommandCenter() {
     const timeStr = newEventDate && newEventTime
       ? `${newEventDate}T${newEventTime}`
       : newEventTime || newEventDate || new Date().toISOString()
-    addEventOptimistic(newEventTitle.trim(), timeStr, newEventType)
+    try {
+      await addEventPersisted(newEventTitle.trim(), timeStr, newEventType)
+    } catch (error) {
+      setWorkspaceStatus(error instanceof Error ? error.message : 'The event could not be saved.')
+      return
+    }
     setNewEventTitle('')
     setNewEventDate('')
     setNewEventTime('')
@@ -293,10 +304,11 @@ export function EnterpriseCommandCenter() {
     setWorkspaceStatus(`Event "${newEventTitle.trim()}" added to the calendar.`)
   }
 
-  function handleDeleteEvent(id: string) {
+  async function handleDeleteEvent(id: string) {
+    const result = await deleteEnterpriseEvent(id)
+    if ('error' in result) throw new Error(result.error)
     setEvents((current) => current.filter((e) => e.id !== id))
-    deleteEnterpriseEvent(id)
-    addUserNotification({ title: 'Event removed', detail: 'A calendar event was deleted from the enterprise board.' })
+    await addUserNotification({ title: 'Event removed', detail: 'A calendar event was deleted from the enterprise board.' })
   }
 
   function record(action: string, detail: string) {
@@ -305,29 +317,31 @@ export function EnterpriseCommandCenter() {
     logAuditEntry(action, 'enterprise', undefined, detail)
   }
 
-  function markEnabled(change: EnterpriseChange) {
-    setEnabled((current) => {
-      if (current.includes(change.id)) return current
-      const next = [...current, change.id]
-      setEnabledFeatures(next)
-      return next
-    })
+  async function markEnabled(change: EnterpriseChange) {
+    if (!enabled.includes(change.id)) {
+      const next = [...enabled, change.id]
+      const result = await setEnabledFeatures(next)
+      if ('error' in result) throw new Error(result.error)
+      setEnabled(next)
+    }
     record(change.title, change.detail)
-    addUserNotification({ title: change.title, detail: change.detail })
+    await addUserNotification({ title: change.title, detail: change.detail })
   }
 
-  function addTaskOptimistic(title: string) {
-    const tempId = `temp-${Date.now()}`
-    setTasks((current) => [{ id: tempId, title, isDone: false }, ...current])
-    addEnterpriseTask(title)
-    addUserNotification({ title: 'Task created', detail: title })
+  async function addTaskPersisted(title: string) {
+    const result = await addEnterpriseTask(title)
+    if ('error' in result) throw new Error(result.error)
+    setTasks(await getEnterpriseTasks())
+    await addUserNotification({ title: 'Task created', detail: title })
   }
 
-  function addEventOptimistic(title: string, time: string, type: string, owner = '') {
-    const tempId = `temp-${Date.now()}`
-    setEvents((current) => [{ id: tempId, title, time, owner, type }, ...current])
-    addEnterpriseEvent(title, time, type)
-    addUserNotification({ title: 'Event created', detail: title })
+  async function addEventPersisted(title: string, time: string, type: string) {
+    const eventTime = /^\d{4}-\d{2}-\d{2}T/.test(time) ? new Date(time).toISOString() : new Date().toISOString()
+    const result = await addEnterpriseEvent(title, eventTime, type)
+    if ('error' in result) throw new Error(result.error)
+    const rows = await getEnterpriseEvents()
+    setEvents(rows.map((event) => ({ id: event.id, title: event.title, time: event.time, owner: '', type: event.type })))
+    await addUserNotification({ title: 'Event created', detail: title })
   }
 
   async function copyText(text: string, success: string) {
@@ -341,36 +355,35 @@ export function EnterpriseCommandCenter() {
     }
   }
 
-  function toggleFlag(id: string) {
-    setFeatureFlagsState((current) => {
-      const next = { ...current, [id]: !current[id] }
-      setFeatureFlags(next)
-      const enabledState = next[id] ? 'enabled' : 'disabled'
-      logAuditEntry('update', 'enterprise_feature_flag', id, enabledState)
-      toast({ title: `Flag ${enabledState}`, description: `${id} is now ${enabledState}.` })
-      return next
-    })
+  async function toggleFlag(id: string) {
+    const next = { ...featureFlags, [id]: !featureFlags[id] }
+    const result = await setFeatureFlags(next)
+    if ('error' in result) { toast({ title: 'Flag not changed', description: result.error, variant: 'destructive' }); return }
+    setFeatureFlagsState(next)
+    const enabledState = next[id] ? 'enabled' : 'disabled'
+    await logAuditEntry('update', 'enterprise_feature_flag', id, enabledState)
+    toast({ title: `Flag ${enabledState}`, description: `${id} is now ${enabledState}.` })
   }
 
-  function bumpSentiment(key: 'positive' | 'neutral' | 'blocked') {
-    setReplySentiment((current) => {
-      const next = { ...current, [key]: (current[key] || 0) + 1 }
-      setReplySentimentCounts(next)
-      logAuditEntry('update', 'enterprise_reply_sentiment', key, `count=${next[key]}`)
-      toast({ title: 'Sentiment updated', description: `${key} replies: ${next[key]}` })
-      return next
-    })
+  async function bumpSentiment(key: 'positive' | 'neutral' | 'blocked') {
+    const next = { ...replySentiment, [key]: (replySentiment[key] || 0) + 1 }
+    const result = await setReplySentimentCounts(next)
+    if ('error' in result) { toast({ title: 'Sentiment not updated', description: result.error, variant: 'destructive' }); return }
+    setReplySentiment(next)
+    await logAuditEntry('update', 'enterprise_reply_sentiment', key, `count=${next[key]}`)
+    toast({ title: 'Sentiment updated', description: `${key} replies: ${next[key]}` })
   }
 
-  function resetSentiment() {
+  async function resetSentiment() {
     const cleared = { positive: 0, neutral: 0, blocked: 0 }
+    const result = await setReplySentimentCounts(cleared)
+    if ('error' in result) { toast({ title: 'Sentiment not reset', description: result.error, variant: 'destructive' }); return }
     setReplySentiment(cleared)
-    setReplySentimentCounts(cleared)
-    logAuditEntry('reset', 'enterprise_reply_sentiment', 'all', 'counts reset')
+    await logAuditEntry('reset', 'enterprise_reply_sentiment', 'all', 'counts reset')
     toast({ title: 'Sentiment reset', description: 'All reply sentiment counters were reset.' })
   }
 
-  function addSnippet() {
+  async function addSnippet() {
     if (!snippetTitle.trim() || !snippetContent.trim()) {
       toast({ title: 'Missing content', description: 'Add both a title and content before saving a snippet.', variant: 'destructive' })
       return
@@ -384,33 +397,34 @@ export function EnterpriseCommandCenter() {
       },
       ...snippets,
     ]
+    const result = await setSharedSnippets(next)
+    if ('error' in result) { toast({ title: 'Snippet not saved', description: result.error, variant: 'destructive' }); return }
     setSnippets(next)
-    setSharedSnippets(next)
     setSnippetTitle('')
     setSnippetContent('')
-    logAuditEntry('create', 'enterprise_snippet', next[0].id, next[0].title)
+    await logAuditEntry('create', 'enterprise_snippet', next[0].id, next[0].title)
     toast({ title: 'Snippet saved', description: `"${next[0].title}" was added to shared snippets.` })
   }
 
-  function removeSnippet(id: string) {
+  async function removeSnippet(id: string) {
     const next = snippets.filter((item) => item.id !== id)
+    const result = await setSharedSnippets(next)
+    if ('error' in result) { toast({ title: 'Snippet not removed', description: result.error, variant: 'destructive' }); return }
     setSnippets(next)
-    setSharedSnippets(next)
-    logAuditEntry('delete', 'enterprise_snippet', id)
+    await logAuditEntry('delete', 'enterprise_snippet', id)
     toast({ title: 'Snippet removed', description: 'The snippet was deleted.' })
   }
 
-  function setPermission(role: string, key: keyof Omit<PermissionMatrixValue, 'role'>, value: boolean) {
-    setPermissionMatrixState((current) => {
-      const next = current.map((row) => row.role === role ? { ...row, [key]: value } : row)
-      setPermissionMatrix(next)
-      logAuditEntry('update', 'enterprise_permission_matrix', role, `${key}=${value}`)
-      toast({ title: 'Permission updated', description: `${role}: ${key} ${value ? 'enabled' : 'disabled'}.` })
-      return next
-    })
+  async function setPermission(role: string, key: keyof Omit<PermissionMatrixValue, 'role'>, value: boolean) {
+    const next = permissionMatrix.map((row) => row.role === role ? { ...row, [key]: value } : row)
+    const result = await setPermissionMatrix(next)
+    if ('error' in result) { toast({ title: 'Permission not changed', description: result.error, variant: 'destructive' }); return }
+    setPermissionMatrixState(next)
+    await logAuditEntry('update', 'enterprise_permission_matrix', role, `${key}=${value}`)
+    toast({ title: 'Permission updated', description: `${role}: ${key} ${value ? 'enabled' : 'disabled'}.` })
   }
 
-  function buildReleaseNotes() {
+  async function buildReleaseNotes() {
     const enabledSet = new Set(enabled)
     const lines = [
       `Release date: ${new Date().toLocaleDateString('en-GB')}`,
@@ -425,15 +439,17 @@ export function EnterpriseCommandCenter() {
       `Calendar events tracked: ${events.length}.`,
     ]
     const next = lines.join('\n')
+    const result = await setReleaseNotesDraft(next)
+    if ('error' in result) throw new Error(result.error)
     setReleaseNotes(next)
-    setReleaseNotesDraft(next)
     setReleaseNotesOpen(true)
     logAuditEntry('generate', 'enterprise_release_notes', undefined, `enabled_features=${enabledSet.size}`)
     toast({ title: 'Release notes generated', description: 'Draft created from enabled features and operations data.' })
   }
 
   async function runChange(change: EnterpriseChange) {
-    markEnabled(change)
+    try {
+      await markEnabled(change)
 
     if (change.id === 'internal-calendar') {
       setEventFormOpen(true)
@@ -441,7 +457,7 @@ export function EnterpriseCommandCenter() {
       return
     }
     if (change.id === 'discovery-event') {
-      addEventOptimistic('Discovery and scope review', '13:30', 'Discovery', 'Growth')
+      await addEventPersisted('Discovery and scope review', new Date().toISOString(), 'Discovery')
       setWorkspaceStatus('Discovery event added to the internal calendar.')
       return
     }
@@ -470,12 +486,12 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'availability-slots') {
-      addEventOptimistic('Open availability window', '16:00', 'Availability', 'Team')
+      await addEventPersisted('Open availability window', new Date().toISOString(), 'Availability')
       setWorkspaceStatus('Availability slot generated.')
       return
     }
     if (change.id === 'follow-up-task') {
-      addTaskOptimistic('Send follow-up summary after next meeting')
+      await addTaskPersisted('Send follow-up summary after next meeting')
       setWorkspaceStatus('Post-meeting follow-up task created.')
       return
     }
@@ -499,7 +515,7 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'screen-share') {
-      addTaskOptimistic('Open CRM context, proposal tab and video editor before sharing screen')
+      await addTaskPersisted('Open CRM context, proposal tab and video editor before sharing screen')
       setWorkspaceStatus('Screen-share checklist added.')
       return
     }
@@ -509,12 +525,13 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'recording-consent') {
-      addTaskOptimistic('Confirm recording consent before saving any call asset')
+      await addTaskPersisted('Confirm recording consent before saving any call asset')
       setWorkspaceStatus('Recording consent gate enabled.')
       return
     }
     if (change.id === 'participant-queue') {
-      setWorkspaceStatus('Participants queued: Sales, Delivery, Creative.')
+      await addTaskPersisted('Confirm the required participants before the next enterprise call')
+      setWorkspaceStatus('Participant confirmation task saved.')
       return
     }
     if (change.id === 'post-call-summary') {
@@ -523,22 +540,21 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'deal-health') {
-      setHealthScore((current) => Math.min(99, current + 7))
-      setWorkspaceStatus('Deal health score refreshed.')
+      setWorkspaceStatus('Open a lead record to calculate health from its real stage, engagement and next action.')
       return
     }
     if (change.id === 'sla-timer') {
       setTimerActive(true)
-      addTaskOptimistic('Respond to high-intent lead inside SLA window')
+      await addTaskPersisted('Respond to high-intent lead inside SLA window')
       return
     }
     if (change.id === 'forecast-scenario') {
-      setRoi(18400)
-      setWorkspaceStatus('Conservative forecast scenario created.')
+      setRoiOpen(true)
+      setWorkspaceStatus('Forecast model opened. Adjust real inputs before applying an estimate.')
       return
     }
     if (change.id === 'priority-matrix') {
-      addTaskOptimistic('Priority matrix: hot leads, build blockers, renewal watch, nurture lane')
+      await addTaskPersisted('Priority matrix: hot leads, build blockers, renewal watch, nurture lane')
       return
     }
     if (change.id === 'reply-sentiment') {
@@ -566,8 +582,11 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'incident-banner') {
-      setIncidentVisible((current) => !current)
-      setWorkspaceStatus('Internal incident banner toggled.')
+      const next = !incidentVisible
+      const result = await setEnterpriseStateValue('incident_banner_visible', next)
+      if ('error' in result) throw new Error(result.error)
+      setIncidentVisible(next)
+      setWorkspaceStatus('Internal incident notice state saved for this workspace.')
       return
     }
     if (change.id === 'permission-matrix') {
@@ -579,17 +598,20 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'release-notes') {
-      buildReleaseNotes()
+      await buildReleaseNotes()
       setWorkspaceStatus('Release notes drafted from enabled enterprise features.')
       return
     }
     if (change.id === 'integration-health') {
-      setHealthScore(94)
-      setWorkspaceStatus('Integration health checked: front-end connectors ready.')
+      const status = await getIntegrationStatus()
+      const healthy = status.healthChecks.filter((check) => check.status === 'healthy').length
+      const total = status.healthChecks.length
+      setHealthScore(total ? Math.round((healthy / total) * 100) : 0)
+      setWorkspaceStatus(total ? `Integration health checked: ${healthy}/${total} latest provider checks are healthy.` : 'No integration checks were returned.')
       return
     }
     if (change.id === 'lighthouse-budget') {
-      addTaskOptimistic('Keep public mobile Lighthouse budget at 90+ for performance and accessibility')
+      await addTaskPersisted('Keep public mobile Lighthouse budget at 90+ for performance and accessibility')
       return
     }
     if (change.id === 'roi-calculator') {
@@ -598,17 +620,17 @@ END:VCALENDAR`, 'text/calendar')
       return
     }
     if (change.id === 'pricing-fit') {
-      setWorkspaceStatus('Pricing fit recommendation: Pro for unlimited videos, audit logging and sequences.')
+      setWorkspaceStatus('Review current usage and licensed-seat totals before selecting a plan. No plan was changed.')
       return
     }
     if (change.id === 'nps-pulse') {
-      setHealthScore((current) => Math.min(100, current + 3))
-      setWorkspaceStatus('NPS pulse captured at 9/10.')
+      await addTaskPersisted('Collect the next customer NPS response with consent and record it against the account')
+      setWorkspaceStatus('NPS collection task created; no customer score was fabricated.')
       return
     }
     if (change.id === 'churn-risk') {
-      setRiskScore(18)
-      addTaskOptimistic('Churn mitigation: schedule value review and send usage proof')
+      await addTaskPersisted('Churn mitigation: schedule value review and send usage proof')
+      setWorkspaceStatus('Churn review task created. Risk remains unchanged until real account evidence is assessed.')
       return
     }
 
@@ -620,8 +642,13 @@ END:VCALENDAR`, 'text/calendar')
     }
 
     const taskLabel = `${change.title}: ${change.action}`
-    if (!tasks.some((t) => t.title === taskLabel)) addTaskOptimistic(taskLabel)
-    setWorkspaceStatus(`${change.title} enabled.`)
+    if (!tasks.some((t) => t.title === taskLabel)) await addTaskPersisted(taskLabel)
+    setWorkspaceStatus(`${change.title} workflow saved.`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'The enterprise action could not be saved.'
+      setWorkspaceStatus(message)
+      toast({ title: 'Action not completed', description: message, variant: 'destructive' })
+    }
   }
 
   const filteredChanges = useMemo(() => {
@@ -652,13 +679,13 @@ END:VCALENDAR`, 'text/calendar')
           </div>
         </header>
 
-        {incidentVisible ? <div className={styles.incidentBanner}><AlertTriangle size={16} /> Internal incident banner active. This can become a backend-backed status notice later.</div> : null}
+        {incidentVisible ? <div className={styles.incidentBanner}><AlertTriangle size={16} /> Internal incident banner active for this workspace.</div> : null}
 
         <section className={styles.metricsGrid}>
           <article><span>Reviewed changes</span><strong>50</strong><em>Value-add upgrades</em></article>
-          <article><span>Implemented locally</span><strong>{enabled.length}</strong><em>{completion}% enabled</em></article>
-          <article><span>Health score</span><strong>{healthScore}%</strong><em>Workspace readiness</em></article>
-          <article><span>Risk score</span><strong>{riskScore}%</strong><em>Lower is better</em></article>
+          <article><span>Enabled workflows</span><strong>{enabled.length}</strong><em>{completion}% of inventory</em></article>
+          <article><span>Provider checks</span><strong>{healthScore === null ? 'Not run' : `${healthScore}%`}</strong><em>Run integration health for live status</em></article>
+          <article><span>Open tasks</span><strong>{tasks.filter((task) => !task.isDone).length}</strong><em>Persisted workspace actions</em></article>
           <article><span>ROI estimate</span><strong>{roi ? `GBP ${roi.toLocaleString()}` : 'Ready'}</strong><em>Front-end model</em></article>
         </section>
 
@@ -693,7 +720,7 @@ END:VCALENDAR`, 'text/calendar')
                   <span>{event.time}</span>
                   <strong>{event.title}</strong>
                   <em>{event.owner ? `${event.owner} - ` : ''}{event.type}</em>
-                  <button className={styles.deleteBtn} onClick={() => handleDeleteEvent(event.id)} aria-label="Delete event">✕</button>
+                  <button className={styles.deleteBtn} onClick={() => void handleDeleteEvent(event.id).catch((error) => setWorkspaceStatus(error instanceof Error ? error.message : 'The event could not be removed.'))} aria-label="Delete event">✕</button>
                 </div>
               ))}
             </div>
@@ -709,7 +736,7 @@ END:VCALENDAR`, 'text/calendar')
           <LocalVideoRoom />
 
           <article className={styles.panel}>
-            <header><MessageSquareText size={18} /><strong>Shared Notes</strong><button onClick={() => void copyText(notes, 'Notes copied.')}><Copy size={14} />Copy</button></header>
+            <header><MessageSquareText size={18} /><strong>Shared Notes</strong><button onClick={() => void setEnterpriseStateValue('shared_notes', notes).then((result) => 'error' in result ? setWorkspaceStatus(result.error || 'Notes could not be saved.') : setWorkspaceStatus('Shared notes saved for this workspace.'))}>Save</button><button onClick={() => void copyText(notes, 'Notes copied.')}><Copy size={14} />Copy</button></header>
             <textarea value={notes} onChange={(event) => setNotes(event.target.value)} aria-label="Enterprise command notes" />
           </article>
         </section>
@@ -767,21 +794,21 @@ END:VCALENDAR`, 'text/calendar')
                     <strong>{flag.label}</strong>
                     <span>{flag.description}</span>
                   </div>
-                  <input type="checkbox" checked={Boolean(featureFlags[flag.id])} onChange={() => toggleFlag(flag.id)} />
+                  <input type="checkbox" checked={Boolean(featureFlags[flag.id])} onChange={() => void toggleFlag(flag.id)} />
                 </label>
               ))}
             </div>
           </article>
 
           <article className={styles.panel}>
-            <header><MessageSquareText size={18} /><strong>Reply Sentiment</strong><button onClick={resetSentiment}>Reset</button></header>
+            <header><MessageSquareText size={18} /><strong>Reply Sentiment</strong><button onClick={() => void resetSentiment()}>Reset</button></header>
             <div className={styles.sentimentGrid}>
               {([
                 { id: 'positive', label: 'Positive', className: styles.sentimentPositive },
                 { id: 'neutral', label: 'Neutral', className: styles.sentimentNeutral },
                 { id: 'blocked', label: 'Blocked', className: styles.sentimentBlocked },
               ] as const).map((item) => (
-                <button key={item.id} className={`${styles.sentimentCard} ${item.className}`} onClick={() => bumpSentiment(item.id)}>
+                <button key={item.id} className={`${styles.sentimentCard} ${item.className}`} onClick={() => void bumpSentiment(item.id)}>
                   <strong>{replySentiment[item.id] || 0}</strong>
                   <span>{item.label}</span>
                 </button>
@@ -796,7 +823,7 @@ END:VCALENDAR`, 'text/calendar')
             <div className={styles.snippetForm}>
               <input placeholder="Snippet title" value={snippetTitle} onChange={(event) => setSnippetTitle(event.target.value)} />
               <textarea placeholder="Snippet content" value={snippetContent} onChange={(event) => setSnippetContent(event.target.value)} />
-              <button className={styles.primaryButton} onClick={addSnippet}><Plus size={14} />Add snippet</button>
+              <button className={styles.primaryButton} onClick={() => void addSnippet()}><Plus size={14} />Add snippet</button>
             </div>
             <div className={styles.snippetList}>
               {snippets.map((snippet) => (
@@ -807,7 +834,7 @@ END:VCALENDAR`, 'text/calendar')
                   </div>
                   <div className={styles.snippetActions}>
                     <button onClick={() => void copyText(snippet.content, 'Snippet copied.')}>Copy</button>
-                    <button onClick={() => removeSnippet(snippet.id)}>Delete</button>
+                    <button onClick={() => void removeSnippet(snippet.id)}>Delete</button>
                   </div>
                 </article>
               ))}
@@ -829,11 +856,11 @@ END:VCALENDAR`, 'text/calendar')
               {permissionMatrix.map((row) => (
                 <div key={row.role} className={styles.permissionRow}>
                   <strong>{row.role}</strong>
-                  <input type="checkbox" checked={row.canManageUsers} onChange={(event) => setPermission(row.role, 'canManageUsers', event.target.checked)} />
-                  <input type="checkbox" checked={row.canManageBilling} onChange={(event) => setPermission(row.role, 'canManageBilling', event.target.checked)} />
-                  <input type="checkbox" checked={row.canManageLeads} onChange={(event) => setPermission(row.role, 'canManageLeads', event.target.checked)} />
-                  <input type="checkbox" checked={row.canManageCampaigns} onChange={(event) => setPermission(row.role, 'canManageCampaigns', event.target.checked)} />
-                  <input type="checkbox" checked={row.canViewAudit} onChange={(event) => setPermission(row.role, 'canViewAudit', event.target.checked)} />
+                  <input type="checkbox" checked={row.canManageUsers} onChange={(event) => void setPermission(row.role, 'canManageUsers', event.target.checked)} />
+                  <input type="checkbox" checked={row.canManageBilling} onChange={(event) => void setPermission(row.role, 'canManageBilling', event.target.checked)} />
+                  <input type="checkbox" checked={row.canManageLeads} onChange={(event) => void setPermission(row.role, 'canManageLeads', event.target.checked)} />
+                  <input type="checkbox" checked={row.canManageCampaigns} onChange={(event) => void setPermission(row.role, 'canManageCampaigns', event.target.checked)} />
+                  <input type="checkbox" checked={row.canViewAudit} onChange={(event) => void setPermission(row.role, 'canViewAudit', event.target.checked)} />
                 </div>
               ))}
             </div>
@@ -841,7 +868,7 @@ END:VCALENDAR`, 'text/calendar')
         </section>
 
         <section className={styles.panel}>
-          <header><Rocket size={18} /><strong>Release Notes Builder</strong><button onClick={() => { buildReleaseNotes(); setReleaseNotesOpen(true) }}>Generate</button></header>
+          <header><Rocket size={18} /><strong>Release Notes Builder</strong><button onClick={() => void buildReleaseNotes().then(() => setReleaseNotesOpen(true)).catch((error) => setWorkspaceStatus(error instanceof Error ? error.message : 'Release notes could not be saved.'))}>Generate</button></header>
           {releaseNotesOpen ? (
             <div className={styles.releaseNotesEditor}>
               <textarea
@@ -849,11 +876,11 @@ END:VCALENDAR`, 'text/calendar')
                 onChange={(event) => {
                   const next = event.target.value
                   setReleaseNotes(next)
-                  setReleaseNotesDraft(next)
                 }}
               />
               <div className={styles.releaseNoteActions}>
                 <button onClick={() => void copyText(releaseNotes, 'Release notes copied.')}>Copy</button>
+                <button onClick={() => void setReleaseNotesDraft(releaseNotes).then((result) => 'error' in result ? setWorkspaceStatus(result.error || 'Release notes could not be saved.') : setWorkspaceStatus('Release notes draft saved.'))}>Save draft</button>
                 <button onClick={() => downloadFile('release-notes.txt', releaseNotes, 'text/plain')}>Download</button>
               </div>
             </div>

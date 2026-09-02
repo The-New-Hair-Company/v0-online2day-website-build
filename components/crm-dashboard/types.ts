@@ -129,6 +129,8 @@ export type ConversationRecord = {
   score: number
   channel: string
   status: string
+  contactEmail?: string
+  contactPhone?: string
   unread?: number
   messages: Array<{
     id: string
@@ -137,6 +139,8 @@ export type ConversationRecord = {
     time: string
     attachmentLabel?: string
     meta?: string
+    deliveryStatus?: string
+    channel?: string
   }>
 }
 

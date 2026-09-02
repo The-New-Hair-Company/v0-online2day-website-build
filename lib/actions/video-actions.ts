@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { agreementsApi, videoAssetsApi, type VideoBrandingDto } from '@/lib/api/client'
+import { agreementsApi, messagingApi, videoAssetsApi, type VideoBrandingDto } from '@/lib/api/client'
 import { revalidatePath } from 'next/cache'
 import { logLeadEvent } from './lead-actions'
 import { logAsyncActionFailure } from './reliability-actions'
@@ -129,30 +129,20 @@ export async function uploadAdminVideo(formData: FormData) {
 }
 
 export async function sendVideoViaChat(conversationUserId: string, videoSlug: string) {
-  const supabase = await createClient()
-  const { data: userData } = await supabase.auth.getUser()
-  if (!userData.user) return { error: 'Not authenticated' }
-
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || ''
-  const content = `📹 Here is your video: ${baseUrl}/v/${videoSlug}`
-
-  const { error } = await supabase.from('messages').insert({
-    conversation_user_id: conversationUserId,
-    sender_id: userData.user.id,
-    content,
-  })
-
-  if (error) return { error: error.message }
-  return { success: true }
+  try {
+    const token = await getToken()
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.online2day.com'
+    await messagingApi.sendToUser(token, conversationUserId, `📹 Here is your video: ${baseUrl}/v/${videoSlug}`)
+    return { success: true }
+  } catch (error) { return { error: error instanceof Error ? error.message : 'The video message could not be sent.' } }
 }
 
 export async function getClientUsers() {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('user_profiles')
-    .select('user_id, full_name, email, role')
-    .order('full_name', { ascending: true })
-  return (data || []).filter((u) => u.role !== 'admin')
+  try {
+    const token = await getToken()
+    const rows = await messagingApi.recipients(token)
+    return rows.map((row) => ({ user_id: row.id, full_name: row.name, email: row.email, role: row.role }))
+  } catch { return [] }
 }
 
 export async function getVideoSignedUrl(storagePath: string) {

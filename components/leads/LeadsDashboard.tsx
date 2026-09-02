@@ -472,22 +472,6 @@ export default function LeadsDashboard({
         </section>
       </main>
 
-      {section === 'leads' && selectedLead && (
-        <LeadCommandBar
-          lead={selectedLead}
-          onOpen={handleOpenLead}
-          onEmail={() => handleContactAction('email')}
-          onPhone={() => handleContactAction('phone')}
-          onLinkedin={() => handleContactAction('linkedin')}
-          onWebsite={() => {
-            if (!selectedLead.website) return showNotice('Website unavailable', 'No website URL is stored for this lead yet.')
-            openExternalSafely(selectedLead.website)
-          }}
-          onCreateVideo={() => router.push(`/dashboard/videos/editor?lead=${selectedLead.id}`)}
-          onBookCall={() => router.push('/contact')}
-        />
-      )}
-
       {/* Timer FAB + Widget */}
       <div className={styles.timerFabWrapper}>
         {showTimerWidget && (
@@ -973,8 +957,12 @@ function LeadTable({ leads, selectedId, onSelect, totalCount, onOpen, hiddenCols
               key={lead.id}
               className={cx(selectedId === lead.id && styles.selectedRow)}
               onClick={() => onSelect(lead.id)}
+              onDoubleClick={() => onOpen(lead.id)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  onOpen(lead.id)
+                } else if (e.key === ' ') {
                   e.preventDefault()
                   onSelect(lead.id)
                 }
@@ -1188,46 +1176,6 @@ function Panel({
         {action ? <button type="button" onClick={onAction}>{action} <Icon name="chevron" /></button> : null}
       </header>
       {children}
-    </section>
-  )
-}
-
-// ─── COMMAND BAR ─────────────────────────────────────────────────────────────
-
-function LeadCommandBar({ lead, onOpen, onEmail, onPhone, onLinkedin, onWebsite, onCreateVideo, onBookCall }: {
-  lead: Lead; onOpen: (id: string) => void
-  onEmail: () => void; onPhone: () => void; onLinkedin: () => void
-  onWebsite: () => void; onCreateVideo: () => void; onBookCall: () => void
-}) {
-  return (
-    <section className={styles.commandBar}>
-      <div className={cx(styles.commandLogo, styles[lead.logoClass])}>{lead.companyMark}</div>
-      <div className={styles.commandTitle}>
-        <div><h2>{lead.company}</h2><StageBadge stage={lead.stage} /></div>
-        <p>{lead.contactName} · {lead.role}</p>
-        <div className={styles.contactActions}>
-          <button type="button" title="Send email" aria-label="Send email" onClick={onEmail}><Icon name="mail" /></button>
-          <button type="button" title="Call" aria-label="Call lead" onClick={onPhone}><Icon name="phone" /></button>
-          <button type="button" title="LinkedIn" aria-label="Open LinkedIn" onClick={onLinkedin}><Icon name="linkedin" /></button>
-          <button type="button" title="Website" aria-label="Open website" onClick={onWebsite}><Icon name="globe" /></button>
-          <button type="button" aria-label="More actions"><Icon name="ellipsis" /></button>
-        </div>
-      </div>
-      <div className={styles.commandMeta}><span>Lead score</span><Score value={lead.score} /></div>
-      <div className={styles.commandMeta}><span>Owner</span><strong><Avatar initials={initialsForOwner(lead.owner)} size="sm" />{lead.owner}</strong></div>
-      <div className={styles.commandMeta}><span>Source</span><strong><Icon name="globe" />{lead.source}</strong></div>
-      <div className={styles.commandMeta}><span>Last touch</span><strong><Icon name="mail" />{lead.lastActivity}</strong></div>
-      <div className={styles.recommendedBox}>
-        <strong>Recommended CTA</strong>
-        <p>Follow up via email with case study video to move to proposal stage.</p>
-      </div>
-      <div className={styles.commandActions}>
-        <button className={styles.primaryAction} onClick={() => onOpen(lead.id)}><Icon name="external" />Open lead</button>
-        <button onClick={onEmail}><Icon name="mail" />Send email</button>
-        <button onClick={onCreateVideo}><Icon name="video" />Create video</button>
-        <button onClick={onBookCall}><Icon name="calendar" />Book call</button>
-        <button type="button" className={styles.iconButton} aria-label="More lead actions"><Icon name="ellipsis" /></button>
-      </div>
     </section>
   )
 }

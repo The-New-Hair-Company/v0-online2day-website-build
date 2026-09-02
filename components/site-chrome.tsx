@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { SiteFooter } from '@/components/site-footer'
 import { SiteHeader } from '@/components/site-header'
 import { SiteMotion } from '@/components/site-motion'
+import { PublicChatWidget } from '@/components/chat/PublicChatWidget'
 
 const marketingRoutes = new Set([
   '/',
@@ -31,6 +32,7 @@ export function SiteChrome({ children }: { children: ReactNode }) {
       <SiteHeader />
       <main id="main">{children}</main>
       <SiteFooter />
+      <PublicChatWidget />
     </div>
   )
 }

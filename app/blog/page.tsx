@@ -5,6 +5,7 @@ import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { ArrowRight, Calendar, Clock } from 'lucide-react'
 import { blogPublicApi, type BlogPostDto } from '@/lib/api/client'
+import { PublicChatWidget } from '@/components/chat/PublicChatWidget'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,7 +42,7 @@ function FeaturedPost({ post }: { post: BlogPostDto }) {
       <div className="relative rounded-2xl overflow-hidden border border-border bg-card hover:border-primary/40 transition-colors duration-300">
         {post.coverUrl ? (
           <div className="relative h-72 md:h-96 w-full">
-            <Image src={post.coverUrl} alt={post.title} fill className="object-cover" priority />
+            <Image src={post.coverUrl} alt={post.coverAltText || post.title} fill className="object-cover" priority />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
             <div className="absolute bottom-0 left-0 right-0 p-6 md:p-10">
               <CategoryBadge category={post.category} />
@@ -90,7 +91,7 @@ function PostCard({ post }: { post: BlogPostDto }) {
     <Link href={`/blog/${post.slug}`} className="group flex flex-col rounded-xl border border-border bg-card overflow-hidden hover:border-primary/40 transition-all duration-300 hover:-translate-y-0.5 transform-gpu">
       {post.coverUrl ? (
         <div className="relative h-44 w-full overflow-hidden flex-shrink-0">
-          <Image src={post.coverUrl} alt={post.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
+          <Image src={post.coverUrl} alt={post.coverAltText || post.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
         </div>
       ) : (
         <div className="h-44 bg-gradient-to-br from-primary/10 to-primary/5 flex-shrink-0 flex items-center justify-center">
@@ -159,6 +160,7 @@ export default async function BlogPage() {
         </section>
       </main>
       <Footer />
+      <PublicChatWidget />
     </>
   )
 }
