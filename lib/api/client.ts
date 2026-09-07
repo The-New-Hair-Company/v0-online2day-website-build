@@ -244,6 +244,15 @@ export interface MailboxMessageDto {
   priority: 'low' | 'normal' | 'high'
   sent_at: string | null
   received_at: string | null
+  delivered_at: string | null
+  opened_at: string | null
+  last_opened_at: string | null
+  open_count: number
+  clicked_at: string | null
+  click_count: number
+  bounced_at: string | null
+  failed_at: string | null
+  replied_at: string | null
   created_at: string
   updated_at: string | null
   attachments: MailboxAttachmentDto[]

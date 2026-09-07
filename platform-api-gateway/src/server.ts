@@ -28,6 +28,8 @@ const config = {
   siteUrl: (process.env.SITE_URL || 'https://www.online2day.com').replace(/\/$/, ''),
   emailFrom: process.env.EMAIL_FROM?.trim() || 'Online2Day <hello@online2day.com>',
   emailReplyTo: process.env.EMAIL_REPLY_TO?.trim() || 'hello@online2day.com',
+  emailInboundAddress: process.env.EMAIL_INBOUND_ADDRESS?.trim().toLowerCase() || '',
+  emailInboundOwnerEmail: process.env.EMAIL_INBOUND_OWNER_EMAIL?.trim().toLowerCase() || '',
   whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN?.trim() || '',
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() || '',
   whatsappApiVersion: process.env.WHATSAPP_API_VERSION?.trim() || 'v23.0',
@@ -170,7 +172,10 @@ async function requestJson<T>(url: string, init: RequestInit, attempts = 3): Pro
         return (text ? JSON.parse(text) : undefined) as T
       }
       const detail = (await response.text()).slice(0, 1_000)
-      finalError = new Error(`Upstream request failed (${response.status}): ${detail}`)
+      finalError = Object.assign(new Error(`Upstream request failed (${response.status}): ${detail}`), {
+        upstreamStatus: response.status,
+        statusCode: response.status === 429 ? 503 : response.status >= 500 ? 502 : response.status,
+      })
       if (response.status !== 429 && response.status < 500) break
     } catch (error) {
       finalError = error instanceof Error ? error : new Error('Upstream request failed')
@@ -314,6 +319,7 @@ const emailEventSchema = z.object({
     'email.clicked', 'email.bounced', 'email.complained', 'email.failed', 'email.suppressed',
   ]),
   createdAt: z.string().datetime().optional(),
+  messageId: z.string().trim().max(998).optional(),
 })
 
 const siteRequestUpdateSchema = z.object({
@@ -412,9 +418,18 @@ async function recordEmailSend(userId: string, body: z.infer<typeof emailSendSch
       body: JSON.stringify({
         lead_id: body.leadId || null,
         sender_id: userId,
+        mailbox_owner_id: userId,
         template_id: body.templateId || null,
         subject: body.subject,
         body: body.body,
+        plain_body: body.body,
+        direction: 'outbound',
+        provider_id: body.resendId,
+        from_address: (config.emailFrom.match(/<([^<>]+)>/)?.[1] || config.emailFrom).trim().toLowerCase(),
+        to_addresses: [body.to.toLowerCase()],
+        reply_to_addresses: [config.emailReplyTo.toLowerCase()],
+        folder: 'sent',
+        is_read: true,
         status: `sent:${body.resendId}`,
         sent_at: new Date().toISOString(),
       }),
@@ -1083,7 +1098,7 @@ app.post('/api/v1/online2day/email-events', {
       p_provider_email_id: body.emailId,
       p_event_type: body.eventType,
       p_occurred_at: body.createdAt || new Date().toISOString(),
-      p_metadata: {},
+      p_metadata: body.messageId ? { messageId: body.messageId } : {},
     }),
   })
   return reply.code(result.matched === false ? 202 : 200).send({ accepted: true, eventId: body.eventId, ...result })

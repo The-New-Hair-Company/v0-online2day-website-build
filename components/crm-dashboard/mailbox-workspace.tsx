@@ -292,7 +292,9 @@ export default function MailboxWorkspace({
                   <span>
                     {message.priority === "high"
                       ? "High priority"
-                      : message.status}
+                      : message.direction === "outbound" && message.open_count > 0
+                        ? `Opened ${message.open_count} time${message.open_count === 1 ? "" : "s"}`
+                        : message.status.split(":", 1)[0].replaceAll("_", " ")}
                   </span>
                   <span>
                     {message.attachments.length

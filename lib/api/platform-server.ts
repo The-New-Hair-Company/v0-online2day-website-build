@@ -12,6 +12,16 @@ type PlatformRequestOptions = RequestInit & {
   serviceRequest?: boolean
 }
 
+export class PlatformApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = 'PlatformApiError'
+  }
+}
+
 export async function platformServerFetch<T>(path: string, options: PlatformRequestOptions = {}): Promise<T> {
   const { accessToken, serviceRequest, ...requestInit } = options
   const headers = buildApiHeaders(requestInit.headers, requestInit.body, accessToken)
@@ -38,7 +48,7 @@ export async function platformServerFetch<T>(path: string, options: PlatformRequ
     const detail = body && typeof body === 'object' && 'error' in body
       ? String((body as { error: unknown }).error)
       : `Company Platform API error ${response.status}`
-    throw new Error(detail)
+    throw new PlatformApiError(detail, response.status)
   }
   return body as T
 }

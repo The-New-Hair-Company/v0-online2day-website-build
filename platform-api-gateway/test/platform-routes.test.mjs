@@ -111,14 +111,47 @@ test('expired and invalid signing tokens fail without exposing documents', async
 test('inbound provider events thread by message metadata and sanitise HTML before persistence', async () => {
   const calls = []; const owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'; const thread = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'; const app = Fastify()
   registerPlatformRoutes(app, {
-    config: { supabaseUrl: 'https://example.supabase.co', supabaseServiceRoleKey: 'service', resendApiKey: 'resend', siteUrl: 'https://online2day.com', emailFrom: 'hello@online2day.com', emailReplyTo: 'hello@online2day.com', gatewayServerKey: 'server-key' },
+    config: { supabaseUrl: 'https://example.supabase.co', supabaseServiceRoleKey: 'service', resendApiKey: 'resend', siteUrl: 'https://online2day.com', emailFrom: 'hello@auth.online2day.com', emailReplyTo: 'hello@auth.online2day.com', emailInboundAddress: 'hello@auth.online2day.com', emailInboundOwnerEmail: 'owner@example.com', gatewayServerKey: 'server-key' },
     requireAdmin: async () => ({ sub: owner }), requireServerKey: async () => {}, supabaseStorageFetch: async () => ({}),
-    requestJson: async () => ({ id: 'provider-inbound', to: ['hello@online2day.com'], from: 'Ada <ada@example.com>', created_at: '2026-09-01T12:00:00.000Z', subject: 'Re: Proposal', html: '<p>Hello<script>alert(1)</script><img src="https://tracker.invalid/pixel"></p>', text: 'Hello', headers: { from: 'Ada <ada@example.com>', 'in-reply-to': '<parent@example.com>', references: '<root@example.com> <parent@example.com>' }, bcc: [], cc: ['copy@example.com'], reply_to: [], message_id: '<reply@example.com>', attachments: [] }),
-    supabaseFetch: async (path, init = {}) => { calls.push({ path, init }); if (path.startsWith('email_provider_events?')) return []; if (path.startsWith('user_profiles?email=')) return [{ user_id: owner, email: 'hello@online2day.com' }]; if (path.startsWith('emails?message_id=in.')) return [{ thread_id: thread }]; if (path === 'emails?select=id' && init.method === 'POST') return [{ id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }]; if (path.startsWith(`emails?thread_id=eq.${thread}`)) return [{ id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', is_read: false }]; return [] },
+    requestJson: async () => ({ id: 'provider-inbound', to: ['Online2Day <hello@auth.online2day.com>'], from: 'Ada <ada@example.com>', created_at: '2026-09-01T12:00:00.000Z', subject: 'Re: Proposal', html: '<p>Hello<script>alert(1)</script><img src="https://tracker.invalid/pixel"></p>', text: 'Hello', headers: { From: 'Ada <ada@example.com>', 'In-Reply-To': '<parent@example.com>', References: '<root@example.com> <parent@example.com>' }, bcc: [], cc: ['Copy <copy@example.com>'], reply_to: [], message_id: '<reply@example.com>', attachments: [] }),
+    supabaseFetch: async (path, init = {}) => { calls.push({ path, init }); if (path.startsWith('user_profiles?email=')) return [{ user_id: owner, email: 'owner@example.com' }]; if (path === 'rpc/register_inbound_email') return { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', threadId: thread, duplicate: false, attachmentsProcessed: false }; return [] },
   })
   const response = await app.inject({ method: 'POST', url: '/api/v1/online2day/inbound-email-events', payload: { eventId: 'event-1', emailId: 'provider-inbound', createdAt: '2026-09-01T12:00:00.000Z' } })
   assert.equal(response.statusCode, 201)
-  const write = calls.find((call) => call.path === 'emails?select=id' && call.init.method === 'POST'); const persisted = JSON.parse(write.init.body)
-  assert.equal(persisted.thread_id, thread); assert.equal(persisted.is_read, false); assert.equal(persisted.sanitised_html_body.includes('<script'), false); assert.equal(persisted.sanitised_html_body.includes('<img'), false)
+  const write = calls.find((call) => call.path === 'rpc/register_inbound_email'); const persisted = JSON.parse(write.init.body).p_message
+  assert.deepEqual(persisted.replyCandidates, ['<parent@example.com>', '<root@example.com>', '<parent@example.com>'])
+  assert.deepEqual(persisted.cc, ['copy@example.com'])
+  assert.equal(persisted.sanitisedHtmlBody.includes('<script'), false); assert.equal(persisted.sanitisedHtmlBody.includes('<img'), false)
+  assert.ok(calls.some((call) => call.path.startsWith('emails?id=eq.') && call.init.method === 'PATCH'))
+  await app.close()
+})
+
+test('inbound events reject addresses outside the configured mailbox without persisting content', async () => {
+  const calls = []; const app = Fastify()
+  registerPlatformRoutes(app, {
+    config: { supabaseUrl: 'https://example.supabase.co', supabaseServiceRoleKey: 'service', resendApiKey: 'resend', siteUrl: 'https://online2day.com', emailFrom: 'hello@auth.online2day.com', emailReplyTo: 'hello@auth.online2day.com', emailInboundAddress: 'hello@auth.online2day.com', emailInboundOwnerEmail: 'owner@example.com', gatewayServerKey: 'server-key' },
+    requireAdmin: async () => ({ sub: 'owner' }), requireServerKey: async () => {}, supabaseStorageFetch: async () => ({}),
+    requestJson: async () => ({ id: 'provider-other', to: ['other@auth.online2day.com'], from: 'sender@example.com', created_at: '2026-09-01T12:00:00.000Z', subject: 'Unexpected', html: '<p>No</p>', text: 'No', headers: {}, bcc: [], cc: [], reply_to: [], message_id: '<other@example.com>', attachments: [] }),
+    supabaseFetch: async (path, init = {}) => { calls.push({ path, init }); return [] },
+  })
+  const response = await app.inject({ method: 'POST', url: '/api/v1/online2day/inbound-email-events', payload: { eventId: 'event-other', emailId: 'provider-other' } })
+  assert.equal(response.statusCode, 202)
+  assert.equal(response.json().ignored, true)
+  assert.equal(calls.length, 0)
+  await app.close()
+})
+
+test('completed duplicate inbound events do not duplicate attachments', async () => {
+  const calls = []; const owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'; const app = Fastify()
+  registerPlatformRoutes(app, {
+    config: { supabaseUrl: 'https://example.supabase.co', supabaseServiceRoleKey: 'service', resendApiKey: 'resend', siteUrl: 'https://online2day.com', emailFrom: 'hello@auth.online2day.com', emailReplyTo: 'hello@auth.online2day.com', emailInboundAddress: 'hello@auth.online2day.com', emailInboundOwnerEmail: 'owner@example.com', gatewayServerKey: 'server-key' },
+    requireAdmin: async () => ({ sub: owner }), requireServerKey: async () => {}, supabaseStorageFetch: async () => ({}),
+    requestJson: async () => ({ id: 'provider-duplicate', to: ['hello@auth.online2day.com'], from: 'sender@example.com', created_at: '2026-09-01T12:00:00.000Z', subject: 'Duplicate', html: '', text: 'Once', headers: {}, bcc: [], cc: [], reply_to: [], message_id: '<duplicate@example.com>', attachments: [{ id: 'attachment-1', filename: 'test.pdf', content_type: 'application/pdf' }] }),
+    supabaseFetch: async (path, init = {}) => { calls.push({ path, init }); if (path.startsWith('user_profiles?email=')) return [{ user_id: owner, email: 'owner@example.com' }]; if (path === 'rpc/register_inbound_email') return { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', threadId: null, duplicate: true, attachmentsProcessed: true }; return [] },
+  })
+  const response = await app.inject({ method: 'POST', url: '/api/v1/online2day/inbound-email-events', payload: { eventId: 'event-duplicate', emailId: 'provider-duplicate' } })
+  assert.equal(response.statusCode, 200)
+  assert.equal(response.json().duplicate, true)
+  assert.equal(calls.some((call) => call.path.includes('/attachments')), false)
   await app.close()
 })

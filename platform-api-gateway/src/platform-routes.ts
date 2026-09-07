@@ -17,6 +17,8 @@ type PlatformRouteDeps = {
     siteUrl: string
     emailFrom: string
     emailReplyTo: string
+    emailInboundAddress?: string
+    emailInboundOwnerEmail?: string
     gatewayServerKey: string
   }
   requireAdmin: (request: FastifyRequest) => Promise<Record<string, unknown>>
@@ -115,6 +117,14 @@ async function fetchDocumentBytes(deps: PlatformRouteDeps, storagePath: string) 
 
 function encodeStoragePath(value: string) {
   return value.split('/').map(encodeURIComponent).join('/')
+}
+
+function normaliseHeaderMap(headers: Record<string, string> | undefined) {
+  return Object.fromEntries(Object.entries(headers || {}).map(([key, value]) => [key.toLowerCase(), String(value)]))
+}
+
+function normaliseAddressList(values: string[] | undefined) {
+  return Array.from(new Set((values || []).map((value) => parseMailbox(value).email).filter(Boolean)))
 }
 
 async function signedDownload(deps: PlatformRouteDeps, bucket: string, path: string, expiresIn = 900) {
@@ -379,7 +389,7 @@ function registerMailboxRoutes(app: FastifyInstance, deps: PlatformRouteDeps) {
     const user = await deps.requireAdmin(request); const query = z.object({ folder: z.enum(['inbox','sent','drafts','trash','archive']).default('inbox'), limit: z.coerce.number().int().min(1).max(200).default(50) }).parse(request.query)
     const owner = encodeURIComponent(String(user.sub))
     const [messages, unread] = await Promise.all([
-      deps.supabaseFetch(`emails?mailbox_owner_id=eq.${owner}&folder=eq.${query.folder}&select=id,thread_id,lead_id,subject,plain_body,sanitised_html_body,from_address,from_name,to_addresses,cc_addresses,bcc_addresses,direction,status,provider_id,message_id,in_reply_to,reference_ids,is_read,read_at,folder,priority,sent_at,received_at,created_at,updated_at,attachments:email_attachments(id,disposition,content_id,document:platform_documents(id,filename,safe_filename,mime_type,size_bytes))&order=received_at.desc.nullslast,sent_at.desc.nullslast,created_at.desc&limit=${query.limit}`, { headers: { Accept: 'application/json' } }),
+      deps.supabaseFetch(`emails?mailbox_owner_id=eq.${owner}&folder=eq.${query.folder}&select=id,thread_id,lead_id,subject,plain_body,sanitised_html_body,from_address,from_name,to_addresses,cc_addresses,bcc_addresses,direction,status,provider_id,message_id,in_reply_to,reference_ids,is_read,read_at,folder,priority,sent_at,received_at,delivered_at,opened_at,last_opened_at,open_count,clicked_at,click_count,bounced_at,failed_at,replied_at,created_at,updated_at,attachments:email_attachments(id,disposition,content_id,document:platform_documents(id,filename,safe_filename,mime_type,size_bytes))&order=received_at.desc.nullslast,sent_at.desc.nullslast,created_at.desc&limit=${query.limit}`, { headers: { Accept: 'application/json' } }),
       deps.supabaseFetch<Array<{ id: string }>>(`emails?mailbox_owner_id=eq.${owner}&folder=eq.inbox&is_read=eq.false&deleted_at=is.null&select=id&limit=5000`, { headers: { Accept: 'application/json' } }).catch(() => []),
     ])
     return { messages, unread: unread.length }
@@ -428,35 +438,98 @@ function registerMailboxRoutes(app: FastifyInstance, deps: PlatformRouteDeps) {
   })
 
   app.post('/api/v1/online2day/inbound-email-events', { preHandler: deps.requireServerKey }, async (request, reply) => {
-    const body = z.object({ eventId: z.string().min(1).max(200), emailId: z.string().min(1).max(200), createdAt: z.string().datetime().optional() }).parse(request.body)
-    const existing = await deps.supabaseFetch<Array<{ id: string }>>(`email_provider_events?provider=eq.resend&provider_event_id=eq.${encodeURIComponent(body.eventId)}&select=id&limit=1`, { headers: { Accept: 'application/json' } }); if (existing.length) return { accepted: true, duplicate: true }
+    const body = z.object({ eventId: z.string().min(1).max(200), emailId: z.string().min(1).max(200), messageId: z.string().max(998).optional(), createdAt: z.string().datetime().optional() }).parse(request.body)
     if (!deps.config.resendApiKey) throw Object.assign(new Error('Inbound email is not configured.'), { statusCode: 503 })
     type Received = { id: string; to: string[]; from: string; created_at: string; subject: string; html: string | null; text: string | null; headers: Record<string, string>; bcc: string[]; cc: string[]; reply_to: string[]; message_id: string; attachments: Array<{ id: string; filename: string; content_type: string; content_disposition?: string | null; content_id?: string | null }> }
     const received = await deps.requestJson<Received>(`https://api.resend.com/emails/receiving/${encodeURIComponent(body.emailId)}`, { headers: { Authorization: `Bearer ${deps.config.resendApiKey}` } })
-    const to = received.to.map((item) => parseMailbox(item).email); const sender = parseMailbox(received.headers?.from || received.from); const inReplyTo = received.headers?.['in-reply-to'] || ''; const references = (received.headers?.references || '').split(/\s+/).filter(Boolean).slice(0, 100)
-    const profiles = await deps.supabaseFetch<Array<{ user_id: string; email: string }>>(`user_profiles?email=in.(${to.map(encodeURIComponent).join(',')})&select=user_id,email&limit=1`, { headers: { Accept: 'application/json' } }).catch(() => [])
-    const fallback = profiles[0] || (await deps.supabaseFetch<Array<{ user_id: string; email: string }>>('user_profiles?role=eq.admin&select=user_id,email&limit=1', { headers: { Accept: 'application/json' } }))[0]
-    if (!fallback) throw new Error('No mailbox owner is configured for inbound email.')
-    const ownerId = fallback.user_id; let threadId = ''
-    const replyCandidates = [inReplyTo, ...references].filter(Boolean)
-    if (replyCandidates.length) { const matched = await deps.supabaseFetch<Array<{ thread_id: string }>>(`emails?message_id=in.(${replyCandidates.map(encodeURIComponent).join(',')})&thread_id=not.is.null&select=thread_id&limit=1`, { headers: { Accept: 'application/json' } }); threadId = matched[0]?.thread_id || '' }
-    if (!threadId) { const threads = await deps.supabaseFetch<Array<{ id: string }>>('email_threads?select=id', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ mailbox_owner_id: ownerId, subject: received.subject || '(No subject)', normalized_subject: normaliseSubject(received.subject || ''), participant_addresses: [sender.email, ...to], last_message_at: received.created_at, unread_count: 1, message_count: 1, folder: 'inbox' }) }); threadId = threads[0]?.id || '' }
-    const messages = await deps.supabaseFetch<Array<{ id: string }>>('emails?select=id', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ mailbox_owner_id: ownerId, thread_id: threadId || null, direction: 'inbound', provider_id: received.id, message_id: received.message_id, in_reply_to: inReplyTo || null, reference_ids: references, from_address: sender.email, from_name: sender.name, to_addresses: to, cc_addresses: received.cc || [], bcc_addresses: received.bcc || [], reply_to_addresses: received.reply_to || [], subject: received.subject || '(No subject)', body: received.text || '', plain_body: received.text || '', html_body: received.html || '', sanitised_html_body: sanitiseEmailHtml(received.html || ''), headers: received.headers || {}, status: 'received', folder: 'inbox', is_read: false, read_at: null, sent_at: null, received_at: received.created_at || body.createdAt || new Date().toISOString() }) })
-    const message = messages[0]; if (!message) throw new Error('Inbound email could not be saved.')
-    if (threadId) { const related = await deps.supabaseFetch<Array<{ id: string; is_read: boolean }>>(`emails?thread_id=eq.${threadId}&select=id,is_read`, { headers: { Accept: 'application/json' } }); await deps.supabaseFetch(`email_threads?id=eq.${threadId}`, { method: 'PATCH', body: JSON.stringify({ last_message_at: received.created_at, message_count: related.length, unread_count: related.filter((item) => !item.is_read).length, folder: 'inbox' }) }) }
+    const headers = normaliseHeaderMap(received.headers)
+    const to = normaliseAddressList(received.to)
+    const cc = normaliseAddressList(received.cc)
+    const bcc = normaliseAddressList(received.bcc)
+    const replyTo = normaliseAddressList(received.reply_to)
+    const sender = parseMailbox(headers.from || received.from)
+    const inReplyTo = headers['in-reply-to'] || ''
+    const references = (headers.references || '').split(/\s+/).filter(Boolean).slice(0, 100)
+    const inboundAddress = deps.config.emailInboundAddress?.toLowerCase()
+    if (inboundAddress && !to.includes(inboundAddress)) {
+      request.log.warn({ providerEmailId: received.id, recipientCount: to.length }, 'Inbound email rejected for an unconfigured recipient')
+      return reply.code(202).send({ accepted: true, ignored: true })
+    }
+
+    const ownerEmail = deps.config.emailInboundOwnerEmail?.toLowerCase()
+    const ownerLookup = ownerEmail
+      ? `user_profiles?email=eq.${encodeURIComponent(ownerEmail)}&select=user_id,email&limit=1`
+      : `user_profiles?email=in.(${to.map(encodeURIComponent).join(',')})&select=user_id,email&limit=1`
+    const profiles = await deps.supabaseFetch<Array<{ user_id: string; email: string }>>(ownerLookup, { headers: { Accept: 'application/json' } }).catch(() => [])
+    const fallback = profiles[0] || (!ownerEmail
+      ? (await deps.supabaseFetch<Array<{ user_id: string; email: string }>>('user_profiles?role=eq.admin&select=user_id,email&order=created_at.asc&limit=1', { headers: { Accept: 'application/json' } }))[0]
+      : undefined)
+    if (!fallback) throw Object.assign(new Error('No mailbox owner is configured for inbound email.'), { statusCode: 503 })
+
+    const registered = await deps.supabaseFetch<{ id: string; threadId: string; duplicate: boolean; attachmentsProcessed: boolean }>('rpc/register_inbound_email', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_provider: 'resend',
+        p_provider_event_id: body.eventId,
+        p_provider_email_id: received.id,
+        p_provider_message_id: received.message_id || body.messageId || '',
+        p_mailbox_owner_id: fallback.user_id,
+        p_occurred_at: body.createdAt || received.created_at,
+        p_message: {
+          subject: received.subject || '(No subject)',
+          normalizedSubject: normaliseSubject(received.subject || ''),
+          participants: [sender.email, ...to, ...cc],
+          fromAddress: sender.email,
+          fromName: sender.name,
+          to,
+          cc,
+          bcc,
+          replyTo,
+          inReplyTo,
+          replyCandidates: [inReplyTo, ...references].filter(Boolean),
+          plainBody: received.text || '',
+          htmlBody: received.html || '',
+          sanitisedHtmlBody: sanitiseEmailHtml(received.html || ''),
+          headers,
+        },
+      }),
+    })
+    if (!registered?.id) throw new Error('Inbound email could not be saved.')
+    if (registered.duplicate && registered.attachmentsProcessed) return { accepted: true, duplicate: true, id: registered.id }
+
+    let attachmentErrors = 0
     if (received.attachments?.length) {
-      type AttachmentList = { data: Array<{ filename: string; size: number; content_type: string; content_disposition?: string; content_id?: string; download_url: string }> }
+      type AttachmentList = { data: Array<{ id?: string; filename: string; size: number; content_type: string; content_disposition?: string; content_id?: string; download_url: string }> }
       const listing = await deps.requestJson<AttachmentList>(`https://api.resend.com/emails/receiving/${encodeURIComponent(body.emailId)}/attachments`, { headers: { Authorization: `Bearer ${deps.config.resendApiKey}` } })
       for (const attachment of listing.data || []) {
-        if (attachment.content_type !== PDF_MIME || attachment.size > MAX_PDF_BYTES) { request.log.warn({ emailId: received.id, filename: attachment.filename, contentType: attachment.content_type, size: attachment.size }, 'Inbound attachment rejected'); continue }
-        const response = await fetch(attachment.download_url, { signal: AbortSignal.timeout(30_000) }); if (!response.ok) continue; const bytes = new Uint8Array(await response.arrayBuffer()); if (bytes.byteLength > MAX_PDF_BYTES || Buffer.from(bytes.subarray(0, 5)).toString() !== '%PDF-') continue
-        let pageCount = 0; try { pageCount = (await PDFDocument.load(bytes)).getPageCount() } catch { continue }
-        const filename = safeFilename(attachment.filename); const path = `${ownerId}/inbound/${crypto.randomUUID()}-${filename}`; await uploadPdf(deps, path, bytes)
-        const documents = await deps.supabaseFetch<DocumentRow[]>('platform_documents?select=*', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ owner_user_id: ownerId, filename: attachment.filename, safe_filename: filename, mime_type: PDF_MIME, size_bytes: bytes.byteLength, storage_path: path, sha256: sha256(bytes), document_kind: 'attachment', page_count: pageCount, metadata: { provider: 'resend', inboundEmailId: received.id } }) }); if (documents[0]) await deps.supabaseFetch('email_attachments', { method: 'POST', body: JSON.stringify({ email_id: message.id, document_id: documents[0].id, disposition: attachment.content_disposition === 'inline' ? 'inline' : 'attachment', content_id: attachment.content_id || null }) })
+        const providerAttachmentId = attachment.id || `${attachment.filename}:${attachment.size}:${attachment.content_id || ''}`
+        const alreadySaved = await deps.supabaseFetch<Array<{ id: string }>>(`email_attachments?email_id=eq.${registered.id}&provider_attachment_id=eq.${encodeURIComponent(providerAttachmentId)}&select=id&limit=1`, { headers: { Accept: 'application/json' } }).catch(() => [])
+        if (alreadySaved.length) continue
+        if (attachment.content_type !== PDF_MIME || attachment.size > MAX_PDF_BYTES) {
+          attachmentErrors += 1
+          request.log.warn({ providerEmailId: received.id, providerAttachmentId, contentType: attachment.content_type, size: attachment.size }, 'Inbound attachment rejected')
+          continue
+        }
+        try {
+          const response = await fetch(attachment.download_url, { signal: AbortSignal.timeout(30_000) })
+          if (!response.ok) throw new Error(`Attachment download failed (${response.status}).`)
+          const bytes = new Uint8Array(await response.arrayBuffer())
+          if (bytes.byteLength > MAX_PDF_BYTES || Buffer.from(bytes.subarray(0, 5)).toString() !== '%PDF-') throw new Error('Attachment content is not a valid PDF.')
+          const pageCount = (await PDFDocument.load(bytes)).getPageCount()
+          const filename = safeFilename(attachment.filename)
+          const path = `${fallback.user_id}/inbound/${crypto.randomUUID()}-${filename}`
+          await uploadPdf(deps, path, bytes)
+          const documents = await deps.supabaseFetch<DocumentRow[]>('platform_documents?select=*', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ owner_user_id: fallback.user_id, filename: attachment.filename, safe_filename: filename, mime_type: PDF_MIME, size_bytes: bytes.byteLength, storage_path: path, sha256: sha256(bytes), document_kind: 'attachment', page_count: pageCount, metadata: { provider: 'resend', inboundEmailId: received.id, providerAttachmentId } }) })
+          if (!documents[0]) throw new Error('Attachment document record could not be created.')
+          await deps.supabaseFetch('email_attachments', { method: 'POST', body: JSON.stringify({ email_id: registered.id, document_id: documents[0].id, provider_attachment_id: providerAttachmentId, disposition: attachment.content_disposition === 'inline' ? 'inline' : 'attachment', content_id: attachment.content_id || null }) })
+        } catch (error) {
+          attachmentErrors += 1
+          request.log.error({ err: error, providerEmailId: received.id, providerAttachmentId }, 'Inbound PDF attachment could not be persisted')
+        }
       }
     }
-    await deps.supabaseFetch('email_provider_events', { method: 'POST', body: JSON.stringify({ provider: 'resend', provider_event_id: body.eventId, email_id: message.id, event_type: 'email.received', occurred_at: body.createdAt || received.created_at, metadata: { providerEmailId: received.id } }) })
-    request.log.info({ emailId: message.id, providerEmailId: received.id, threadId }, 'Inbound email received')
-    return reply.code(201).send({ accepted: true, id: message.id })
+    await deps.supabaseFetch(`emails?id=eq.${registered.id}`, { method: 'PATCH', body: JSON.stringify({ inbound_attachments_processed_at: new Date().toISOString(), inbound_attachment_error_count: attachmentErrors }) })
+    request.log.info({ emailId: registered.id, providerEmailId: received.id, threadId: registered.threadId, duplicate: registered.duplicate, attachmentErrors }, 'Inbound email received')
+    return reply.code(registered.duplicate ? 200 : 201).send({ accepted: true, id: registered.id, duplicate: registered.duplicate, attachmentErrors })
   })
 }
