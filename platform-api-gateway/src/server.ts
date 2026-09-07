@@ -174,7 +174,9 @@ async function requestJson<T>(url: string, init: RequestInit, attempts = 3): Pro
       const detail = (await response.text()).slice(0, 1_000)
       finalError = Object.assign(new Error(`Upstream request failed (${response.status}): ${detail}`), {
         upstreamStatus: response.status,
-        statusCode: response.status === 429 ? 503 : response.status >= 500 ? 502 : response.status,
+        // External-provider authentication and validation errors are gateway
+        // failures here, not client authentication failures.
+        statusCode: response.status === 429 ? 503 : 502,
       })
       if (response.status !== 429 && response.status < 500) break
     } catch (error) {
@@ -628,6 +630,8 @@ registerPlatformRoutes(app, {
     siteUrl: config.siteUrl,
     emailFrom: config.emailFrom,
     emailReplyTo: config.emailReplyTo,
+    emailInboundAddress: config.emailInboundAddress,
+    emailInboundOwnerEmail: config.emailInboundOwnerEmail,
     gatewayServerKey: config.gatewayServerKey,
   },
   requireAdmin: requireSupabaseAdmin,

@@ -17,8 +17,8 @@ type PlatformRouteDeps = {
     siteUrl: string
     emailFrom: string
     emailReplyTo: string
-    emailInboundAddress?: string
-    emailInboundOwnerEmail?: string
+    emailInboundAddress: string
+    emailInboundOwnerEmail: string
     gatewayServerKey: string
   }
   requireAdmin: (request: FastifyRequest) => Promise<Record<string, unknown>>
@@ -450,20 +450,17 @@ function registerMailboxRoutes(app: FastifyInstance, deps: PlatformRouteDeps) {
     const sender = parseMailbox(headers.from || received.from)
     const inReplyTo = headers['in-reply-to'] || ''
     const references = (headers.references || '').split(/\s+/).filter(Boolean).slice(0, 100)
-    const inboundAddress = deps.config.emailInboundAddress?.toLowerCase()
-    if (inboundAddress && !to.includes(inboundAddress)) {
+    const inboundAddress = deps.config.emailInboundAddress.toLowerCase()
+    const ownerEmail = deps.config.emailInboundOwnerEmail.toLowerCase()
+    if (!inboundAddress || !ownerEmail) throw Object.assign(new Error('Inbound mailbox ownership is not configured.'), { statusCode: 503 })
+    if (!to.includes(inboundAddress)) {
       request.log.warn({ providerEmailId: received.id, recipientCount: to.length }, 'Inbound email rejected for an unconfigured recipient')
       return reply.code(202).send({ accepted: true, ignored: true })
     }
 
-    const ownerEmail = deps.config.emailInboundOwnerEmail?.toLowerCase()
-    const ownerLookup = ownerEmail
-      ? `user_profiles?email=eq.${encodeURIComponent(ownerEmail)}&select=user_id,email&limit=1`
-      : `user_profiles?email=in.(${to.map(encodeURIComponent).join(',')})&select=user_id,email&limit=1`
+    const ownerLookup = `user_profiles?email=eq.${encodeURIComponent(ownerEmail)}&select=user_id,email&limit=1`
     const profiles = await deps.supabaseFetch<Array<{ user_id: string; email: string }>>(ownerLookup, { headers: { Accept: 'application/json' } }).catch(() => [])
-    const fallback = profiles[0] || (!ownerEmail
-      ? (await deps.supabaseFetch<Array<{ user_id: string; email: string }>>('user_profiles?role=eq.admin&select=user_id,email&order=created_at.asc&limit=1', { headers: { Accept: 'application/json' } }))[0]
-      : undefined)
+    const fallback = profiles[0]
     if (!fallback) throw Object.assign(new Error('No mailbox owner is configured for inbound email.'), { statusCode: 503 })
 
     const registered = await deps.supabaseFetch<{ id: string; threadId: string; duplicate: boolean; attachmentsProcessed: boolean }>('rpc/register_inbound_email', {
