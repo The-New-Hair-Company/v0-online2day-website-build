@@ -160,7 +160,13 @@ export default function MailboxWorkspace({
   async function download(documentId: string) {
     const result = await getPlatformDocumentDownload(documentId);
     if ("error" in result) return setFeedback(result.error);
-    window.open(result.url, "_blank", "noopener,noreferrer");
+    const anchor = document.createElement("a");
+    anchor.href = result.url;
+    anchor.download = result.filename;
+    anchor.rel = "noopener noreferrer";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
   }
 
   function responseSeed(
