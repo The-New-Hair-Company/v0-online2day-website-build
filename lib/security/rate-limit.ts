@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin-client'
+import { getTrustedClientIp } from '@/lib/security/proxy-trust'
 
 export type RateLimitResult = {
   ok: boolean
@@ -9,9 +10,7 @@ export type RateLimitResult = {
 }
 
 export function getClientIp(request: Request) {
-  const xff = request.headers.get('x-forwarded-for')
-  if (xff) return xff.split(',')[0]?.trim() || 'unknown'
-  return request.headers.get('x-real-ip') || 'unknown'
+  return getTrustedClientIp(request.headers)
 }
 
 function privateBucketKey(key: string) {
