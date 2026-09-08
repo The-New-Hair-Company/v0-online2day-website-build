@@ -92,8 +92,65 @@ and WhatsApp authenticity is verified by their application-level signatures.
 - `CACHE-01 Immutable Next.js assets` makes only `/_next/static/` explicitly
   eligible, respects origin Cache-Control, enables cache-deception armour, and
   preserves strong ETags.
-- Public HTML is not forced into Cloudflare cache. Vercel remains responsible
-  for framework-aware HTML and React Server Component caching.
+- `CACHE-10 Public marketing pages 2h` caches only full-document `GET` requests
+  for the explicitly listed public marketing routes. It excludes requests with
+  either `RSC: 1` or `Next-Router-Prefetch: 1`, so Next.js React Server
+  Component payloads can never share a cache entry with HTML. The edge TTL is
+  two hours (the Free-plan minimum) and Browser TTL respects the origin's
+  `Cache-Control: public, max-age=0, must-revalidate` policy.
+
+The public-page allowlist is `/`, `/pricing`, `/start`, `/marketing`, `/about`,
+`/contact`, `/terms`, `/privacy`, `/complaints`, `/cookies`, `/work`, and
+`/services`. Dynamic, authenticated, API, webhook, and non-GET traffic remains
+ineligible. Do not replace these rules with a global Cache Everything policy.
+
+When public page content changes, purge the affected URL after deployment or
+allow the two-hour edge TTL to expire. A full cache purge is not normally
+required. Every cache-rule change must be tested in both orders: HTML then RSC,
+and RSC then HTML. Expected results are HTML `MISS` then `HIT`, while RSC stays
+`DYNAMIC` with `Content-Type: text/x-component`.
+
+## Monitoring and alerts
+
+- Cloudflare Security Events records managed WAF, custom WAF, and edge
+  rate-limit actions.
+- `Online2Day HTTP DDoS alerts` emails the account owner for HTTP DDoS events.
+- `Online2Day Universal SSL alerts` emails the account owner for certificate
+  lifecycle problems.
+- Cache Analytics and durable request-log export are not available on the
+  current Free plan. Application, Vercel, Azure, Supabase, and Resend telemetry
+  remain the system of record for application failures.
+
+## Production verification (2026-09-08)
+
+- Public authoritative resolvers (`1.1.1.1`, `8.8.8.8`, and `9.9.9.9`) returned
+  the Cloudflare nameservers and validated DNSSEC.
+- TLS 1.2 and TLS 1.3 negotiated successfully; TLS 1.0 and 1.1 were rejected.
+- HTTP/2, HTTP/3 advertisement, Brotli, redirects, HSTS, and the Universal SSL
+  certificate were verified from the live edge.
+- A 48-check production verification suite, 11 Playwright browser tests, 33 API
+  gateway tests, and 12 frontend unit tests passed: 104 total checks.
+- The edge burst test allowed 20 requests, returned `429` on the 21st request,
+  and supplied `Retry-After`.
+- Public HTML returned `MISS` then `HIT`; hashed CSS returned `HIT` with
+  `max-age=31536000, immutable`; `/auth`, `/dashboard`, and `/api` remained
+  `DYNAMIC`.
+- Both cache-variant request orders passed: RSC responses remained dynamic and
+  `text/x-component`, and HTML remained `text/html`.
+- Six representative secret/framework scanner paths returned Cloudflare `403`.
+  Harmless query-string SQLi/XSS probes were not falsely reported as blocked;
+  the Cloudflare managed ruleset remains enabled for exploit signatures.
+- The Cloudflare path returned the application, while direct Vercel IPs,
+  Vercel/origin aliases, and requests with spoofed forwarding headers plus an
+  incorrect edge credential did not.
+
+Measured warm homepage TTFB was 58.2 ms before Cloudflare and 62.8 ms after the
+safe public-HTML cache rule (seven observations each). Warm static CSS was
+59.2 ms before and 60.8 ms after. Mobile LCP remained effectively neutral:
+2.15–2.33 s before and 2.19–2.33 s after. The second request for cacheable HTML
+changed from an origin revalidation to an edge `HIT`; repeated origin requests
+for those pages were therefore removed. Lighthouse accessibility improved from
+0.95 to 1.00 after fixing footer contrast and server/client hydration parity.
 
 ## Origin protection
 
