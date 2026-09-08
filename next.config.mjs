@@ -22,7 +22,6 @@ const nextConfig = {
       "connect-src 'self' https://*.supabase.co https://api.resend.com https://vitals.vercel-insights.com",
       "form-action 'self'",
       'report-uri /api/security/csp-report',
-      'upgrade-insecure-requests',
     ].join('; ')
 
     return [

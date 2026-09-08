@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import type { CSSProperties } from 'react'
 import { Analytics } from '@vercel/analytics/next'
 import Script from 'next/script'
 import './globals.css'
@@ -45,7 +46,18 @@ export default async function RootLayout({
   const branding = await siteBrandingApi.get().catch(() => null)
 
   return (
-    <html lang="en-GB" className="dark" data-theme="dark" suppressHydrationWarning>
+    <html
+      lang="en-GB"
+      className="dark"
+      data-theme="dark"
+      data-text-size="md"
+      data-contrast="standard"
+      data-motion="standard"
+      data-font="standard"
+      data-line-height="standard"
+      style={{ '--accessibility-text-scale': '1' } as CSSProperties}
+      suppressHydrationWarning
+    >
       <head><style id="o2d-site-branding" dangerouslySetInnerHTML={{ __html: brandingCss(branding) }} /></head>
       <body className="font-sans antialiased">
         <Script src="/accessibility-init.js" strategy="beforeInteractive" />
